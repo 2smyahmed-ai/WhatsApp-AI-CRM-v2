@@ -1,0 +1,153 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── CSS Variables ──────────────────────────────────────── */
+:root {
+  --wa-accent: #25D366;
+  --wa-accent-dark: #128C7E;
+  --wa-accent-light: #DCF8C6;
+  --wa-bg-primary: #0B141A;
+  --wa-bg-secondary: #111B21;
+  --wa-bg-tertiary: #202C33;
+  --wa-bubble-sent: #005C4B;
+  --wa-bubble-received: #202C33;
+  --wa-text-primary: #E9EDEF;
+  --wa-text-secondary: #8696A0;
+  --wa-border-subtle: rgba(255,255,255,0.08);
+}
+
+/* ─── Reset & base ──────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: 'Segoe UI', 'Helvetica Neue', ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'cv11', 'ss01';
+  scroll-behavior: smooth;
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+body {
+  min-height: 100vh;
+  transition: background-color 0.2s ease, color 0.15s ease;
+  background-color: #ffffff;
+  color: #1f2937;
+}
+
+html.dark body {
+  background-color: var(--wa-bg-primary);
+  color: var(--wa-text-primary);
+}
+
+/* ─── Font inherit for all form elements ────────────────── */
+input, textarea, select, button {
+  font-family: inherit;
+}
+
+/* ─── Placeholder ────────────────────────────────────────── */
+input::placeholder,
+textarea::placeholder {
+  color: #9ca3af;
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: var(--wa-text-secondary);
+}
+
+/* ─── Text selection ─────────────────────────────────────── */
+::selection {
+  background: rgba(37, 211, 102, 0.18);
+  color: #005C4B;
+}
+.dark ::selection {
+  background: rgba(37, 211, 102, 0.22);
+  color: #25D366;
+}
+
+/* ─── Scrollbars ─────────────────────────────────────────── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #d4d4d8 transparent;
+}
+.dark * {
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: #d4d4d8;
+  border-radius: 9999px;
+}
+.dark *::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #a1a1aa;
+}
+.dark *::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ─── Custom select ──────────────────────────────────────── */
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  padding-right: 2.25rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+select:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.15);
+  border-color: #25D366;
+}
+
+.dark select:focus {
+  box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.2);
+}
+
+/* ─── Focus ring global ──────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid #25D366;
+  outline-offset: 2px;
+}
+
+/* ─── Smooth transitions on theme change ─────────────────── */
+*,
+*::before,
+*::after {
+  transition-property: background-color, border-color, color, fill, stroke;
+  transition-duration: 0.15s;
+  transition-timing-function: ease;
+}
+
+/* Reset transitions for transform/opacity (avoid sluggishness) */
+.no-transition,
+.no-transition *,
+[data-no-transition],
+[data-no-transition] * {
+  transition: none !important;
+}

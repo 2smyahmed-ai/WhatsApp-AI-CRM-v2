@@ -1,0 +1,380 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String   @id @default(cuid())
+  name             String
+  email            String   @unique
+  password         String
+  role             Role     @default(AGENT)
+  teamId           String?
+  team             Team?    @relation("TeamMembers", fields: [teamId], references: [id])
+  emailVerifiedAt  DateTime?
+  resetToken       String?
+  resetTokenExpiry DateTime?
+  refreshTokenId   String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  conversations Conversation[] @relation("AssignedConversations")
+  ownedDeals    Deal[]         @relation("OwnedDeals")
+  assignedTasks Task[]         @relation("AssignedTasks")
+  ownedTeams    Team[]         @relation("TeamOwner")
+  internalNotes InternalNote[]
+  auditLogs     AuditLog[]
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  TEAM_LEAD
+  AGENT
+  ANALYST
+  VIEWER
+}
+
+model WhatsAppSession {
+  id        String   @id @default(cuid())
+  sessionId String   @unique
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Contact {
+  id             String   @id @default(cuid())
+  teamId         String?
+  phone          String   @unique
+  name           String?
+  email          String?
+  tag            String?
+  notes          String?
+  status         String   @default("ACTIVE")
+  lifecycleStage String   @default("LEAD")
+  source         String?
+  customFields   Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  conversations Conversation[]
+  deals         Deal[]
+  tasks         Task[]
+}
+
+model Conversation {
+  id                 String         @id @default(cuid())
+  teamId             String?
+  contactId          String
+  contact            Contact        @relation(fields: [contactId], references: [id])
+  status             ConvStatus     @default(OPEN)
+  priority           Priority       @default(NORMAL)
+  pipeline           PipelineStage?
+  assignedTo         String?
+  assignedUser       User?          @relation("AssignedConversations", fields: [assignedTo], references: [id])
+  assignedTeamId     String?
+  assignedTeam       Team?          @relation("TeamConversations", fields: [assignedTeamId], references: [id])
+  lastMessage        String?
+  lastMessagePreview String?
+  lastMessageAt      DateTime?
+  notes              String?
+  unreadCount        Int            @default(0)
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  messages      Message[]
+  internalNotes InternalNote[]
+}
+
+enum ConvStatus {
+  OPEN
+  RESOLVED
+  PENDING
+  ON_HOLD
+  ARCHIVED
+  SPAM
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum PipelineStage {
+  LEAD
+  QUALIFIED
+  NEGOTIATION
+  WON
+  LOST
+}
+
+model InternalNote {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  authorId       String
+  author         User         @relation(fields: [authorId], references: [id])
+  body           String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+model Message {
+  id             String           @id @default(cuid())
+  externalId     String
+  sessionId      String
+  direction      MessageDirection
+  from           String
+  to             String
+  phone          String
+  conversationId String
+  conversation   Conversation     @relation(fields: [conversationId], references: [id])
+  fromMe         Boolean
+  senderType     String           @default("user")
+  body           String
+  type           MessageType      @default(TEXT)
+  mediaUrl       String?
+  mediaMimeType  String?
+  mediaFileName  String?
+  mediaCaption   String?
+  mediaDuration  Int?
+  timestamp      DateTime
+  status         MsgStatus        @default(SENT)
+  errorReason    String?
+  deliveredAt    DateTime?
+  readAt         DateTime?
+  retryCount     Int              @default(0)
+
+  @@unique([externalId, sessionId])
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  DOCUMENT
+  AUDIO
+  VIDEO
+  INTERACTIVE
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MsgStatus {
+  SENT
+  RECEIVED
+  PROCESSED
+  DELIVERED
+  READ
+  FAILED
+}
+
+model AutomationRule {
+  id        String      @id @default(cuid())
+  teamId    String?
+  name      String
+  trigger   TriggerType
+  keyword   String?
+  response  String
+  isActive  Boolean     @default(true)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+}
+
+enum TriggerType {
+  KEYWORD
+  FIRST_MESSAGE
+  ANY_MESSAGE
+  OUTSIDE_HOURS
+  REGEX
+  CONTAINS_URL
+  CONTAINS_PHONE
+  SENTIMENT_NEGATIVE
+  NO_RESPONSE_TIME
+  TAG_ADDED
+  STATUS_CHANGE
+  TIME_BASED
+  DAY_OF_WEEK
+  WEBHOOK
+  API_CALL
+}
+
+model Broadcast {
+  id            String          @id @default(cuid())
+  teamId        String?
+  name          String
+  description   String?
+  message       String
+  status        BroadcastStatus @default(DRAFT)
+  type          BroadcastType   @default(IMMEDIATE)
+  scheduledAt   DateTime?
+  recurringCron String?
+  timezone      String          @default("UTC")
+  sentAt        DateTime?
+  totalSent     Int             @default(0)
+  totalFailed   Int             @default(0)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  recipients BroadcastRecipient[]
+}
+
+enum BroadcastStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  FAILED
+}
+
+enum BroadcastType {
+  IMMEDIATE
+  SCHEDULED
+  RECURRING
+}
+
+model BroadcastRecipient {
+  id          String    @id @default(cuid())
+  broadcastId String
+  broadcast   Broadcast @relation(fields: [broadcastId], references: [id])
+  phone       String
+  status      String    @default("pending")
+}
+
+model SavedReply {
+  id        String   @id @default(cuid())
+  teamId    String?
+  shortcut  String
+  message   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([teamId, shortcut])
+}
+
+model Deal {
+  id        String    @id @default(cuid())
+  teamId    String?
+  contactId String
+  contact   Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  title     String
+  stage     DealStage @default(NEW)
+  value     Float     @default(0)
+  ownerId   String?
+  owner     User?     @relation("OwnedDeals", fields: [ownerId], references: [id])
+  notes     String?
+  closedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([teamId, stage])
+}
+
+enum DealStage {
+  NEW
+  INTERESTED
+  NEGOTIATION
+  CLOSED
+}
+
+model Task {
+  id          String     @id @default(cuid())
+  teamId      String?
+  contactId   String?
+  contact     Contact?   @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  title       String
+  description String?
+  dueDate     DateTime?
+  status      TaskStatus @default(OPEN)
+  assigneeId  String?
+  assignee    User?      @relation("AssignedTasks", fields: [assigneeId], references: [id])
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([teamId, status])
+}
+
+enum TaskStatus {
+  OPEN
+  DONE
+}
+
+model Analytics {
+  id               String   @id @default(cuid())
+  date             DateTime @unique @default(now()) @db.Date
+  totalMessages    Int      @default(0)
+  incomingMessages Int      @default(0)
+  outgoingMessages Int      @default(0)
+  newContacts      Int      @default(0)
+  resolvedConvs    Int      @default(0)
+  automationsFired Int      @default(0)
+}
+
+model Team {
+  id        String   @id @default(cuid())
+  name      String
+  ownerId   String
+  owner     User     @relation("TeamOwner", fields: [ownerId], references: [id])
+  members   User[]   @relation("TeamMembers")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  conversations Conversation[] @relation("TeamConversations")
+}
+
+model TeamMember {
+  id       String   @id @default(cuid())
+  teamId   String
+  userId   String
+  role     Role
+  joinedAt DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String
+  resource  String
+  details   Json?
+  createdAt DateTime @default(now())
+}
+
+enum TemplateType {
+  TEXT
+  MEDIA
+  INTERACTIVE
+}
+
+enum TemplateStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model MessageTemplate {
+  id        String   @id @default(cuid())
+  teamId    String?
+  name      String
+  content   String
+  mediaUrl  String?
+  type      TemplateType @default(TEXT)
+  status    TemplateStatus @default(DRAFT)
+  payload   Json?
+  variables Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@index([teamId])
+}

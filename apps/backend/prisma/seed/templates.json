@@ -1,0 +1,78 @@
+[
+  {
+    "name": "Welcome — Friendly",
+    "content": "Hi {{name}} 👋 Welcome to {{company_name}}! We’re excited to have you. Reply HELLO for help or visit {{link}}"
+  },
+  {
+    "name": "Welcome — Formal",
+    "content": "Hello {{name}}, welcome to {{company_name}}. If you need assistance, reply here or visit {{link}}"
+  },
+  {
+    "name": "New Offer — Promo",
+    "content": "Hi {{name}}, enjoy {{discount}}% off {{product}} today. Use code {{discount_code}} at checkout — valid until {{expiry_date}}. Shop: {{link}}"
+  },
+  {
+    "name": "Seasonal Promo",
+    "content": "Hey {{name}}! Summer sale — save {{discount}}% across all {{category}}. Use {{discount_code}}. Grab it now: {{link}}"
+  },
+  {
+    "name": "Abandoned Cart — Friendly",
+    "content": "Hi {{name}}, you left {{product}} in your cart. Complete your order now and get {{discount}}% off with code {{discount_code}}: {{link}}"
+  },
+  {
+    "name": "Abandoned Cart — Formal",
+    "content": "Hello {{name}}, your cart still contains {{product}}. Finish checkout here: {{link}}. Use {{discount_code}} for a discount."
+  },
+  {
+    "name": "Order Confirmation",
+    "content": "Thanks {{name}}! Order {{order_id}} is confirmed. Items: {{item_list}}. Total: {{price}}. Track: {{tracking_link}}"
+  },
+  {
+    "name": "Shipping Update",
+    "content": "Good news {{name}}, order {{order_id}} has shipped. Track here: {{tracking_link}}. ETA: {{delivery_date}}"
+  },
+  {
+    "name": "Delivery Confirmation",
+    "content": "Hi {{name}}, your order {{order_id}} was delivered on {{delivery_date}}. Need support? Reply or contact {{agent_name}}."
+  },
+  {
+    "name": "Appointment Reminder",
+    "content": "Reminder: Your appointment with {{company_name}} is on {{date_time}}. Reply YES to confirm or call {{phone}} to reschedule."
+  },
+  {
+    "name": "Event Invite",
+    "content": "You’re invited to {{event_name}} on {{date_time}} at {{location}}. RSVP: {{rsvp_link}} — seats limited."
+  },
+  {
+    "name": "Re-engagement — Win-back",
+    "content": "Hi {{name}}, we miss you — here’s {{discount}}% off to come back. Use {{discount_code}} before {{expiry_date}}: {{link}}"
+  },
+  {
+    "name": "Flash Sale — Urgency",
+    "content": "FLASH SALE — {{discount}}% off for the next {{hours}} hours only. Use {{discount_code}}: {{link}} — don’t miss out!"
+  },
+  {
+    "name": "Cross-sell Recommendation",
+    "content": "Hi {{name}}, customers who bought {{product}} also loved {{recommended_product}}. Save {{discount}}%: {{link}}"
+  },
+  {
+    "name": "Subscription Renewal",
+    "content": "Hi {{name}}, your {{service}} subscription renews on {{renewal_date}}. Update payment or cancel: {{billing_link}}"
+  },
+  {
+    "name": "Payment Failed",
+    "content": "We couldn't process payment for order {{order_id}}. Please update payment: {{payment_link}} or reply for help."
+  },
+  {
+    "name": "Feedback — Review Request",
+    "content": "Hi {{name}}, thanks for buying {{product}}. Please rate your experience (1-5) or leave a review: {{review_link}}"
+  },
+  {
+    "name": "Referral Program",
+    "content": "Refer a friend and you both get {{reward}}. Share your link: {{ref_link}}"
+  },
+  {
+    "name": "Quick Survey (NPS)",
+    "content": "Quick question {{name}}: On a scale 0-10, how likely are you to recommend {{company_name}}? Reply with a number."
+  }
+]

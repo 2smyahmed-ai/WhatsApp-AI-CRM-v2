@@ -1,0 +1,21 @@
+{
+  "name": "@crm/messaging-schema",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Canonical messaging types shared by backend and frontend. Pure types and constants — no runtime logic.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -p .",
+    "watch": "tsc -p . --watch",
+    "clean": "rimraf dist"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "rimraf": "^5.0.5"
+  }
+}

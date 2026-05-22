@@ -1,0 +1,60 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Environment variables — NEVER commit secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*.local
+
+# WhatsApp session credentials
+auth_info_baileys/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logsbackend-*.log
+logsbackend-*.err.log
+logsbackend-*.out.log
+backend.log
+
+# TypeScript
+*.tsbuildinfo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Uploads (user-generated content, not source)
+apps/backend/uploads/
+
+# Prisma generated client (regenerated on install)
+apps/backend/node_modules/
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# Memory (Claude Code internal)
+memory/
+skills/
+
+# npm cache
+.npm-cache/
+
+# Misc
+*.xlsx
+New XLSX Worksheet.xlsx

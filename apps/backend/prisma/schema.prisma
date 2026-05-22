@@ -1,0 +1,532 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String    @id @default(cuid())
+  name            String
+  email           String    @unique
+  password        String
+  role            Role      @default(AGENT)
+  teamId          String?
+  team            Team?     @relation("TeamMembers", fields: [teamId], references: [id])
+  ownedTeam       Team?     @relation("TeamOwner")
+  emailVerifiedAt DateTime?
+  resetToken      String?
+  resetTokenExpiry DateTime?
+  refreshTokenId  String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @default(now()) @updatedAt
+  conversations   Conversation[] @relation("AssignedConversations")
+  ownedDeals      Deal[]        @relation("OwnedDeals")
+  assignedTasks   Task[]        @relation("AssignedTasks")
+  internalNotes   InternalNote[] @relation("InternalNotes")
+  auditLogs       AuditLog[]
+  reactions       MessageReaction[] @relation("UserReactions")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  TEAM_LEAD
+  AGENT
+  ANALYST
+  VIEWER
+}
+
+model Team {
+  id          String   @id @default(cuid())
+  name        String
+  ownerId     String   @unique
+  owner       User     @relation("TeamOwner", fields: [ownerId], references: [id])
+  members     User[]   @relation("TeamMembers")
+  conversations Conversation[]
+  autoAssign  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+}
+
+model WhatsAppSession {
+  id        String   @id @default(cuid())
+  sessionId String   @unique
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model Contact {
+  id             String         @id @default(cuid())
+  teamId         String?
+  phone          String         @unique
+  name           String?
+  email          String?
+  tag            String?        // legacy CSV field — kept for migration compatibility
+  notes          String?
+  status         String         @default("ACTIVE")
+  lifecycleStage String         @default("LEAD")
+  source         String?
+  customFields   Json?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @default(now()) @updatedAt
+  conversations  Conversation[]
+  deals          Deal[]
+  tasks          Task[]
+  contactTags    ContactTag[]
+
+  @@index([teamId])
+  @@index([phone])
+}
+
+// Relational tags — replaces the CSV `tag` field on Contact
+model Tag {
+  id        String       @id @default(cuid())
+  teamId    String?
+  name      String
+  color     String       @default("#6366f1")
+  createdAt DateTime     @default(now())
+  contacts  ContactTag[]
+
+  @@unique([teamId, name])
+  @@index([teamId])
+}
+
+model ContactTag {
+  contactId String
+  tagId     String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([contactId, tagId])
+}
+
+model Conversation {
+  id                 String     @id @default(cuid())
+  teamId             String?
+  contactId          String
+  contact            Contact    @relation(fields: [contactId], references: [id])
+  status             ConvStatus @default(OPEN)
+  priority           Priority   @default(NORMAL)
+  assignedTo         String?
+  assignedUser       User?      @relation("AssignedConversations", fields: [assignedTo], references: [id])
+  assignedTeamId     String?
+  assignedTeam       Team?      @relation(fields: [assignedTeamId], references: [id])
+  pipeline           String?
+  lastMessage        String?
+  lastMessagePreview String?
+  lastMessageAt      DateTime?
+  /// ── Phase A (normalized-message refactor) — when did the customer last write us?
+  /// Used to evaluate Meta's 24h session window, gate free-form sends, and
+  /// pre-compute template eligibility. Backfilled from Message aggregate
+  /// at migration time.
+  lastInboundAt      DateTime?
+  /// ── Phase A — per-conversation compatibility mode for outbound sends.
+  /// Null = derive from provider's default. See packages/messaging-schema
+  /// (CompatibilityMode): 'cloud_api' | 'web_compatible' | 'mobile_safe' | 'fallback_text'.
+  compatibilityMode  String?
+  notes              String?
+  unreadCount        Int        @default(0)
+  isPinned           Boolean    @default(false)
+  snoozedUntil       DateTime?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @default(now()) @updatedAt
+  messages           Message[]
+  internalNotes      InternalNote[]
+  tasks              Task[]         @relation("ConversationTasks")
+
+  @@index([teamId, status, lastMessageAt(sort: Desc)])
+  @@index([contactId, status])
+  @@index([assignedTo])
+  @@index([snoozedUntil])
+}
+
+enum ConvStatus {
+  OPEN
+  RESOLVED
+  PENDING
+  ON_HOLD
+  ARCHIVED
+  SPAM
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  externalId     String
+  sessionId      String
+  direction      MessageDirection
+  from           String
+  to             String
+  phone          String
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  fromMe         Boolean
+  body           String
+  type           MessageType  @default(TEXT)
+  mediaUrl       String?
+  mediaMimeType  String?
+  mediaFileName  String?
+  mediaCaption   String?
+  mediaDuration  Int?
+  timestamp      DateTime
+  status         MsgStatus    @default(SENT)
+  errorReason    String?
+  deliveredAt    DateTime?
+  readAt         DateTime?
+  retryCount     Int          @default(0)
+  replyToId      String?
+  replyToBody    String?
+  reactions      MessageReaction[]
+
+  // ── Phase A (normalized-message refactor) — additive columns ────────────────
+  // Existing rows have schemaVersion=0 and continue to be read via legacy
+  // columns above. Rows produced by the new pipeline have schemaVersion=1,
+  // and the renderer reads them via `renderable`. See ENGINEERING.md
+  // and NORMALIZED_MESSAGE_DESIGN.md.
+  /// 0 = legacy row, 1 = normalized (new pipeline).
+  schemaVersion  Int          @default(0)
+  /// Caller-issued idempotency key. (clientId, conversationId) is unique.
+  /// Required for new outbound flows; backend generates one if absent.
+  clientId       String?
+  /// Which transport produced or delivers this message — see packages/messaging-schema (ProviderName).
+  provider       String?
+  /// Semantic message kind — see packages/messaging-schema (MessageKind).
+  kind           String?
+  /// Discriminated MessageContent payload.
+  content        Json?
+  /// Cross-cutting MessageMetadata (sequenceNumber, traceId, origin, ...).
+  metadata       Json?
+  /// Provider raw payload, server-side only. Stripped before the wire.
+  raw            Json?
+  /// Pre-compiled RenderablePayload — what the renderer draws. Stored to
+  /// guarantee preview = chat parity and avoid recompiling on every read.
+  renderable     Json?
+  /// Global monotonic counter for ordering + gap detection in the realtime store.
+  sequenceNumber BigInt       @default(autoincrement())
+
+  /// Legacy interactive-message payload added directly via raw SQL before the
+  /// Phase A refactor. Holds 18 rows of structured interactive data (buttons,
+  /// image headers, etc.). Preserved here so Prisma round-trips the column;
+  /// Phase D migration will fold this data into `content` / `renderable` and
+  /// then drop this column.
+  interactivePayload Json?
+
+  @@unique([externalId, sessionId])
+  @@unique([clientId, conversationId])
+  @@index([conversationId, timestamp(sort: Desc)])
+  @@index([conversationId, sequenceNumber(sort: Desc)])
+  @@index([phone])
+}
+
+model MessageReaction {
+  id           String   @id @default(cuid())
+  messageId    String
+  message      Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId       String?
+  user         User?    @relation("UserReactions", fields: [userId], references: [id], onDelete: Cascade)
+  contactPhone String?
+  emoji        String
+  createdAt    DateTime @default(now())
+
+  @@unique([messageId, userId])
+  @@index([messageId])
+  @@index([messageId, contactPhone])
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  DOCUMENT
+  AUDIO
+  VIDEO
+  INTERACTIVE
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MsgStatus {
+  RECEIVED
+  PROCESSED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  // ── Phase A additions (normalized-message refactor) ────────────────────────
+  // These map 1:1 to packages/messaging-schema (MessageStatus). The legacy
+  // SENT value remains for back-compat; new pipeline rows transition through
+  // QUEUED → SENDING → PROVIDER_ACCEPTED → SERVER_CONFIRMED → DELIVERED → READ.
+  QUEUED
+  SENDING
+  PROVIDER_ACCEPTED
+  SERVER_CONFIRMED
+  EXPIRED
+}
+
+model InternalNote {
+  id              String   @id @default(cuid())
+  conversationId  String
+  conversation    Conversation @relation(fields: [conversationId], references: [id])
+  authorId        String
+  author          User     @relation("InternalNotes", fields: [authorId], references: [id])
+  body            String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now()) @updatedAt
+}
+
+model AutomationRule {
+  id        String      @id @default(cuid())
+  teamId    String?
+  name      String
+  trigger   TriggerType
+  keyword   String?
+  response  String
+  isActive  Boolean     @default(true)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @default(now()) @updatedAt
+}
+
+// ── Multi-step automation flows ───────────────────────────────────────────────
+
+model AutomationFlow {
+  id            String               @id @default(cuid())
+  teamId        String?
+  name          String
+  trigger       TriggerType
+  keyword       String?
+  isActive      Boolean              @default(true)
+  stopOnReply   Boolean              @default(true)
+  steps         AutomationFlowStep[]
+  executions    AutomationFlowExecution[]
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @default(now()) @updatedAt
+
+  @@index([teamId, isActive])
+}
+
+model AutomationFlowStep {
+  id       String         @id @default(cuid())
+  flowId   String
+  flow     AutomationFlow @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  order    Int
+  type     FlowStepType
+  message  String?
+  delayMs  Int?           // milliseconds to wait before this step (for WAIT steps)
+
+  @@index([flowId, order])
+}
+
+enum FlowStepType {
+  SEND_MESSAGE
+  WAIT
+}
+
+model AutomationFlowExecution {
+  id            String         @id @default(cuid())
+  flowId        String
+  flow          AutomationFlow @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  phone         String
+  currentStep   Int            @default(0)
+  status        String         @default("RUNNING") // RUNNING | COMPLETED | STOPPED
+  startedAt     DateTime       @default(now())
+  stoppedAt     DateTime?
+  stoppedReason String?
+
+  @@index([flowId, phone, status])
+  @@index([phone, status])
+}
+
+enum TriggerType {
+  KEYWORD
+  FIRST_MESSAGE
+  ANY_MESSAGE
+  OUTSIDE_HOURS
+  REGEX
+  CONTAINS_URL
+  CONTAINS_PHONE
+  SENTIMENT_NEGATIVE
+  NO_RESPONSE_TIME
+  TAG_ADDED
+  STATUS_CHANGE
+  TIME_BASED
+  DAY_OF_WEEK
+  WEBHOOK
+  API_CALL
+}
+
+model Broadcast {
+  id          String          @id @default(cuid())
+  teamId      String?
+  name        String
+  description String?
+  message     String
+  status      BroadcastStatus @default(DRAFT)
+  type        BroadcastType   @default(IMMEDIATE)
+  scheduledAt DateTime?
+  recurringCron String?
+  timezone    String          @default("UTC")
+  sentAt      DateTime?
+  totalSent   Int             @default(0)
+  totalFailed Int             @default(0)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @default(now()) @updatedAt
+  recipients  BroadcastRecipient[]
+}
+
+enum BroadcastStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  PAUSED
+  SENT
+  FAILED
+}
+
+enum BroadcastType {
+  IMMEDIATE
+  SCHEDULED
+  RECURRING
+}
+
+enum TemplateType {
+  TEXT
+  MEDIA
+  INTERACTIVE
+}
+
+enum TemplateStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model BroadcastRecipient {
+  id          String    @id @default(cuid())
+  broadcastId String
+  broadcast   Broadcast @relation(fields: [broadcastId], references: [id])
+  phone       String
+  status      String    @default("pending")
+}
+
+model Analytics {
+  id               String   @id @default(cuid())
+  date             DateTime @unique @default(now()) @db.Date
+  totalMessages    Int      @default(0)
+  incomingMessages Int      @default(0)
+  outgoingMessages Int      @default(0)
+  newContacts      Int      @default(0)
+  resolvedConvs    Int      @default(0)
+  automationsFired Int      @default(0)
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String
+  resource  String
+  details   Json?
+  createdAt DateTime @default(now())
+}
+
+model SavedReply {
+  id        String   @id @default(cuid())
+  teamId    String?
+  shortcut  String   @unique
+  message   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model Deal {
+  id          String   @id @default(cuid())
+  teamId      String?
+  contactId   String
+  contact     Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  title       String
+  stage       DealStage @default(NEW)
+  value       Float     @default(0)
+  ownerId     String?
+  owner       User?     @relation("OwnedDeals", fields: [ownerId], references: [id])
+  notes       String?
+  closedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
+
+  @@index([teamId, stage])
+}
+
+enum DealStage {
+  NEW
+  INTERESTED
+  NEGOTIATION
+  CLOSED
+}
+
+model MessageTemplate {
+  id        String   @id @default(cuid())
+  teamId    String?
+  name      String
+  content   String
+  mediaUrl  String?
+  type      TemplateType @default(TEXT)
+  status    TemplateStatus @default(DRAFT)
+  // Meta Cloud API fields
+  language       String  @default("en_US")
+  category       String? // MARKETING | UTILITY | AUTHENTICATION
+  metaStatus     String? // PENDING | APPROVED | REJECTED | PAUSED | DELETED
+  metaTemplateId String? // numeric ID returned by Meta after submission
+  // Structured JSON payload — components array for Meta templates (header/body/footer/buttons)
+  payload   Json?
+  // Ordered variable names e.g. ["name","order_id"] matching {{1}},{{2}} in body
+  variables Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@index([teamId])
+}
+
+model Task {
+  id             String        @id @default(cuid())
+  teamId         String?
+  contactId      String?
+  contact        Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  conversationId String?
+  conversation   Conversation? @relation("ConversationTasks", fields: [conversationId], references: [id], onDelete: SetNull)
+  title          String
+  description    String?
+  dueDate        DateTime?
+  status         TaskStatus    @default(OPEN)
+  priority       TaskPriority  @default(MEDIUM)
+  assigneeId     String?
+  assignee       User?         @relation("AssignedTasks", fields: [assigneeId], references: [id])
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @default(now()) @updatedAt
+
+  @@index([teamId, status])
+}
+
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  DONE
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
