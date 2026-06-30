@@ -2,48 +2,96 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useSession, signOut } from 'next-auth/react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../../../lib/api';
 import QRCodeDisplay from '../../../components/shared/QRCodeDisplay';
 import ConnectionStatus from '../../../components/shared/ConnectionStatus';
 import { useSocket } from '../../../hooks/useSocket';
+import { useLanguage } from '../../../components/providers/I18nProvider';
+import { useDirection } from '../../../hooks/useDirection';
+import LanguageSwitcher from '../../../components/ui/LanguageSwitcher';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Settings2 } from 'lucide-react';
+import {
+  Settings2, Globe, CheckCircle2, MessageCircle, Users,
+  MessageSquareReply, User, LogOut, Trash2, Plus,
+  Wifi, WifiOff, RefreshCw, Hash, AlignLeft,
+  ChevronRight, ShieldCheck, Eye, EyeOff, Loader, Lock,
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { SIMPLE_ROLES, SIMPLE_ROLE_LABEL, SIMPLE_ROLE_BADGE, toSimpleRole, simpleRoleToStored, type SimpleRole } from '@/lib/roles';
+
+type Section = 'whatsapp' | 'team' | 'saved-replies' | 'account' | 'password' | 'language';
+
+function initials(name?: string | null, email?: string | null): string {
+  if (name) return name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+  if (email) return email[0].toUpperCase();
+  return '?';
+}
 
 export default function SettingsPage() {
   const { data: session, status: sessionStatus } = useSession();
-  const [status, setStatus] = useState<'connected' | 'disconnected' | 'connecting'>('disconnected');
-  const [connectedPhone, setConnectedPhone] = useState<string | null>(null);
-  const [qrCode, setQrCode] = useState<string | null>(null);
-  const [whatsAppError, setWhatsAppError] = useState<string>('');
-  const [teamMembers, setTeamMembers] = useState<any[]>([]);
-  const [teamName, setTeamName] = useState('');
-  const [newMemberEmail, setNewMemberEmail] = useState('');
-  const [newMemberRole, setNewMemberRole] = useState('AGENT');
-  const [savedReplies, setSavedReplies] = useState<any[]>([]);
-  const [shortcut, setShortcut] = useState('');
-  const [savedReplyMessage, setSavedReplyMessage] = useState('');
+  const { t } = useTranslation('settings');
+  const { language } = useLanguage();
+  const { isRTL } = useDirection();
 
+  const [activeSection, setActiveSection] = useState<Section>('whatsapp');
+
+  // ── WhatsApp state ────────────────────────────────────────────────────────
+  const [status, setStatus]               = useState<'connected' | 'disconnected' | 'connecting'>('disconnected');
+  const [connectedPhone, setConnectedPhone] = useState<string | null>(null);
+  const [qrCode, setQrCode]               = useState<string | null>(null);
+  const [whatsAppError, setWhatsAppError] = useState<string>('');
+  const [waLoading, setWaLoading]         = useState(false);
+  const [warmupEnabled, setWarmupEnabled] = useState(false);
+  const [warmupSaving, setWarmupSaving]   = useState(false);
+
+  // ── Team state ────────────────────────────────────────────────────────────
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  const [teamName, setTeamName]       = useState('');
+  const [newMemberEmail, setNewMemberEmail] = useState('');
+  const [newMemberRole, setNewMemberRole]   = useState<SimpleRole>('EMPLOYEE');
+  const [inviting, setInviting]             = useState(false);
+
+  // ── Saved replies state ───────────────────────────────────────────────────
+  const [savedReplies, setSavedReplies]         = useState<any[]>([]);
+  const [shortcut, setShortcut]                 = useState('');
+  const [savedReplyMessage, setSavedReplyMessage] = useState('');
+  const [savingReply, setSavingReply]           = useState(false);
+
+  // ── Password change state ──────────────────────────────────────────────────
+  const [currentPassword, setCurrentPassword]   = useState('');
+  const [newPassword, setNewPassword]           = useState('');
+  const [confirmPassword, setConfirmPassword]   = useState('');
+  const [passwordError, setPasswordError]       = useState('');
+  const [passwordSuccess, setPasswordSuccess]   = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword]   = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  // ── Fetchers ──────────────────────────────────────────────────────────────
   const fetchStatus = useCallback(async () => {
     try {
       const data = await api.get('/api/whatsapp/status');
       setStatus(data.status);
       setConnectedPhone(data.connectedPhone ?? null);
-      if (data?.error?.statusCode || data?.error?.reason || data?.error?.message) {
+      if (typeof data.session?.warmupEnabled === 'boolean') {
+        setWarmupEnabled(data.session.warmupEnabled);
+      }
+      const e = data?.error;
+      if (e?.statusCode || e?.reason || e?.message) {
         const parts = [
-          data?.error?.statusCode ? `Status ${data.error.statusCode}` : null,
-          data?.error?.reason ? `Reason ${data.error.reason}` : null,
-          data?.error?.message ? data.error.message : null,
+          e.statusCode ? `Status ${e.statusCode}` : null,
+          e.reason     ? `Reason ${e.reason}` : null,
+          e.message    ? e.message : null,
         ].filter(Boolean);
-        setWhatsAppError(parts.join(' - '));
+        setWhatsAppError(parts.join(' — '));
       } else {
         setWhatsAppError('');
       }
-    } catch (error) {
-      console.error('Failed to fetch status:', error);
-      setWhatsAppError(error instanceof Error ? error.message : 'Failed to fetch WhatsApp status');
+    } catch (err) {
+      setWhatsAppError(err instanceof Error ? err.message : 'Failed to fetch status');
     }
   }, []);
 
@@ -52,21 +100,17 @@ export default function SettingsPage() {
       const data = await api.get('/api/whatsapp/qr');
       setQrCode(data.qr);
       setWhatsAppError('');
-    } catch (error) {
-      console.error('Failed to fetch QR:', error);
-      setWhatsAppError(error instanceof Error ? error.message : 'Failed to fetch WhatsApp QR');
-    }
+    } catch {}
   }, []);
 
   const fetchTeamMembers = useCallback(async () => {
-    if (session?.user) {
-      try {
-        const data = await api.get('/api/teams');
-        setTeamMembers(data?.team?.members || []);
-        setTeamName(data?.team?.name || '');
-      } catch {
-        setTeamMembers([session.user]);
-      }
+    if (!session?.user) return;
+    try {
+      const data = await api.get('/api/teams');
+      setTeamMembers(data?.team?.members || []);
+      setTeamName(data?.team?.name || '');
+    } catch {
+      setTeamMembers([session.user]);
     }
   }, [session]);
 
@@ -80,99 +124,94 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    if (sessionStatus === 'loading') return;
-    if (sessionStatus !== 'authenticated') return;
-
+    if (sessionStatus === 'loading' || sessionStatus !== 'authenticated') return;
     fetchStatus();
     fetchQR();
     fetchTeamMembers();
     fetchSavedReplies();
-
-    const interval = setInterval(() => {
+    const iv = setInterval(() => {
       fetchStatus();
-      if (status !== 'connected') {
-        fetchQR();
-      }
+      if (status !== 'connected') fetchQR();
     }, 5000);
+    return () => clearInterval(iv);
+  }, [sessionStatus, status, fetchStatus, fetchTeamMembers, fetchQR, fetchSavedReplies]);
 
-    return () => clearInterval(interval);
-  }, [sessionStatus, status, fetchStatus, fetchTeamMembers, fetchQR]);
+  useSocket('wa:status', fetchStatus);
+  useSocket('wa:qr', fetchQR);
 
-  useSocket('wa:status', () => {
-    fetchStatus();
-  });
-
-  useSocket('wa:qr', () => {
-    fetchQR();
-  });
+  // ── Handlers ──────────────────────────────────────────────────────────────
+  const handleConnect = async () => {
+    setWaLoading(true);
+    try {
+      setWhatsAppError('');
+      setStatus('connecting');
+      await api.post('/api/whatsapp/connect', {});
+      await fetchStatus();
+      await fetchQR();
+    } catch (err) {
+      setWhatsAppError(err instanceof Error ? err.message : 'Failed to connect');
+    } finally { setWaLoading(false); }
+  };
 
   const handleDisconnect = async () => {
+    setWaLoading(true);
     try {
       await api.post('/api/whatsapp/disconnect', {});
       setStatus('disconnected');
       setConnectedPhone(null);
       setQrCode(null);
-    } catch (error) {
-      console.error('Failed to disconnect:', error);
-    }
+    } catch {} finally { setWaLoading(false); }
   };
 
-  const handleConnect = async () => {
+  const handleWarmupToggle = async (enabled: boolean) => {
+    setWarmupSaving(true);
     try {
-      setWhatsAppError('');
-      setStatus('connecting');
-      await api.post('/api/whatsapp/connect', {});
-      await fetchStatus();
-      await fetchQR();
-    } catch (error) {
-      console.error('Failed to connect:', error);
-      setWhatsAppError(error instanceof Error ? error.message : 'Failed to connect to WhatsApp');
-    }
+      await api.patch('/api/whatsapp/session-settings', { warmupEnabled: enabled });
+      setWarmupEnabled(enabled);
+    } catch {} finally { setWarmupSaving(false); }
   };
 
   const handleResetSession = async () => {
+    setWaLoading(true);
     try {
       setWhatsAppError('');
       setStatus('disconnected');
       setConnectedPhone(null);
       setQrCode(null);
-
       await api.post('/api/whatsapp/reset-auth', {});
       await api.post('/api/whatsapp/connect', {});
-
       setStatus('connecting');
       await fetchStatus();
       await fetchQR();
-    } catch (error) {
-      console.error('Failed to reset WhatsApp session:', error);
-      setWhatsAppError(error instanceof Error ? error.message : 'Failed to reset WhatsApp session');
-    }
+    } catch (err) {
+      setWhatsAppError(err instanceof Error ? err.message : 'Failed to reset');
+    } finally { setWaLoading(false); }
   };
 
   const handleAddTeamMember = async () => {
+    if (!newMemberEmail.trim()) return;
+    setInviting(true);
     try {
-      if (sessionStatus !== 'authenticated') return;
       const teamData = await api.get('/api/teams');
       if (!teamData?.team?.id) return;
       await api.post(`/api/teams/${teamData.team.id}/members`, {
         email: newMemberEmail,
-        role: newMemberRole,
+        role: simpleRoleToStored(newMemberRole),
       });
       setNewMemberEmail('');
       fetchTeamMembers();
-    } catch (error) {
-      console.error('Failed to add team member:', error);
-    }
+    } catch {} finally { setInviting(false); }
   };
 
   const handleSaveReply = async () => {
-    await api.post('/api/saved-replies', {
-      shortcut,
-      message: savedReplyMessage,
-    });
-    setShortcut('');
-    setSavedReplyMessage('');
-    fetchSavedReplies();
+    if (!shortcut.trim() || !savedReplyMessage.trim()) return;
+    setSavingReply(true);
+    try {
+      await api.post('/api/saved-replies', { shortcut, message: savedReplyMessage });
+      setShortcut('');
+      setSavedReplyMessage('');
+      fetchSavedReplies();
+    } catch {} finally { setSavingReply(false); }
   };
 
   const handleDeleteSavedReply = async (id: string) => {
@@ -180,171 +219,647 @@ export default function SettingsPage() {
     fetchSavedReplies();
   };
 
-  return (
-    <div className="space-y-6">
-      <section className="overflow-hidden rounded-2xl border border-white/10 bg-[#111B21] p-6 shadow-[0_8px_20px_rgba(0,0,0,0.2)]">
-        <div className="inline-flex items-center gap-2 rounded-full border border-[#25D366]/30 dark:border-[#25D366]/30 bg-[#25D366]/10 dark:bg-[#25D366]/15 px-3 py-1.5 text-xs font-medium text-[#25D366]">
-          <Settings2 className="h-3.5 w-3.5" />
-          Workspace settings
+  // ── Password change handler ───────────────────────────────────────────────
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError('');
+    setPasswordSuccess('');
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPasswordError(t('password.errorMessages.allFieldsRequired'));
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError(t('password.errorMessages.passwordMismatch'));
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      setPasswordError(t('password.errorMessages.passwordTooShort'));
+      return;
+    }
+
+    if (currentPassword === newPassword) {
+      setPasswordError(t('password.errorMessages.passwordSame'));
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      await api.post('/api/auth/change-password', {
+        currentPassword,
+        newPassword,
+      });
+      setPasswordSuccess(t('password.successMessage'));
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setTimeout(() => setPasswordSuccess(''), 3000);
+    } catch (err: any) {
+      const errorMsg = err?.response?.data?.error;
+      if (errorMsg?.includes('incorrect')) {
+        setPasswordError(t('password.errorMessages.invalidCurrent'));
+      } else {
+        setPasswordError(errorMsg || t('password.errorMessages.generic'));
+      }
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
+  // ── Nav items ─────────────────────────────────────────────────────────────
+  const navItems: { id: Section; icon: React.ElementType; label: string }[] = [
+    { id: 'whatsapp',     icon: MessageCircle,      label: t('tabs.whatsapp') },
+    { id: 'team',         icon: Users,              label: t('tabs.team') },
+    { id: 'saved-replies',icon: MessageSquareReply, label: t('tabs.savedReplies') },
+    { id: 'account',      icon: User,               label: t('tabs.account') },
+    { id: 'password',     icon: ShieldCheck,        label: language === 'ar' ? t('password.title', { defaultValue: 'كلمة المرور' }) : t('password.title', { defaultValue: 'Password' }) },
+    { id: 'language',     icon: Globe,              label: t('tabs.language') },
+  ];
+
+  // ── Content renderers ─────────────────────────────────────────────────────
+  function WhatsAppSection() {
+    const statusConfig = {
+      connected:    { color: 'text-[#25D366]', bg: 'bg-[#25D366]/10', border: 'border-[#25D366]/30', dot: 'bg-[#25D366]', icon: Wifi },
+      disconnected: { color: 'text-red-400',   bg: 'bg-red-500/10',   border: 'border-red-500/30',   dot: 'bg-red-400',   icon: WifiOff },
+      connecting:   { color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/30', dot: 'bg-amber-400', icon: RefreshCw },
+    }[status];
+
+    const StatusIcon = statusConfig.icon;
+
+    return (
+      <div className="space-y-4">
+        {/* Status card */}
+        <div className={cn('rounded-2xl border p-5', statusConfig.bg, statusConfig.border)}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={cn('flex h-10 w-10 items-center justify-center rounded-xl', statusConfig.bg, 'border', statusConfig.border)}>
+                <StatusIcon className={cn('h-5 w-5', statusConfig.color, status === 'connecting' && 'animate-spin')} />
+              </div>
+              <div>
+                <p className={cn('font-semibold', statusConfig.color)}>
+                  {t(`whatsapp.status.${status}`)}
+                </p>
+                {status === 'connected' && connectedPhone && (
+                  <p className="text-xs text-gray-500 mt-0.5 font-mono dark:text-[#8696A0]">{connectedPhone}</p>
+                )}
+                {status === 'disconnected' && (
+                  <p className="text-xs text-gray-500 mt-0.5 dark:text-[#8696A0]">{t('whatsapp.noQR')}</p>
+                )}
+              </div>
+            </div>
+            <span className="relative flex h-2.5 w-2.5">
+              {status === 'connected' && (
+                <span className={cn('absolute inline-flex h-full w-full animate-ping rounded-full opacity-75', statusConfig.dot)} />
+              )}
+              <span className={cn('relative inline-flex h-2.5 w-2.5 rounded-full', statusConfig.dot)} />
+            </span>
+          </div>
         </div>
-        <h1 className="mt-3 text-3xl font-semibold text-white">Settings</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-[#8696A0]">Connect WhatsApp, manage your team, and handle account settings without exposing any backend features you do not already have.</p>
+
+        {/* Error */}
+        {whatsAppError && (
+          <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+            {whatsAppError}
+          </div>
+        )}
+
+        {/* QR Code */}
+        {status !== 'connected' && qrCode && (
+          <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5 dark:border-white/10 dark:bg-[#202C33]">
+            <p className="mb-4 text-sm font-medium text-gray-900 dark:text-white">{t('whatsapp.scanQR')}</p>
+            <div className="flex justify-center">
+              <QRCodeDisplay qrCode={qrCode} />
+            </div>
+          </div>
+        )}
+
+        {/* Warm-up toggle */}
+        <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-white/10 dark:bg-[#202C33]">
+          <div className="flex items-start gap-3">
+            <div className={cn(
+              'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl',
+              warmupEnabled
+                ? 'bg-amber-500/15 text-amber-500'
+                : 'bg-[#25D366]/10 text-[#25D366]',
+            )}>
+              <ShieldCheck className="h-4 w-4" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">{t('whatsapp.warmup.label')}</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-gray-500 dark:text-[#8696A0]">{t('whatsapp.warmup.description')}</p>
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={warmupEnabled}
+                  disabled={warmupSaving}
+                  onClick={() => handleWarmupToggle(!warmupEnabled)}
+                  className={cn(
+                    'relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#25D366]/50 disabled:opacity-50 disabled:cursor-not-allowed',
+                    warmupEnabled ? 'bg-amber-500' : 'bg-gray-200 dark:bg-white/20',
+                  )}
+                >
+                  <span className={cn(
+                    'pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200',
+                    warmupEnabled ? 'translate-x-5' : 'translate-x-0.5',
+                  )} />
+                </button>
+                <span className={cn(
+                  'text-xs font-medium',
+                  warmupEnabled ? 'text-amber-500' : 'text-[#25D366]',
+                )}>
+                  {warmupSaving ? t('whatsapp.warmup.saving') : warmupEnabled ? t('whatsapp.warmup.on') : t('whatsapp.warmup.off')}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex flex-wrap gap-2 pt-1">
+          {status !== 'connected' && (
+            <>
+              <Button
+                onClick={handleConnect}
+                disabled={waLoading || status === 'connecting'}
+                className="gap-2 bg-[#25D366] text-black hover:bg-[#128C7E] hover:text-white"
+              >
+                <Wifi className="h-4 w-4" />
+                {t('whatsapp.connect')}
+              </Button>
+              <Button
+                onClick={handleResetSession}
+                disabled={waLoading}
+                variant="outline"
+                className="gap-2"
+              >
+                <RefreshCw className="h-4 w-4" />
+                {t('whatsapp.resetSession')}
+              </Button>
+            </>
+          )}
+          {status === 'connected' && (
+            <Button
+              onClick={handleDisconnect}
+              disabled={waLoading}
+              variant="destructive"
+              className="gap-2"
+            >
+              <WifiOff className="h-4 w-4" />
+              {t('whatsapp.disconnect')}
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function TeamSection() {
+    return (
+      <div className="space-y-5">
+        {teamName && (
+          <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-500 dark:border-white/10 dark:bg-white/5 dark:text-[#8696A0]">
+            <Users className="h-3.5 w-3.5" />
+            {t('team.teamName', { name: teamName })}
+          </div>
+        )}
+
+        {/* Invite form */}
+        <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 space-y-3 dark:border-white/10 dark:bg-[#202C33]">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-[#8696A0]">{t('team.inviteMember')}</p>
+          <Input
+            placeholder={t('team.emailPlaceholder')}
+            value={newMemberEmail}
+            onChange={(e) => setNewMemberEmail(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleAddTeamMember()}
+          />
+          <div className="flex gap-2">
+            <select
+              value={newMemberRole}
+              onChange={(e) => setNewMemberRole(e.target.value as SimpleRole)}
+              className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#25D366]/30 dark:border-white/10 dark:bg-[#111B21] dark:text-white"
+            >
+              {SIMPLE_ROLES.map((r) => (
+                <option key={r} value={r}>{t(`team.roles.${r}`, { defaultValue: SIMPLE_ROLE_LABEL[r] })}</option>
+              ))}
+            </select>
+            <Button
+              onClick={handleAddTeamMember}
+              disabled={inviting || !newMemberEmail.trim()}
+              className="gap-2 bg-[#25D366] text-black hover:bg-[#128C7E] hover:text-white"
+            >
+              <Plus className="h-4 w-4" />
+              {inviting ? '…' : t('team.inviteMember')}
+            </Button>
+          </div>
+        </div>
+
+        {/* Member list */}
+        <div className="space-y-2">
+          {teamMembers.length === 0 ? (
+            <p className="py-6 text-center text-sm text-gray-500 dark:text-[#8696A0]">{t('team.noMembers')}</p>
+          ) : (
+            teamMembers.map((member) => (
+              <div
+                key={member.id ?? member.email}
+                className="flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-white/10 dark:bg-[#202C33]"
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#25D366]/20 text-xs font-bold text-[#25D366]">
+                  {initials(member.name, member.email)}
+                </div>
+                <div className="min-w-0 flex-1">
+                  {member.name && <p className="truncate text-sm font-medium text-gray-900 dark:text-white">{member.name}</p>}
+                  <p className="truncate text-xs text-gray-500 dark:text-[#8696A0]">{member.email}</p>
+                </div>
+                <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide shrink-0', SIMPLE_ROLE_BADGE[toSimpleRole(member.role)])}>
+                  {t(`team.roles.${toSimpleRole(member.role)}`, { defaultValue: SIMPLE_ROLE_LABEL[toSimpleRole(member.role)] })}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function SavedRepliesSection() {
+    return (
+      <div className="space-y-5">
+        {/* Add form */}
+        <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 space-y-3 dark:border-white/10 dark:bg-[#202C33]">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-[#8696A0]">{t('savedReplies.saveReply')}</p>
+          <div className="relative">
+            <Hash className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500 dark:text-[#8696A0]" />
+            <Input
+              value={shortcut}
+              onChange={(e) => setShortcut(e.target.value)}
+              placeholder={t('savedReplies.shortcutPlaceholder')}
+              className="ps-9 font-mono"
+            />
+          </div>
+          <div className="relative">
+            <AlignLeft className="absolute start-3 top-3 h-4 w-4 text-gray-500 dark:text-[#8696A0]" />
+            <textarea
+              value={savedReplyMessage}
+              onChange={(e) => setSavedReplyMessage(e.target.value)}
+              placeholder={t('savedReplies.messagePlaceholder')}
+              rows={3}
+              className="w-full rounded-lg border border-gray-200 bg-white ps-9 pe-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-[#25D366]/30 dark:border-white/10 dark:bg-[#111B21] dark:text-white dark:placeholder:text-[#8696A0]"
+            />
+          </div>
+          <Button
+            onClick={handleSaveReply}
+            disabled={savingReply || !shortcut.trim() || !savedReplyMessage.trim()}
+            className="w-full gap-2 bg-[#25D366] text-black hover:bg-[#128C7E] hover:text-white"
+          >
+            <Plus className="h-4 w-4" />
+            {savingReply ? '…' : t('savedReplies.saveReply')}
+          </Button>
+        </div>
+
+        {/* List */}
+        <div className="space-y-2">
+          {savedReplies.length === 0 ? (
+            <p className="py-6 text-center text-sm text-gray-500 dark:text-[#8696A0]">{t('savedReplies.noReplies')}</p>
+          ) : (
+            savedReplies.map((reply) => (
+              <div
+                key={reply.id}
+                className="flex items-start justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-white/10 dark:bg-[#202C33]"
+              >
+                <div className="min-w-0 flex-1">
+                  <span className="inline-block rounded-md bg-[#25D366]/15 px-2 py-0.5 font-mono text-xs font-semibold text-[#25D366] mb-1">
+                    {reply.shortcut}
+                  </span>
+                  <p className="text-sm text-gray-500 line-clamp-2 dark:text-[#8696A0]">{reply.message}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteSavedReply(reply.id)}
+                  className="shrink-0 rounded-lg p-2 text-[#8696A0] hover:bg-red-500/10 hover:text-red-400 transition-colors"
+                  aria-label={t('savedReplies.deleteConfirm.confirm')}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function AccountSection() {
+    const name  = session?.user?.name;
+    const email = session?.user?.email;
+    const role  = (session?.user as any)?.role ?? 'AGENT';
+
+    return (
+      <div className="space-y-5">
+        {/* Profile card */}
+        <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5 flex items-center gap-4 dark:border-white/10 dark:bg-[#202C33]">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#25D366] to-[#128C7E] text-lg font-bold text-white shadow-[0_4px_12px_rgba(37,211,102,0.3)]">
+            {initials(name, email)}
+          </div>
+          <div className="min-w-0 flex-1">
+            {name && <p className="truncate text-base font-semibold text-gray-900 dark:text-white">{name}</p>}
+            <p className="truncate text-sm text-gray-500 dark:text-[#8696A0]">{email}</p>
+            <span className={cn('mt-1.5 inline-block rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide', SIMPLE_ROLE_BADGE[toSimpleRole(role)])}>
+              {t(`team.roles.${toSimpleRole(role)}`, { defaultValue: SIMPLE_ROLE_LABEL[toSimpleRole(role)] })}
+            </span>
+          </div>
+        </div>
+
+        {/* Sign out */}
+        <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4">
+          <p className="mb-3 text-sm font-medium text-gray-900 dark:text-white">{t('account.signOutConfirm.title')}</p>
+          <p className="mb-4 text-xs text-gray-500 dark:text-[#8696A0]">{t('account.signOutConfirm.message')}</p>
+          <Button
+            onClick={() => signOut()}
+            variant="destructive"
+            className="gap-2"
+          >
+            <LogOut className="h-4 w-4" />
+            {t('account.signOut')}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  function PasswordSection() {
+    const { t: tPass } = useTranslation('settings');
+
+    return (
+      <form onSubmit={handleChangePassword} className="space-y-6 max-w-2xl">
+
+        {/* Password fields grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {/* Current password - Full width on mobile */}
+          <div className="md:col-span-2">
+            <label htmlFor="current-password" className="block text-sm font-semibold text-gray-900 dark:text-white mb-2.5 flex items-center gap-2">
+              <Lock className="h-4 w-4 text-[#25D366]" />
+              {tPass('password.currentPassword')}
+            </label>
+            <div className="relative group">
+              <input
+                id="current-password"
+                type={showCurrentPassword ? 'text' : 'password'}
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                disabled={changingPassword}
+                className="w-full px-4 py-3 pr-12 rounded-xl border border-gray-300/60 bg-white/50 text-sm text-gray-900 placeholder:text-gray-500 outline-none transition-all duration-200 hover:bg-white/70 dark:hover:bg-white/10 focus:border-[#25D366] focus:ring-2 focus:ring-[#25D366]/30 disabled:opacity-50 disabled:cursor-not-allowed dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-[#8696A0]"
+                placeholder={tPass('password.currentPasswordPlaceholder')}
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 transition-colors disabled:opacity-50"
+                disabled={changingPassword}
+                aria-label={showCurrentPassword ? 'Hide password' : 'Show password'}
+              >
+                {showCurrentPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              </button>
+            </div>
+          </div>
+
+          {/* New password */}
+          <div>
+            <label htmlFor="new-password" className="block text-sm font-semibold text-gray-900 dark:text-white mb-2.5 flex items-center gap-2">
+              <Lock className="h-4 w-4 text-[#25D366]" />
+              {tPass('password.newPassword')}
+            </label>
+            <div className="relative group">
+              <input
+                id="new-password"
+                type={showNewPassword ? 'text' : 'password'}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                disabled={changingPassword}
+                className="w-full px-4 py-3 pr-12 rounded-xl border border-gray-300/60 bg-white/50 text-sm text-gray-900 placeholder:text-gray-500 outline-none transition-all duration-200 hover:bg-white/70 dark:hover:bg-white/10 focus:border-[#25D366] focus:ring-2 focus:ring-[#25D366]/30 disabled:opacity-50 disabled:cursor-not-allowed dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-[#8696A0]"
+                placeholder={tPass('password.newPasswordPlaceholder')}
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowNewPassword(!showNewPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 transition-colors disabled:opacity-50"
+                disabled={changingPassword}
+                aria-label={showNewPassword ? 'Hide password' : 'Show password'}
+              >
+                {showNewPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Confirm password */}
+          <div>
+            <label htmlFor="confirm-password" className="block text-sm font-semibold text-gray-900 dark:text-white mb-2.5 flex items-center gap-2">
+              <Lock className="h-4 w-4 text-[#25D366]" />
+              {tPass('password.confirmPassword')}
+            </label>
+            <div className="relative group">
+              <input
+                id="confirm-password"
+                type={showConfirmPassword ? 'text' : 'password'}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                disabled={changingPassword}
+                className="w-full px-4 py-3 pr-12 rounded-xl border border-gray-300/60 bg-white/50 text-sm text-gray-900 placeholder:text-gray-500 outline-none transition-all duration-200 hover:bg-white/70 dark:hover:bg-white/10 focus:border-[#25D366] focus:ring-2 focus:ring-[#25D366]/30 disabled:opacity-50 disabled:cursor-not-allowed dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-[#8696A0]"
+                placeholder={tPass('password.confirmPasswordPlaceholder')}
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 transition-colors disabled:opacity-50"
+                disabled={changingPassword}
+                aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+              >
+                {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Error message */}
+        {passwordError && (
+          <div className="animate-in fade-in slide-in-from-top-2 rounded-xl border border-red-200/50 bg-red-50/80 backdrop-blur px-4 py-3 dark:border-red-500/30 dark:bg-red-500/10">
+            <p className="text-sm font-medium text-red-800 dark:text-red-300">{passwordError}</p>
+          </div>
+        )}
+
+        {/* Success message */}
+        {passwordSuccess && (
+          <div className="animate-in fade-in slide-in-from-top-2 rounded-xl border border-[#25D366]/30 bg-[#25D366]/10 backdrop-blur px-4 py-3">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-[#25D366] flex-shrink-0" />
+              <p className="text-sm font-medium text-[#25D366]">{tPass('password.successMessage')}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Submit button */}
+        <Button
+          type="submit"
+          disabled={changingPassword || !currentPassword || !newPassword || !confirmPassword}
+          className="w-full gap-2 bg-gradient-to-r from-[#25D366] to-emerald-600 text-white hover:from-[#25D366]/90 hover:to-emerald-600/90 shadow-lg shadow-[#25D366]/30 hover:shadow-[#25D366]/40 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 py-3 rounded-xl font-semibold text-base"
+        >
+          {changingPassword ? (
+            <>
+              <Loader className="h-4 w-4 animate-spin" />
+              {tPass('password.changing')}
+            </>
+          ) : (
+            <>
+              <ShieldCheck className="h-4 w-4" />
+              {tPass('password.changeButton')}
+            </>
+          )}
+        </Button>
+
+        {/* Security notice */}
+        <div className="rounded-xl border border-blue-200/50 bg-blue-50/80 backdrop-blur px-4 py-3 dark:border-blue-500/30 dark:bg-blue-500/10">
+          <div className="flex gap-3">
+            <ShieldCheck className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-blue-800 dark:text-blue-300">
+              {tPass('password.securityNotice')}
+            </p>
+          </div>
+        </div>
+      </form>
+    );
+  }
+
+  function LanguageSection() {
+    return (
+      <div className="space-y-4">
+        <p className="text-sm text-gray-500 dark:text-[#8696A0]">{t('language.description')}</p>
+
+        <LanguageSwitcher variant="full" className="max-w-sm" />
+
+        <div className={cn(
+          'flex items-center gap-3 rounded-xl border p-4',
+          'border-[#25D366]/30 bg-[#25D366]/8',
+        )}>
+          <CheckCircle2 className="h-5 w-5 text-[#25D366] shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-gray-900 dark:text-white">
+              {language === 'ar' ? t('language.languages.ar') : t('language.languages.en')}
+            </p>
+            <p className="text-xs text-gray-500 mt-0.5 dark:text-[#8696A0]">
+              {language === 'ar' ? t('language.direction.rtl') : t('language.direction.ltr')}
+            </p>
+          </div>
+        </div>
+
+        <p className="text-xs text-gray-500 dark:text-[#8696A0]">{t('language.restartNotice')}</p>
+      </div>
+    );
+  }
+
+  const sectionTitles: Record<Section, string> = {
+    whatsapp:      t('whatsapp.title'),
+    team:          t('team.title'),
+    'saved-replies': t('savedReplies.title'),
+    account:       t('account.title'),
+    password:      t('password.title'),
+    language:      t('language.title'),
+  };
+
+  const sectionDesc: Record<Section, string> = {
+    whatsapp:      t('whatsapp.description'),
+    team:          t('team.description'),
+    'saved-replies': t('savedReplies.description'),
+    account:       t('account.description'),
+    password:      t('password.description'),
+    language:      t('language.description'),
+  };
+
+  return (
+    <div className="space-y-6 overflow-y-auto" dir={isRTL ? 'rtl' : 'ltr'}>
+      {/* ── Header ── */}
+      <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-[0_8px_20px_rgba(0,0,0,0.2)] dark:border-white/10 dark:bg-[#111B21]">
+        <div className="inline-flex items-center gap-2 rounded-full border border-[#25D366]/30 bg-[#25D366]/10 px-3 py-1.5 text-xs font-medium text-[#25D366]">
+          <Settings2 className="h-3.5 w-3.5" />
+          {t('badge')}
+        </div>
+        <h1 className="mt-3 text-3xl font-semibold text-gray-900 dark:text-white">{t('title')}</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-500 dark:text-[#8696A0]">{t('subtitle')}</p>
       </section>
 
-      <Tabs defaultValue="whatsapp" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
-          <TabsTrigger value="team">Team</TabsTrigger>
-          <TabsTrigger value="saved-replies">Saved Replies</TabsTrigger>
-          <TabsTrigger value="account">Account</TabsTrigger>
-        </TabsList>
+      {/* ── Mobile nav ── */}
+      <div className="flex gap-1.5 overflow-x-auto pb-1 md:hidden scrollbar-none">
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          const active = activeSection === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setActiveSection(item.id)}
+              className={cn(
+                'flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition-all',
+                active
+                  ? 'border-[#25D366]/30 bg-[#25D366]/10 text-[#25D366]'
+                  : 'border-gray-200 bg-gray-50 text-gray-500 hover:text-gray-900 dark:border-white/10 dark:bg-[#202C33] dark:text-[#8696A0] dark:hover:text-white',
+              )}
+            >
+              <Icon className="h-3.5 w-3.5 shrink-0" />
+              {item.label}
+            </button>
+          );
+        })}
+      </div>
 
-        <TabsContent value="whatsapp" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>WhatsApp Connection</CardTitle>
-              <CardDescription>Manage your WhatsApp Web connection</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <ConnectionStatus status={status} />
-              {status === 'connected' && connectedPhone && (
-                <div className="rounded-md bg-green-50 p-3 text-sm text-green-700">
-                  Connected WhatsApp number: <span className="font-semibold">{connectedPhone}</span>
-                </div>
-              )}
-              {whatsAppError && (
-                <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-                  {whatsAppError}
-                </div>
-              )}
-              {status !== 'connected' && qrCode && (
-                <QRCodeDisplay qrCode={qrCode} />
-              )}
-              {status !== 'connected' && !qrCode && (
-                <div className="text-sm text-gray-600">
-                  Click connect to generate a QR code.
-                </div>
-              )}
-              {status !== 'connected' && (
-                <div className="flex gap-2">
-                  <Button onClick={handleConnect}>
-                    Connect WhatsApp
-                  </Button>
-                  <Button onClick={handleResetSession} variant="outline">
-                    Reset Session
-                  </Button>
-                </div>
-              )}
-              {status === 'connected' && (
-                <Button onClick={handleDisconnect} variant="destructive">
-                  Disconnect WhatsApp
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+      {/* ── Main layout ── */}
+      <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-start">
 
-        <TabsContent value="team" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Team Members</CardTitle>
-              <CardDescription>Manage team access to this system</CardDescription>
-            </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="Enter email address"
-                    value={newMemberEmail}
-                    onChange={(e) => setNewMemberEmail(e.target.value)}
-                  />
-                  <select
-                    value={newMemberRole}
-                    onChange={(e) => setNewMemberRole(e.target.value)}
-                    className="rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#202C33] px-3 py-2 text-sm text-gray-900 dark:text-white"
-                  >
-                    <option value="ADMIN">Admin</option>
-                    <option value="TEAM_LEAD">Team Lead</option>
-                    <option value="AGENT">Agent</option>
-                    <option value="ANALYST">Analyst</option>
-                    <option value="VIEWER">Viewer</option>
-                  </select>
-                  <Button onClick={handleAddTeamMember}>Invite Member</Button>
-                </div>
-                {teamName && (
-                  <div className="rounded-lg bg-gray-50 px-3 py-2 text-sm text-white">
-                    Team: <span className="font-semibold">{teamName}</span>
-                  </div>
+        {/* ── Sidebar nav (desktop) ── */}
+        <aside className="hidden md:flex w-52 shrink-0 flex-col gap-1 rounded-2xl border border-gray-200 bg-white p-2 dark:border-white/10 dark:bg-[#111B21]">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const active = activeSection === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setActiveSection(item.id)}
+                className={cn(
+                  'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all',
+                  active
+                    ? 'bg-[#25D366]/10 text-[#25D366]'
+                    : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900 dark:text-[#8696A0] dark:hover:bg-white/5 dark:hover:text-white',
                 )}
-                <div className="space-y-2">
-                  {teamMembers.map((member) => (
-                    <div
-                      key={member.id ?? member.email}
-                      className="flex items-center justify-between p-2 border rounded"
-                    >
-                      <span>{member.email}</span>
-                      <span className="text-sm text-gray-500">{member.role || 'Member'}</span>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-          </Card>
-        </TabsContent>
+              >
+                <Icon className={cn('h-4 w-4 shrink-0 transition-colors', active ? 'text-[#25D366]' : 'text-gray-500 group-hover:text-gray-900 dark:text-[#8696A0] dark:group-hover:text-white')} />
+                <span className="flex-1 text-start">{item.label}</span>
+                {active && <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-60" />}
+              </button>
+            );
+          })}
+        </aside>
 
-        <TabsContent value="saved-replies" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Saved Replies</CardTitle>
-              <CardDescription>Use shortcuts like /thanks in the message box</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-2">
-                <Input
-                  placeholder="/thanks"
-                  value={shortcut}
-                  onChange={(e) => setShortcut(e.target.value)}
-                />
-                <Input
-                  placeholder="Thanks for reaching out. We’ll get back to you shortly."
-                  value={savedReplyMessage}
-                  onChange={(e) => setSavedReplyMessage(e.target.value)}
-                />
-              </div>
-              <Button onClick={handleSaveReply}>Save Reply</Button>
-              <div className="space-y-2">
-                {savedReplies.map((reply) => (
-                  <div key={reply.id} className="flex items-center justify-between rounded-lg border p-3">
-                    <div>
-                      <div className="font-medium text-gray-900">{reply.shortcut}</div>
-                      <div className="text-sm text-gray-600">{reply.message}</div>
-                    </div>
-                    <Button variant="outline" onClick={() => handleDeleteSavedReply(reply.id)}>
-                      Delete
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+        {/* ── Content panel ── */}
+        <div className="min-w-0 flex-1 rounded-2xl border border-gray-200 bg-white p-4 sm:p-6 dark:border-white/10 dark:bg-[#111B21]">
+          {/* Section header */}
+          <div className="mb-6 border-b border-gray-200 pb-5 dark:border-white/10">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{sectionTitles[activeSection]}</h2>
+            <p className="mt-1 text-sm text-gray-500 dark:text-[#8696A0]">{sectionDesc[activeSection]}</p>
+          </div>
 
-        <TabsContent value="account" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Account</CardTitle>
-              <CardDescription>Manage your account settings</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <p className="text-sm text-gray-600">Email: {session?.user?.email}</p>
-                <p className="text-sm text-gray-600">Name: {session?.user?.name}</p>
-              </div>
-              <Button onClick={() => signOut()} variant="outline">
-                Sign Out
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+          {/* Section content */}
+          {activeSection === 'whatsapp'      && <WhatsAppSection />}
+          {activeSection === 'team'          && <TeamSection />}
+          {activeSection === 'saved-replies' && <SavedRepliesSection />}
+          {activeSection === 'account'       && <AccountSection />}
+          {activeSection === 'password'      && <PasswordSection />}
+          {activeSection === 'language'      && <LanguageSection />}
+        </div>
+      </div>
     </div>
   );
 }

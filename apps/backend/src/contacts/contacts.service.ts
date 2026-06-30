@@ -1,5 +1,6 @@
 import { prisma } from '../lib/prisma';
 import { normalizePhone, phoneFingerprint } from '../lib/phone';
+import { assertTeamAccess, NotFoundError, type AuthActor } from '../auth/authorize';
 
 function buildPhoneVariants(phone: string) {
   const normalized = normalizePhone(phone) || '';
@@ -16,7 +17,12 @@ function buildPhoneVariants(phone: string) {
 
 export class ContactsService {
   static async getContacts(filters?: { search?: string; tag?: string }) {
-    const where: any = {};
+    const where: any = {
+      AND: [
+        { NOT: { phone: { contains: '@g.us' } } },
+        { NOT: { phone: { contains: '@broadcast' } } },
+      ],
+    };
 
     if (filters?.search) {
       where.OR = [
@@ -28,8 +34,7 @@ export class ContactsService {
     if (filters?.tag) {
       where.OR = [
         ...(where.OR || []),
-        { tag: filters.tag },
-        { tag: { contains: filters.tag } },
+        { contactTags: { some: { tag: { name: { equals: filters.tag, mode: 'insensitive' } } } } },
       ];
     }
 
@@ -40,24 +45,19 @@ export class ContactsService {
     });
   }
 
-  static async createContact(data: { phone: string; name?: string; tag?: string; notes?: string; teamId?: string }) {
+  static async createContact(data: { phone: string; name?: string; notes?: string; teamId?: string }) {
     const phone = normalizePhone(data.phone);
     if (!phone) {
       throw new Error('Invalid phone number');
     }
 
-    const existing = await prisma.contact.findFirst({
-      where: {
-        phone,
-      },
-    });
+    const existing = await prisma.contact.findFirst({ where: { phone } });
 
     if (existing) {
       return await prisma.contact.update({
         where: { id: existing.id },
         data: {
           name: data.name ?? existing.name,
-          tag: data.tag ?? existing.tag,
           notes: data.notes ?? existing.notes,
           teamId: data.teamId ?? existing.teamId,
           phone,
@@ -67,34 +67,25 @@ export class ContactsService {
 
     return await prisma.contact.upsert({
       where: { phone },
-      create: {
-        phone,
-        name: data.name,
-        tag: data.tag,
-        notes: data.notes,
-        teamId: data.teamId,
-      },
-      update: {
-        name: data.name,
-        tag: data.tag,
-        notes: data.notes,
-        teamId: data.teamId,
-      },
+      create: { phone, name: data.name, notes: data.notes, teamId: data.teamId },
+      update: { name: data.name, notes: data.notes, teamId: data.teamId },
     });
   }
 
-  static async updateContact(id: string, data: { name?: string; tag?: string; notes?: string }) {
-    const contact = await prisma.contact.findFirst({ where: { id } });
-    if (!contact) throw new Error('Contact not found');
+  static async updateContact(id: string, data: { name?: string; notes?: string }, actor: AuthActor) {
+    const contact = await prisma.contact.findUnique({ where: { id } });
+    if (!contact) throw new NotFoundError('Contact not found');
+    assertTeamAccess(actor, contact);
     return await prisma.contact.update({
       where: { id: contact.id },
       data,
     });
   }
 
-  static async deleteContact(id: string) {
-    const contact = await prisma.contact.findFirst({ where: { id } });
-    if (!contact) throw new Error('Contact not found');
+  static async deleteContact(id: string, actor: AuthActor) {
+    const contact = await prisma.contact.findUnique({ where: { id } });
+    if (!contact) throw new NotFoundError('Contact not found');
+    assertTeamAccess(actor, contact);
 
     return await prisma.$transaction(async (tx) => {
       const conversations = await tx.conversation.findMany({
@@ -118,7 +109,7 @@ export class ContactsService {
     });
   }
 
-  static async importContacts(contacts: Array<{ phone: string; name?: string; tag?: string }>, teamId?: string) {
+  static async importContacts(contacts: Array<{ phone: string; name?: string }>, teamId?: string) {
     const results = [];
     for (const contact of contacts) {
       try {

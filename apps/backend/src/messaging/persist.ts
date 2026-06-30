@@ -102,9 +102,19 @@ export interface PersistResult {
  * Pure side-effecting function: no return value beyond the assigned IDs.
  * The caller is responsible for resolving conversationId before calling.
  */
+export interface PersistExtra {
+  /** For group messages: E.164 phone of the individual participant who sent this. */
+  senderPhone?: string | null;
+  /** For group messages: WhatsApp display name (pushName) of the sender. */
+  senderName?: string | null;
+  /** CRM contact name (overrides phone/pushName in notification title). */
+  contactName?: string | null;
+}
+
 export async function persistNormalizedMessage(
   msg: NormalizedMessage,
   renderable: RenderablePayload,
+  extra?: PersistExtra,
 ): Promise<PersistResult> {
   const content = msg.content;
   // msg.direction is the schema's 'INBOUND'|'OUTBOUND' string literal, but the Prisma
@@ -144,6 +154,9 @@ export async function persistNormalizedMessage(
       retryCount:    msg.metadata.attemptCount ?? 0,
       replyToId:     msg.reply?.messageId ?? null,
       replyToBody:   msg.reply?.preview ?? null,
+      // ── Group sender attribution ──────────────────────────────────────────
+      ...(extra?.senderPhone != null ? { senderPhone: extra.senderPhone } : {}),
+      ...(extra?.senderName  != null ? { senderName:  extra.senderName  } : {}),
 
       // ── Normalized columns (schemaVersion=1 readers) ──────────────────────
       schemaVersion: 1,
@@ -181,6 +194,7 @@ export async function persistNormalizedMessage(
     'message:new',
     {
       conversationId: msg.conversationId,
+      contactName: extra?.contactName ?? null,
       message: {
         id:               created.id,
         externalId,
@@ -198,6 +212,9 @@ export async function persistNormalizedMessage(
         status:           status.toString(),
         replyToId:        msg.reply?.messageId ?? null,
         replyToBody:      msg.reply?.preview ?? null,
+        senderPhone:      extra?.senderPhone ?? null,
+        senderName:       extra?.senderName  ?? null,
+        contactName:      extra?.contactName ?? null,
         // Normalized fields — new renderer uses these when present
         schemaVersion:    1,
         clientId:         msg.clientId,

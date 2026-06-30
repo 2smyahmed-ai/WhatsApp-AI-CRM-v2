@@ -11,21 +11,15 @@ export class AnalyticsService {
       totalContacts,
       openConversations,
       todayMessages,
-      automationsFired,
+      hotLeads,
     ] = await Promise.all([
       prisma.contact.count(),
       prisma.conversation.count({ where: { status: 'OPEN' } }),
       prisma.message.count({
-        where: {
-          timestamp: {
-            gte: today,
-            lt: tomorrow,
-          },
-        },
+        where: { timestamp: { gte: today, lt: tomorrow } },
       }),
-      prisma.analytics.findFirst({
-        where: { date: today },
-        select: { automationsFired: true },
+      prisma.leadQualification.count({
+        where: { status: 'HOT' },
       }),
     ]);
 
@@ -33,7 +27,7 @@ export class AnalyticsService {
       totalContacts,
       openConversations,
       todayMessages,
-      automationsFired: automationsFired?.automationsFired || 0,
+      hotLeads,
     };
   }
 

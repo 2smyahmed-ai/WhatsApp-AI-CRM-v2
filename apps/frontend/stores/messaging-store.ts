@@ -47,6 +47,7 @@ interface MessagingState {
   buffers: Map<string, ConvBuffer>;
 
   // ── Realtime sync ──
+  /** Persisted to localStorage so a page reload doesn't re-trigger a full resync. */
   lastSeenSeq: number;
 
   // ── Typing ──
@@ -117,7 +118,9 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
   conversations: new Map(),
   conversationOrder: [],
   buffers: new Map(),
-  lastSeenSeq: 0,
+  lastSeenSeq: typeof window !== 'undefined'
+    ? parseInt(localStorage.getItem('crm-lastSeenSeq') || '0', 10)
+    : 0,
   typing: new Map(),
 
   seedConversations(list) {
@@ -229,7 +232,13 @@ export const useMessagingStore = create<MessagingState>((set, get) => ({
   },
 
   setLastSeenSeq(seq) {
-    set(s => ({ lastSeenSeq: Math.max(s.lastSeenSeq, seq) }));
+    set(s => {
+      const next = Math.max(s.lastSeenSeq, seq);
+      if (typeof window !== 'undefined') {
+        try { localStorage.setItem('crm-lastSeenSeq', String(next)); } catch {}
+      }
+      return { lastSeenSeq: next };
+    });
   },
 
   typingStart(conversationId, userId) {

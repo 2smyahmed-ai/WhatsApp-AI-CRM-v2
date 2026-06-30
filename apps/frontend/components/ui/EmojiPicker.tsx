@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 
 const EMOJI_CATEGORIES: { label: string; emojis: string[] }[] = [
   {
@@ -32,12 +34,33 @@ const EMOJI_CATEGORIES: { label: string; emojis: string[] }[] = [
 interface EmojiPickerProps {
   onSelect: (emoji: string) => void;
   onClose: () => void;
+  anchorRef?: React.RefObject<HTMLElement | null>;
 }
 
-export default function EmojiPicker({ onSelect, onClose }: EmojiPickerProps) {
+export default function EmojiPicker({ onSelect, onClose, anchorRef }: EmojiPickerProps) {
+  const { t } = useTranslation('chat');
   const [activeCategory, setActiveCategory] = useState(0);
   const [search, setSearch] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
+  const [fixedStyle, setFixedStyle] = useState<React.CSSProperties | null>(null);
+
+  // Measure anchor position and switch to fixed/portal mode to escape overflow-hidden containers.
+  useEffect(() => {
+    if (!anchorRef?.current) return;
+    const rect = anchorRef.current.getBoundingClientRect();
+    const pickerWidth = 288; // w-72
+    const margin = 8;
+    let left: number;
+    // When the button is on the right half of the screen (e.g. RTL input bar),
+    // align the picker's right edge with the button's right edge so it opens leftward
+    // and stays inside the chat area. Otherwise open rightward from the button's left edge.
+    if (rect.right > window.innerWidth / 2) {
+      left = Math.max(rect.right - pickerWidth, margin);
+    } else {
+      left = Math.min(rect.left, window.innerWidth - pickerWidth - margin);
+    }
+    setFixedStyle({ bottom: window.innerHeight - rect.top + margin, left });
+  }, [anchorRef]);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -53,17 +76,18 @@ export default function EmojiPicker({ onSelect, onClose }: EmojiPickerProps) {
     ? EMOJI_CATEGORIES.flatMap((c) => c.emojis).filter((e) => e.includes(search))
     : EMOJI_CATEGORIES[activeCategory].emojis;
 
-  return (
+  const pickerContent = (
     <div
       ref={containerRef}
-      className="absolute bottom-full mb-2 left-0 z-50 w-72 rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#202C33] shadow-xl overflow-hidden"
+      style={fixedStyle ? { position: 'fixed', zIndex: 9999, ...fixedStyle } : undefined}
+      className={`${!fixedStyle ? 'absolute bottom-full mb-2 start-0 z-[9999]' : ''} w-72 rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#202C33] shadow-xl overflow-hidden`}
     >
       {/* Search */}
       <div className="p-2 border-b border-gray-100 dark:border-white/10">
         <input
           autoFocus
           type="text"
-          placeholder="Search emoji…"
+          placeholder={t('composer.searchEmoji')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="w-full rounded-lg border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#111B21] px-3 py-1.5 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-[#8696A0] outline-none focus:border-[#25D366]"
@@ -102,9 +126,16 @@ export default function EmojiPicker({ onSelect, onClose }: EmojiPickerProps) {
           </button>
         ))}
         {filtered.length === 0 && (
-          <p className="col-span-8 py-4 text-center text-xs text-gray-400 dark:text-[#8696A0]">No results</p>
+          <p className="col-span-8 py-4 text-center text-xs text-gray-400 dark:text-[#8696A0]">{t('composer.noResults')}</p>
         )}
       </div>
     </div>
   );
+
+  // Portal mode: render to document.body to escape any overflow-hidden ancestor.
+  if (anchorRef) {
+    if (fixedStyle === null) return null; // wait for measurement before showing
+    return createPortal(pickerContent, document.body);
+  }
+  return pickerContent;
 }

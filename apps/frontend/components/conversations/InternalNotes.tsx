@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Trash2, Loader2, StickyNote, Send } from 'lucide-react';
 import { useSession } from 'next-auth/react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../../lib/api';
 import { useSocket } from '../../hooks/useSocket';
 
@@ -18,6 +19,7 @@ interface InternalNotesProps {
 }
 
 export default function InternalNotes({ conversationId }: InternalNotesProps) {
+  const { t } = useTranslation('chat');
   const { data: session } = useSession();
   const [notes, setNotes] = useState<Note[]>([]);
   const [body, setBody] = useState('');
@@ -99,13 +101,13 @@ export default function InternalNotes({ conversationId }: InternalNotesProps) {
       <div className="border-b border-gray-200 dark:border-white/5 px-4 py-3">
         <div className="flex items-center gap-2">
           <StickyNote className="h-4 w-4 text-amber-500" />
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Internal Notes</h3>
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{t('details.notes')}</h3>
           <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">
-            Private
+            {t('details.notesPrivate')}
           </span>
         </div>
         <p className="mt-0.5 text-xs text-gray-500 dark:text-[#8696A0]">
-          Only visible to your team — not sent to the customer
+          {t('details.notesSubtitle')}
         </p>
       </div>
 
@@ -118,9 +120,9 @@ export default function InternalNotes({ conversationId }: InternalNotesProps) {
         {!loading && notes.length === 0 && (
           <div className="flex flex-col items-center justify-center py-10 text-center">
             <StickyNote className="mb-3 h-8 w-8 text-gray-300 dark:text-white/20" />
-            <p className="text-sm font-medium text-gray-500 dark:text-[#8696A0]">No notes yet</p>
+            <p className="text-sm font-medium text-gray-500 dark:text-[#8696A0]">{t('details.notesEmpty')}</p>
             <p className="mt-1 text-xs text-gray-400 dark:text-[#8696A0]/70">
-              Add an internal note below
+              {t('details.notesEmptyHint')}
             </p>
           </div>
         )}
@@ -139,7 +141,7 @@ export default function InternalNotes({ conversationId }: InternalNotesProps) {
                   <span className="truncate text-xs font-semibold text-amber-800 dark:text-amber-300">
                     {note.author.name || note.author.email}
                   </span>
-                  <span className="shrink-0 text-xs text-amber-600/70 dark:text-amber-400/50">
+                  <span dir="ltr" className="shrink-0 text-xs text-amber-600/70 dark:text-amber-400/50">
                     {new Date(note.createdAt).toLocaleString([], {
                       month: 'short',
                       day: 'numeric',
@@ -153,7 +155,7 @@ export default function InternalNotes({ conversationId }: InternalNotesProps) {
                     type="button"
                     onClick={() => deleteNote(note.id)}
                     className="hidden shrink-0 rounded p-1 text-amber-600/50 transition hover:bg-amber-200/50 hover:text-red-600 group-hover:block dark:hover:bg-amber-500/20"
-                    aria-label="Delete note"
+                    aria-label={t('details.notesDeleteLabel')}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
@@ -171,7 +173,7 @@ export default function InternalNotes({ conversationId }: InternalNotesProps) {
             value={body}
             onChange={(e) => setBody(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Write an internal note... (Enter to submit)"
+            placeholder={t('details.notesPlaceholder')}
             rows={2}
             className="flex-1 resize-none rounded-xl border border-amber-300/60 bg-amber-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400/20 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-white dark:placeholder:text-[#8696A0]"
           />
@@ -180,7 +182,7 @@ export default function InternalNotes({ conversationId }: InternalNotesProps) {
             onClick={addNote}
             disabled={!body.trim() || saving}
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-400 text-white transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
-            aria-label="Add note"
+            aria-label={t('details.notesAddLabel')}
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </button>

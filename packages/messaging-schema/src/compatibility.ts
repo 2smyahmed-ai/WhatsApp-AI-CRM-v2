@@ -4,19 +4,24 @@ import type { ValidationIssue } from './validation';
 /**
  * How aggressively to downgrade an outbound message to guarantee delivery.
  *
- * - `cloud_api`: maximum fidelity. All interactive, all template features.
+ * - `cloud_api`:      maximum fidelity. All interactive, all template features (Meta).
+ * - `baileys_native`: Baileys provider. Media renders fully (images, audio, video, docs).
+ *                     Interactive messages render visually in CRM but are delivered as
+ *                     numbered-text menus via Baileys (WhatsApp Web protocol).
  * - `web_compatible`: avoid features WhatsApp Web renders poorly.
- * - `mobile_safe`: assume mobile-only audience.
- * - `fallback_text`: pure text + URLs only. No interactive structures.
+ * - `mobile_safe`:    assume mobile-only audience.
+ * - `fallback_text`:  pure text + URLs only. No interactive structures, no media blocks.
  */
 export type CompatibilityMode =
   | 'cloud_api'
+  | 'baileys_native'
   | 'web_compatible'
   | 'mobile_safe'
   | 'fallback_text';
 
 export const COMPATIBILITY_MODES = [
   'cloud_api',
+  'baileys_native',
   'web_compatible',
   'mobile_safe',
   'fallback_text',

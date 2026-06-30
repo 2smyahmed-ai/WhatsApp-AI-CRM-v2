@@ -3,15 +3,26 @@ import { normalizePhone } from '../lib/phone';
 import { emitRealtime } from '../realtime/socket';
 import { providerManager } from '../providers/manager';
 
-async function enrichContactAvatar(contact: any) {
+// How long a cached profile-picture URL is trusted before we ask the provider
+// for a fresh one. WhatsApp CDN URLs are signed and eventually expire, so we
+// refresh periodically rather than caching forever (the old behaviour, which
+// left broken images once a URL expired).
+const AVATAR_TTL_MS = 12 * 60 * 60 * 1000; // 12h
+
+export async function enrichContactAvatar(contact: any) {
   if (!contact?.id) return contact;
   const customFields = (contact.customFields as Record<string, unknown> | null | undefined) || {};
-  if (customFields.avatarUrl) return contact;
+  const fetchedAt = typeof customFields.avatarUrlAt === 'number' ? customFields.avatarUrlAt : 0;
+  const isFresh = Boolean(customFields.avatarUrl) && Date.now() - fetchedAt < AVATAR_TTL_MS;
+  if (isFresh) return contact;
+
   const avatarUrl = await providerManager.getProfilePictureUrl(contact.phone);
+  // Provider offline or contact has no picture: keep whatever we already have.
   if (!avatarUrl) return contact;
+
   return prisma.contact.update({
     where: { id: contact.id },
-    data: { customFields: { ...customFields, avatarUrl } },
+    data: { customFields: { ...customFields, avatarUrl, avatarUrlAt: Date.now() } },
   });
 }
 
@@ -34,11 +45,12 @@ type ConversationFilters = {
   view?: 'all' | 'mine' | 'my-team' | 'unassigned' | 'closed';
   currentUserId?: string;
   currentUserTeamId?: string;
+  limit?: number;
 };
 
 export class ConversationsService {
   static async getConversations(filters?: ConversationFilters) {
-    const where: any = {};
+    const where: any = { isGroup: false };
 
     if (filters?.view) {
       switch (filters.view) {
@@ -76,9 +88,15 @@ export class ConversationsService {
     if (filters?.assignedTo) where.assignedTo = filters.assignedTo;
     if (filters?.teamId) where.teamId = filters.teamId;
 
+    const take = Math.min(filters?.limit ?? 100, 200);
+
     const conversations = await prisma.conversation.findMany({
       include: {
-        contact: true,
+        contact: {
+          include: {
+            contactTags: { include: { tag: true } },
+          },
+        },
         assignedUser: { select: { id: true, name: true, email: true, role: true } },
         assignedTeam: { select: { id: true, name: true } },
         messages: { orderBy: { timestamp: 'desc' }, take: 1 },
@@ -88,6 +106,7 @@ export class ConversationsService {
         { lastMessageAt: 'desc' },
       ],
       where,
+      take,
     });
 
     const deduped = new Map<string, (typeof conversations)[number]>();
@@ -99,15 +118,10 @@ export class ConversationsService {
       if (currentTime >= existingTime) deduped.set(conv.contactId, conv);
     }
 
-    const uniqueConversations = [...deduped.values()];
-
-    await Promise.allSettled(
-      uniqueConversations.map(async (conv) => {
-        if (conv.contact) conv.contact = await enrichContactAvatar(conv.contact);
-      }),
-    );
-
-    return uniqueConversations;
+    // Avatar URLs are already stored in contact.customFields.avatarUrl from
+    // previous fetches. The single-conversation path (getConversation) refreshes
+    // stale avatars when a chat is opened — no provider calls needed here.
+    return [...deduped.values()];
   }
 
   static async getConversation(id: string) {
@@ -279,6 +293,7 @@ export class ConversationsService {
     },
     replyTo?: { replyToId?: string; replyToBody?: string },
     clientId?: string,
+    agentId?: string,
   ) {
     const conversation = await prisma.conversation.findUnique({
       where: { id: conversationId },
@@ -315,5 +330,10 @@ export class ConversationsService {
         ? { id: replyTo.replyToId, body: replyTo.replyToBody || '' }
         : undefined,
     });
+
+    // Auto-assign to the sending agent if the conversation has no assigned agent
+    if (agentId && !conversation.assignedTo) {
+      await ConversationsService.assignConversation(conversationId, agentId, agentId);
+    }
   }
 }

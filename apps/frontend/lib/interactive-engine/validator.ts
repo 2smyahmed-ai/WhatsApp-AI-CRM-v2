@@ -11,19 +11,18 @@ import type {
   InteractiveListContent,
   InteractiveCtaContent,
 } from '@crm/messaging-schema';
-import { META_CAPABILITIES, BAILEYS_CAPABILITIES } from '@crm/messaging-schema';
+import { BAILEYS_CAPABILITIES } from '@crm/messaging-schema';
 import type { ValidationResult, ValidationIssue } from '../template-engine/schema';
 import type { InteractiveContent } from './compiler';
 
-type Provider = 'meta' | 'baileys';
+type Provider = 'baileys';
 
 function result(issues: ValidationIssue[]): ValidationResult {
   const errors   = issues.filter(i => i.level === 'error').length;
   const warnings = issues.filter(i => i.level === 'warning').length;
   return {
     valid: errors === 0,
-    metaReady: errors === 0,
-    baileysSupported: true,
+    sendable: errors === 0,
     issues,
     errors,
     warnings,
@@ -66,10 +65,9 @@ function checkHeader(header: { type: string; text?: string; media?: { url: strin
 
 function validateButtons(
   content: InteractiveButtonsContent,
-  provider: Provider,
+  _provider: Provider,
 ): ValidationResult {
   const issues: ValidationIssue[] = [];
-  const caps = provider === 'meta' ? META_CAPABILITIES : BAILEYS_CAPABILITIES;
 
   checkHeader(content.header as any, issues);
   checkBody(content.body, issues);
@@ -78,44 +76,20 @@ function validateButtons(
   if (!content.buttons || content.buttons.length === 0) {
     issues.push({ level: 'error', field: 'buttons', message: 'At least 1 button is required.' });
   } else {
-    if (provider === 'meta' && content.buttons.length > caps.buttonLimits.quickReplyMax) {
-      issues.push({
-        level: 'error',
-        field: 'buttons',
-        message: `Maximum ${caps.buttonLimits.quickReplyMax} quick-reply buttons allowed by Meta.`,
-      });
-    }
-
     for (const btn of content.buttons) {
       if (!btn.id?.trim()) {
         issues.push({ level: 'error', field: 'buttons', message: 'Each button must have a unique ID.' });
       }
       if (!btn.title?.trim()) {
         issues.push({ level: 'error', field: 'buttons', message: 'Button title cannot be empty.' });
-      } else if (provider === 'meta' && btn.title.length > caps.buttonLimits.quickReplyTitleMax) {
-        issues.push({
-          level: 'error',
-          field: 'buttons',
-          message: `Button "${btn.title.slice(0, 15)}…" is ${btn.title.length} chars — max ${caps.buttonLimits.quickReplyTitleMax}.`,
-        });
       }
     }
 
-    if (provider === 'baileys') {
-      issues.push({
-        level: 'warning',
-        field: 'buttons',
-        message: 'Baileys cannot reliably send interactive buttons — will be delivered as numbered plain-text options.',
-        downgrade: 'Rendered as: 1. Option A  2. Option B',
-      });
-    }
-  }
-
-  if (provider === 'meta') {
     issues.push({
-      level: 'info',
-      field: 'body',
-      message: 'Interactive messages require an active 24-hour session window (customer must have messaged first).',
+      level: 'warning',
+      field: 'buttons',
+      message: 'Will be delivered as numbered plain-text options on WhatsApp.',
+      downgrade: 'Rendered as: 1. Option A  2. Option B',
     });
   }
 
@@ -126,10 +100,10 @@ function validateButtons(
 
 function validateList(
   content: InteractiveListContent,
-  provider: Provider,
+  _provider: Provider,
 ): ValidationResult {
   const issues: ValidationIssue[] = [];
-  const caps = provider === 'meta' ? META_CAPABILITIES : BAILEYS_CAPABILITIES;
+  const caps = BAILEYS_CAPABILITIES;
 
   checkHeader(content.header as any, issues);
   checkBody(content.body, issues);
@@ -144,7 +118,7 @@ function validateList(
   if (!content.sections || content.sections.length === 0) {
     issues.push({ level: 'error', field: 'body', message: 'At least 1 section with 1 row is required.' });
   } else {
-    if (provider === 'meta' && content.sections.length > caps.listLimits.sectionsMax) {
+    if (content.sections.length > caps.listLimits.sectionsMax) {
       issues.push({ level: 'error', field: 'body', message: `Maximum ${caps.listLimits.sectionsMax} sections allowed.` });
     }
 
@@ -152,17 +126,12 @@ function validateList(
       if (!section.rows || section.rows.length === 0) {
         issues.push({ level: 'error', field: 'body', message: `Section "${section.title}" has no rows.` });
       } else {
-        if (provider === 'meta' && section.rows.length > caps.listLimits.rowsPerSectionMax) {
-          issues.push({ level: 'error', field: 'body', message: `Section "${section.title}" has ${section.rows.length} rows — max ${caps.listLimits.rowsPerSectionMax}.` });
-        }
         for (const row of section.rows) {
           if (!row.id?.trim()) {
             issues.push({ level: 'error', field: 'body', message: 'Each list row must have a unique ID.' });
           }
           if (!row.title?.trim()) {
             issues.push({ level: 'error', field: 'body', message: 'List row title cannot be empty.' });
-          } else if (provider === 'meta' && row.title.length > caps.listLimits.rowTitleMax) {
-            issues.push({ level: 'error', field: 'body', message: `Row "${row.title.slice(0, 15)}…" is ${row.title.length} chars — max ${caps.listLimits.rowTitleMax}.` });
           }
           if (row.description && row.description.length > 72) {
             issues.push({ level: 'warning', field: 'body', message: `Row description "${row.title.slice(0, 15)}…" is ${row.description.length} chars — max 72.` });
@@ -171,21 +140,11 @@ function validateList(
       }
     }
 
-    if (provider === 'baileys') {
-      issues.push({
-        level: 'warning',
-        field: 'buttons',
-        message: 'Baileys cannot reliably send list messages — will be delivered as numbered plain-text options.',
-        downgrade: 'Sections flattened into numbered list reply prompt.',
-      });
-    }
-  }
-
-  if (provider === 'meta') {
     issues.push({
-      level: 'info',
-      field: 'body',
-      message: 'Interactive messages require an active 24-hour session window (customer must have messaged first).',
+      level: 'warning',
+      field: 'buttons',
+      message: 'Will be delivered as numbered plain-text options on WhatsApp.',
+      downgrade: 'Sections flattened into numbered list reply prompt.',
     });
   }
 
@@ -196,7 +155,7 @@ function validateList(
 
 function validateCta(
   content: InteractiveCtaContent,
-  provider: Provider,
+  _provider: Provider,
 ): ValidationResult {
   const issues: ValidationIssue[] = [];
 
@@ -220,22 +179,12 @@ function validateCta(
     }
   }
 
-  if (provider === 'baileys') {
-    issues.push({
-      level: 'warning',
-      field: 'buttons',
-      message: 'Baileys does not support CTA cards — URL will be sent as inline text.',
-      downgrade: 'URL appended to message body.',
-    });
-  }
-
-  if (provider === 'meta') {
-    issues.push({
-      level: 'info',
-      field: 'body',
-      message: 'Interactive messages require an active 24-hour session window (customer must have messaged first).',
-    });
-  }
+  issues.push({
+    level: 'warning',
+    field: 'buttons',
+    message: 'CTA cards are not supported natively — URL will be sent as inline text.',
+    downgrade: 'URL appended to message body.',
+  });
 
   return result(issues);
 }

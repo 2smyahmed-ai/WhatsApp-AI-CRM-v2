@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { MessageSquare, BriefcaseBusiness, CheckSquare, FileText, Clock } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../../lib/api';
 
 interface TimelineEvent {
@@ -14,37 +15,38 @@ interface Props {
   contactId: string;
 }
 
-const TYPE_CONFIG = {
-  conversation: { icon: MessageSquare, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-500/10', label: 'Conversation' },
-  deal: { icon: BriefcaseBusiness, color: 'text-amber-500', bg: 'bg-amber-50 dark:bg-amber-500/10', label: 'Deal' },
-  task: { icon: CheckSquare, color: 'text-green-500', bg: 'bg-green-50 dark:bg-green-500/10', label: 'Task' },
-  note: { icon: FileText, color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-500/10', label: 'Note' },
-};
-
-function formatRelative(iso: string) {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return new Date(iso).toLocaleDateString();
-}
-
-function eventSummary(event: TimelineEvent): string {
-  const { type, data } = event;
-  switch (type) {
-    case 'conversation': return `${data.status} · ${data.lastMessage ? data.lastMessage.slice(0, 60) : 'No messages'}`;
-    case 'deal': return `${data.title} · ${data.stage} · $${Number(data.value || 0).toLocaleString()}`;
-    case 'task': return `${data.title} · ${data.status}`;
-    case 'note': return (data.body ?? '').slice(0, 80);
-    default: return '';
-  }
-}
-
 export default function ContactTimeline({ contactId }: Props) {
+  const { t } = useTranslation('contacts');
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const TYPE_CONFIG = {
+    conversation: { icon: MessageSquare, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-500/10', label: t('timeline.conversation') },
+    deal: { icon: BriefcaseBusiness, color: 'text-amber-500', bg: 'bg-amber-50 dark:bg-amber-500/10', label: t('timeline.deal') },
+    task: { icon: CheckSquare, color: 'text-green-500', bg: 'bg-green-50 dark:bg-green-500/10', label: t('timeline.task') },
+    note: { icon: FileText, color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-500/10', label: t('timeline.note') },
+  };
+
+  function formatRelative(iso: string) {
+    const diff = Date.now() - new Date(iso).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return t('timeline.justNow');
+    if (mins < 60) return t('timeline.minsAgo', { count: mins });
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return t('timeline.hrsAgo', { count: hrs });
+    return new Date(iso).toLocaleDateString();
+  }
+
+  function eventSummary(event: TimelineEvent): string {
+    const { type, data } = event;
+    switch (type) {
+      case 'conversation': return `${data.status} · ${data.lastMessage ? data.lastMessage.slice(0, 60) : t('timeline.noMessages')}`;
+      case 'deal': return `${data.title} · ${data.stage} · $${Number(data.value || 0).toLocaleString()}`;
+      case 'task': return `${data.title} · ${data.status}`;
+      case 'note': return (data.body ?? '').slice(0, 80);
+      default: return '';
+    }
+  }
 
   useEffect(() => {
     setLoading(true);
@@ -67,7 +69,7 @@ export default function ContactTimeline({ contactId }: Props) {
   if (!events.length) {
     return (
       <div className="rounded-xl border border-dashed border-gray-200 dark:border-white/10 p-6 text-center text-sm text-gray-400 dark:text-[#8696A0]">
-        No activity yet for this contact.
+        {t('timeline.noActivityContact')}
       </div>
     );
   }

@@ -80,3 +80,8 @@ export function normalizeRecipient(phoneOrJid: string): string {
 export function toWhatsAppJid(phone: string): string {
   return normalizeRecipient(phone);
 }
+
+/** Returns true if the JID identifies a WhatsApp group. Used to drop group messages at the inbound gate. */
+export function isGroupJid(jid: string): boolean {
+  return String(jid || '').includes('@g.us');
+}

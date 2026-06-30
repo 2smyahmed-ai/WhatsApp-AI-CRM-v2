@@ -1,0 +1,45 @@
+{
+  "success": {
+    "saved": "تم الحفظ بنجاح",
+    "created": "تم الإنشاء بنجاح",
+    "updated": "تم التحديث بنجاح",
+    "deleted": "تم الحذف بنجاح",
+    "sent": "تم إرسال الرسالة",
+    "invited": "تم إرسال الدعوة",
+    "connected": "تم ربط واتساب",
+    "disconnected": "تم قطع اتصال واتساب",
+    "contactSaved": "تم حفظ جهة الاتصال",
+    "replySaved": "تم حفظ الرد",
+    "templateSaved": "تم حفظ القالب",
+    "broadcastSent": "تم إرسال الحملة",
+    "broadcastScheduled": "تم جدولة الحملة",
+    "taskCreated": "تم إنشاء المهمة",
+    "dealCreated": "تم إنشاء الصفقة",
+    "noteAdded": "تمت إضافة الملاحظة",
+    "tagAdded": "تمت إضافة الوسم",
+    "assigned": "تم تعيين المحادثة",
+    "resolved": "تم حل المحادثة",
+    "reopened": "تمت إعادة فتح المحادثة",
+    "languageChanged": "تم تحديث اللغة"
+  },
+  "error": {
+    "saveFailed": "فشل الحفظ. يرجى المحاولة مجدداً.",
+    "deleteFailed": "فشل الحذف. يرجى المحاولة مجدداً.",
+    "sendFailed": "فشل إرسال الرسالة",
+    "loadFailed": "فشل تحميل البيانات",
+    "connectFailed": "فشل ربط واتساب",
+    "inviteFailed": "فشل إرسال الدعوة",
+    "uploadFailed": "فشل رفع الملف",
+    "generic": "حدث خطأ ما"
+  },
+  "warning": {
+    "unsavedChanges": "لديك تغييرات غير محفوظة",
+    "broadcastInProgress": "هناك حملة جارية حالياً",
+    "providerLimited": "بعض الميزات محدودة مع المزود الحالي"
+  },
+  "info": {
+    "qrRefreshing": "جارٍ تحديث رمز QR...",
+    "connecting": "جارٍ الاتصال بواتساب...",
+    "syncing": "جارٍ المزامنة..."
+  }
+}

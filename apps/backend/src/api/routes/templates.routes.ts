@@ -1,8 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware, checkPermission } from '../../auth/auth.middleware';
 import { prisma } from '../../lib/prisma';
-import templateService from '../../services/template.service';
-import metaTemplateService from '../../services/meta-template.service';
+import { renderTemplate, sendTemplate } from '../../services/template.service';
 
 const router = Router();
 
@@ -58,7 +57,7 @@ router.put('/:id', checkPermission('update', 'templates'), async (req, res) => {
     const teamId = (req as any).user?.teamId;
     const { name, content, mediaUrl, type, status, payload, variables, language, category } = req.body;
     const existing = await (prisma as any).messageTemplate.findFirst({
-      where: { id: req.params.id, ...(teamId ? { teamId } : {}) },
+      where: { id: req.params.id, ...(teamId ? { OR: [{ teamId }, { teamId: null }] } : {}) },
     });
     if (!existing) return res.status(404).json({ error: 'Template not found' });
 
@@ -87,7 +86,7 @@ router.delete('/:id', checkPermission('delete', 'templates'), async (req, res) =
   try {
     const teamId = (req as any).user?.teamId;
     const existing = await (prisma as any).messageTemplate.findFirst({
-      where: { id: req.params.id, ...(teamId ? { teamId } : {}) },
+      where: { id: req.params.id, ...(teamId ? { OR: [{ teamId }, { teamId: null }] } : {}) },
     });
     if (!existing) return res.status(404).json({ error: 'Template not found' });
     await (prisma as any).messageTemplate.delete({ where: { id: req.params.id } });
@@ -106,50 +105,27 @@ router.post('/:id/render', checkPermission('read', 'templates'), async (req, res
       where: { id: req.params.id, ...(teamId ? { teamId } : {}) },
     });
     if (!template) return res.status(404).json({ error: 'Template not found' });
-    const rendered = templateService.renderTemplate(template, vars);
+    const rendered = renderTemplate(template, vars);
     res.json(rendered);
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
 
-// ── Submit to Meta for approval ─────────────────────────────────────────────
-router.post('/:id/submit', checkPermission('update', 'templates'), async (req, res) => {
-  try {
-    const result = await metaTemplateService.submit(req.params.id);
-    res.json({ success: true, meta: result });
-  } catch (error) {
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-  }
-});
-
-// ── Sync approved templates from Meta ──────────────────────────────────────
-router.post('/sync', checkPermission('update', 'templates'), async (req, res) => {
-  try {
-    const result = await metaTemplateService.syncFromMeta();
-    res.json({ success: true, ...result });
-  } catch (error) {
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-  }
-});
-
-// ── Send a template message ─────────────────────────────────────────────────
+// ── Send via Baileys ────────────────────────────────────────────────────────
 router.post('/:id/send', checkPermission('create', 'messages'), async (req, res) => {
   try {
     const { phone, variables } = req.body;
     if (!phone) return res.status(400).json({ error: 'phone is required' });
-    const result = await metaTemplateService.send(phone, req.params.id, variables ?? {});
-    res.json({ success: true, messageId: result.messageId });
-  } catch (error) {
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-  }
-});
 
-// ── Delete from Meta ────────────────────────────────────────────────────────
-router.delete('/:id/meta', checkPermission('delete', 'templates'), async (req, res) => {
-  try {
-    await metaTemplateService.deleteFromMeta(req.params.id);
-    res.json({ success: true });
+    const teamId = (req as any).user?.teamId;
+    const template = await (prisma as any).messageTemplate.findFirst({
+      where: { id: req.params.id, ...(teamId ? { teamId } : {}) },
+    });
+    if (!template) return res.status(404).json({ error: 'Template not found' });
+
+    const result = await sendTemplate(phone, template, variables ?? {});
+    res.json({ success: true, messageId: result.messageId });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
   }

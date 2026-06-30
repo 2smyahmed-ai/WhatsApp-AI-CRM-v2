@@ -1,0 +1,67 @@
+{
+  "title": "Automations",
+  "subtitle": "Configure auto-reply rules triggered by keywords, first messages, or business hours.",
+  "badge": "Smart Automation",
+  "addRule": "Add Rule",
+  "noRules": "No automation rules yet",
+  "noRulesSubtitle": "Create your first rule to start automating responses",
+  "triggers": {
+    "KEYWORD": "Keyword",
+    "FIRST_MESSAGE": "First Message",
+    "ANY_MESSAGE": "Any Message",
+    "OUTSIDE_HOURS": "Outside Hours"
+  },
+  "card": {
+    "trigger": "Trigger",
+    "keyword": "Keyword",
+    "response": "Response",
+    "active": "Active",
+    "inactive": "Inactive"
+  },
+  "form": {
+    "editTitle": "Edit Rule",
+    "createTitle": "Add Rule",
+    "name": "Rule Name",
+    "trigger": "Trigger",
+    "keyword": "Keyword",
+    "response": "Response Message",
+    "save": "Save",
+    "cancel": "Cancel"
+  },
+  "deleteConfirm": {
+    "title": "Delete Rule",
+    "message": "Are you sure you want to delete this automation rule?",
+    "confirm": "Delete",
+    "cancel": "Cancel"
+  },
+  "toast": {
+    "created": "Rule created",
+    "updated": "Rule updated",
+    "deleted": "Rule deleted",
+    "toggled": "Rule {{status}}"
+  },
+  "flow": {
+    "editTitle": "Edit Flow",
+    "createTitle": "New Automation Flow",
+    "name": "Flow name",
+    "namePlaceholder": "e.g. Welcome sequence",
+    "trigger": "Trigger",
+    "keyword": "Keyword",
+    "keywordPlaceholder": "e.g. hello",
+    "stopOnReply": "Stop flow when contact replies",
+    "steps": "Steps",
+    "stepWait": "Wait",
+    "stepSendMessage": "Send message",
+    "messagePlaceholder": "Message text...",
+    "sec": "sec",
+    "addMessage": "Add message",
+    "addDelay": "Add delay",
+    "cancel": "Cancel",
+    "save": "Save Flow",
+    "saving": "Saving...",
+    "delay1Min": "1 min",
+    "delay5Min": "5 min",
+    "delay1Hr": "1 hr",
+    "delay24Hr": "24 hr"
+  }
+}

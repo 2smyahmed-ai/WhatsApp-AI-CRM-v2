@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=IBM+Plex+Arabic:wght@300;400;500;600;700;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -17,6 +17,37 @@
   --wa-text-primary: #E9EDEF;
   --wa-text-secondary: #8696A0;
   --wa-border-subtle: rgba(255,255,255,0.08);
+
+  /* Arabic typography settings */
+  --font-arabic: 'IBM Plex Arabic', 'Segoe UI', system-ui, sans-serif;
+  --font-latin: 'Plus Jakarta Sans', 'Segoe UI', 'Helvetica Neue', ui-sans-serif, system-ui, sans-serif;
+
+  /* ─── Donezo emerald palette (dashboard surface) ─── */
+  --dz-accent: #16A34A;
+  --dz-accent-strong: #15803D;
+  --dz-page: #F4F5F7;
+
+  /* ─── Shadcn UI design tokens (light mode) ──────────────── */
+  --background: 0 0% 100%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 11%;
+  --primary: 142 71% 45%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 210 40% 96%;
+  --secondary-foreground: 222 47% 11%;
+  --muted: 210 40% 96%;
+  --muted-foreground: 215 16% 47%;
+  --accent: 210 40% 96%;
+  --accent-foreground: 222 47% 11%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 214 32% 91%;
+  --input: 214 32% 91%;
+  --ring: 142 71% 45%;
+  --radius: 0.75rem;
 }
 
 /* ─── Reset & base ──────────────────────────────────────── */
@@ -25,7 +56,7 @@
 }
 
 html {
-  font-family: 'Segoe UI', 'Helvetica Neue', ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-latin);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: 'cv11', 'ss01';
@@ -33,8 +64,73 @@ html {
   color-scheme: light;
 }
 
+/* ─── Arabic / RTL mode ──────────────────────────────────── */
+html[dir="rtl"],
+html.lang-ar {
+  font-family: var(--font-arabic);
+  /* IBM Plex Arabic optimized typography */
+  font-feature-settings: normal;
+  font-weight: 400;
+  letter-spacing: 0.3px;
+  word-spacing: 0.03em;
+}
+
+/* IBM Plex Arabic maintains consistent weight — keep headings at 700 */
+html[dir="rtl"] h1, html[dir="rtl"] h2, html[dir="rtl"] h3,
+html[dir="rtl"] h4, html[dir="rtl"] h5, html[dir="rtl"] h6,
+html.lang-ar h1, html.lang-ar h2, html.lang-ar h3,
+html.lang-ar h4, html.lang-ar h5, html.lang-ar h6 {
+  font-weight: 700;
+}
+
+html[dir="rtl"] body,
+html.lang-ar body {
+  direction: rtl;
+  text-align: right;
+}
+
+/* Force IBM Plex Arabic on every element in RTL — overrides any Tailwind font-* class */
+html[dir="rtl"] *,
+html.lang-ar * {
+  font-family: var(--font-arabic);
+  line-height: 1.6;
+}
+
+html[dir="rtl"] button,
+html[dir="rtl"] input,
+html[dir="rtl"] select,
+html[dir="rtl"] textarea,
+html.lang-ar button,
+html.lang-ar input,
+html.lang-ar select,
+html.lang-ar textarea {
+  font-family: var(--font-arabic);
+  font-size: 0.9375rem; /* Slightly larger for Arabic readability */
+}
+
+/* ─── Dark mode ──────────────────────────────────────────── */
 html.dark {
   color-scheme: dark;
+  /* Shadcn UI design tokens (dark mode) */
+  --background: 210 33% 7%;
+  --foreground: 210 17% 93%;
+  --card: 210 30% 10%;
+  --card-foreground: 210 17% 93%;
+  --popover: 210 30% 10%;
+  --popover-foreground: 210 17% 93%;
+  --primary: 143 86% 52%;
+  --primary-foreground: 210 33% 7%;
+  --secondary: 210 24% 17%;
+  --secondary-foreground: 210 17% 93%;
+  --muted: 210 24% 17%;
+  --muted-foreground: 210 9% 53%;
+  --accent: 210 24% 17%;
+  --accent-foreground: 210 17% 93%;
+  --destructive: 0 72% 57%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 210 20% 20%;
+  --input: 210 24% 17%;
+  --ring: 143 86% 52%;
 }
 
 body {
@@ -62,6 +158,38 @@ textarea::placeholder {
 .dark input::placeholder,
 .dark textarea::placeholder {
   color: var(--wa-text-secondary);
+}
+
+/* ─── RTL select dropdown arrow ──────────────────────────── */
+html[dir="ltr"] select,
+html:not([dir="rtl"]) select {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  padding-right: 2.25rem;
+  padding-left: 0.75rem;
+}
+
+html[dir="rtl"] select {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: left 0.75rem center;
+  padding-left: 2.25rem;
+  padding-right: 0.75rem;
+}
+
+select:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.15);
+  border-color: #25D366;
+}
+
+.dark select:focus {
+  box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.2);
 }
 
 /* ─── Text selection ─────────────────────────────────────── */
@@ -108,25 +236,40 @@ textarea::placeholder {
   background: transparent;
 }
 
-/* ─── Custom select ──────────────────────────────────────── */
-select {
-  -webkit-appearance: none;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 0.75rem center;
-  padding-right: 2.25rem;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+/* ─── Hide all scrollbars on mobile ─────────────────────── */
+@media (max-width: 639px) {
+  * {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  *::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
+  }
 }
 
-select:focus {
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.15);
-  border-color: #25D366;
+/* ─── Hero card dot-grid overlay ────────────────────────── */
+.hero-dot-grid {
+  background-image: radial-gradient(circle, white 1px, transparent 1px);
+  background-size: 18px 18px;
 }
 
-.dark select:focus {
-  box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.2);
+/* ─── iOS safe-area padding utilities ───────────────────── */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.mb-safe {
+  margin-bottom: env(safe-area-inset-bottom);
+}
+
+/* ─── Scrollbar-none utility ─────────────────────────────── */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
 }
 
 /* ─── Focus ring global ──────────────────────────────────── */
@@ -150,4 +293,293 @@ select:focus {
 [data-no-transition],
 [data-no-transition] * {
   transition: none !important;
+}
+
+/* ─── RTL layout utilities ───────────────────────────────── */
+
+/* Sidebar: flip position from left to right in RTL */
+html[dir="rtl"] .sidebar-panel {
+  left: auto;
+  right: 0;
+  transform-origin: right center;
+}
+
+html[dir="rtl"] .sidebar-panel.translate-x-full {
+  transform: translateX(100%);
+}
+html[dir="rtl"] .sidebar-panel.-translate-x-full {
+  transform: translateX(100%);
+}
+html[dir="rtl"] .sidebar-panel.translate-x-0 {
+  transform: translateX(0);
+}
+
+/* Mobile sidebar open/close - RTL: slides from right */
+html[dir="rtl"] .sidebar-mobile-slide {
+  right: 0;
+  left: auto;
+}
+
+html[dir="rtl"] .sidebar-mobile-slide.closed {
+  transform: translateX(100%);
+}
+html[dir="rtl"] .sidebar-mobile-slide.open {
+  transform: translateX(0);
+}
+
+/* Mobile hamburger button: flip to right side in RTL */
+html[dir="rtl"] .sidebar-hamburger {
+  right: 1rem;
+  left: auto;
+}
+
+/* Message bubbles: LTR sent=right, RTL layout handled via flex dir */
+[dir="rtl"] .message-bubble-sent {
+  border-radius: 16px 4px 16px 16px;
+}
+[dir="rtl"] .message-bubble-received {
+  border-radius: 4px 16px 16px 16px;
+}
+
+/* Toast: flip position in RTL */
+html[dir="rtl"] .toast-container {
+  right: auto;
+  left: 1rem;
+}
+
+/* Emoji picker: flip direction */
+html[dir="rtl"] .emoji-picker {
+  right: auto;
+  left: 0;
+}
+
+/* Dropdown menus: align to end in RTL */
+html[dir="rtl"] [data-radix-popper-content-wrapper] {
+  direction: rtl;
+}
+
+/* ─── Arabic number formatting ───────────────────────────── */
+html[dir="rtl"] .number-display {
+  font-variant-numeric: normal;
+  font-feature-settings: normal;
+}
+
+/* ─── Chat window RTL ────────────────────────────────────── */
+html[dir="rtl"] .chat-messages {
+  direction: rtl;
+}
+
+html[dir="rtl"] .chat-composer {
+  direction: rtl;
+}
+
+/* Typing indicator in RTL */
+html[dir="rtl"] .typing-indicator {
+  flex-direction: row-reverse;
+}
+
+/* ─── Table RTL ───────────────────────────────────────────── */
+html[dir="rtl"] th,
+html[dir="rtl"] td {
+  text-align: right;
+}
+
+html[dir="rtl"] th:first-child,
+html[dir="rtl"] td:first-child {
+  text-align: right;
+}
+
+/* ─── Form elements RTL ──────────────────────────────────── */
+html[dir="rtl"] input[type="text"],
+html[dir="rtl"] input[type="email"],
+html[dir="rtl"] input[type="tel"],
+html[dir="rtl"] input[type="search"],
+html[dir="rtl"] input[type="password"],
+html[dir="rtl"] textarea {
+  text-align: right;
+  direction: rtl;
+}
+
+/* Search input: flip icon side */
+html[dir="rtl"] .search-input-wrapper .search-icon {
+  left: auto;
+  right: 0.75rem;
+}
+html[dir="rtl"] .search-input-wrapper input {
+  padding-right: 2.5rem;
+  padding-left: 0.75rem;
+}
+
+/* ─── Icon mirroring for RTL ─────────────────────────────── */
+/* Icons that indicate direction should be mirrored in RTL */
+html[dir="rtl"] .icon-mirror {
+  transform: scaleX(-1);
+}
+
+/* ─── Animation direction fix for RTL ───────────────────── */
+@keyframes slideInFromRight {
+  from { opacity: 0; transform: translateX(12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideInFromLeft {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+html[dir="ltr"] .animate-slide-in {
+  animation: slideInFromLeft 0.2s ease-out;
+}
+html[dir="rtl"] .animate-slide-in {
+  animation: slideInFromRight 0.2s ease-out;
+}
+
+/* ─── Existing animations ────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -1000px 0; }
+  100% { background-position: 1000px 0; }
+}
+
+/* ─── Lead alert popup: countdown bar + side entrance ─────── */
+@keyframes leadAlertCountdown {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+
+html[dir="ltr"] .lead-alert-enter { animation: slideInFromRight 0.32s cubic-bezier(0.16, 1, 0.3, 1); }
+html[dir="rtl"] .lead-alert-enter { animation: slideInFromLeft 0.32s cubic-bezier(0.16, 1, 0.3, 1); }
+
+/* ─── Donezo dashboard utilities ─────────────────────────── */
+
+/* Soft hatched fill used for inactive analytics bars */
+.dz-hatch {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(22, 163, 74, 0.14) 0,
+    rgba(22, 163, 74, 0.14) 2px,
+    transparent 2px,
+    transparent 7px
+  );
+}
+.dark .dz-hatch {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(37, 211, 102, 0.16) 0,
+    rgba(37, 211, 102, 0.16) 2px,
+    transparent 2px,
+    transparent 7px
+  );
+}
+
+/* Bars grow from the bottom on first paint */
+@keyframes dzBarGrow {
+  from { transform: scaleY(0); }
+  to   { transform: scaleY(1); }
+}
+.dz-bar {
+  transform-origin: bottom;
+  animation: dzBarGrow 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ─── Toast notification system ─────────────────────────── */
+
+@keyframes tf_in_top {
+  0%   { transform: translateY(calc(-100% - 28px)) scale(0.88); opacity: 0; }
+  58%  { transform: translateY(9px) scale(1.025); opacity: 1; }
+  76%  { transform: translateY(-4px) scale(0.99); }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+@keyframes tf_out_top {
+  0%   { transform: translateY(0) scale(1); opacity: 1; }
+  22%  { transform: translateY(6px) scale(1.01); }
+  100% { transform: translateY(calc(-100% - 28px)) scale(0.88); opacity: 0; }
+}
+@keyframes tf_in_btm {
+  0%   { transform: translateY(calc(100% + 28px)) scale(0.88); opacity: 0; }
+  58%  { transform: translateY(-9px) scale(1.025); opacity: 1; }
+  76%  { transform: translateY(4px) scale(0.99); }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+@keyframes tf_out_btm {
+  0%   { transform: translateY(0) scale(1); opacity: 1; }
+  100% { transform: translateY(calc(100% + 28px)) scale(0.88); opacity: 0; }
+}
+@keyframes tf_prog {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+
+/* Animation routing via data attributes — no inline style needed */
+[data-tf-card][data-from-top="true"]:not([data-exiting]) {
+  animation: tf_in_top  580ms cubic-bezier(0.34,1.56,0.64,1) forwards;
+}
+[data-tf-card][data-from-top="true"][data-exiting] {
+  animation: tf_out_top 340ms cubic-bezier(0.36,0,0.66,0)   forwards;
+}
+[data-tf-card][data-from-top="false"]:not([data-exiting]) {
+  animation: tf_in_btm  580ms cubic-bezier(0.34,1.56,0.64,1) forwards;
+}
+[data-tf-card][data-from-top="false"][data-exiting] {
+  animation: tf_out_btm 340ms cubic-bezier(0.36,0,0.66,0)   forwards;
+}
+
+/* Accent bar colour per type */
+[data-tf-type="message"] .tf-bar,
+[data-tf-type="success"] .tf-bar { background: #25D366; box-shadow: 0 0 10px rgba(37,211,102,0.45); }
+[data-tf-type="error"]   .tf-bar { background: #ef4444; box-shadow: 0 0 10px rgba(239,68,68,0.45); }
+[data-tf-type="info"]    .tf-bar { background: #3b82f6; box-shadow: 0 0 10px rgba(59,130,246,0.45); }
+[data-tf-type="warning"] .tf-bar { background: #f59e0b; box-shadow: 0 0 10px rgba(245,158,11,0.45); }
+
+/* Progress bar fill colour per type */
+[data-tf-type="message"] .tf-prog-fill,
+[data-tf-type="success"] .tf-prog-fill { background: #25D366; }
+[data-tf-type="error"]   .tf-prog-fill { background: #ef4444; }
+[data-tf-type="info"]    .tf-prog-fill { background: #3b82f6; }
+[data-tf-type="warning"] .tf-prog-fill { background: #f59e0b; }
+
+/* Progress fill animation — duration driven by --tf-dur (set via CSS var, one style prop) */
+.tf-prog-fill {
+  width: 100%;
+  height: 100%;
+  border-radius: 9999px;
+  opacity: 0.55;
+  transform-origin: left;
+  animation: tf_prog var(--tf-dur, 4500ms) linear forwards;
+}
+
+html[dir="rtl"] .tf-prog-fill {
+  transform-origin: right;
+}
+
+/* Icon container bg per type */
+[data-tf-type="success"] .tf-icon-wrap { background: rgba(37,211,102,0.12); }
+[data-tf-type="error"]   .tf-icon-wrap { background: rgba(239,68,68,0.12);  }
+[data-tf-type="info"]    .tf-icon-wrap { background: rgba(59,130,246,0.12); }
+[data-tf-type="warning"] .tf-icon-wrap { background: rgba(245,158,11,0.12); }
+
+/* Icon colour per type */
+[data-tf-type="success"] .tf-icon-wrap svg { color: #25D366; }
+[data-tf-type="error"]   .tf-icon-wrap svg { color: #f87171; }
+[data-tf-type="info"]    .tf-icon-wrap svg { color: #60a5fa; }
+[data-tf-type="warning"] .tf-icon-wrap svg { color: #fbbf24; }
+
+/* Avatar gradient */
+.tf-avatar {
+  background: linear-gradient(145deg, #25D366 0%, #128C7E 100%);
+  box-shadow: 0 4px 16px rgba(37,211,102,0.35);
+}
+
+/* Top-edge shimmer */
+.tf-shimmer {
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.18) 50%, transparent 100%);
 }

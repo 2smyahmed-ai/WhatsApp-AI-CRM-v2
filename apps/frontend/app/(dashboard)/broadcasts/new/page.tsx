@@ -2,20 +2,24 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import BroadcastForm from '../../../../components/broadcasts/BroadcastForm';
 import { api } from '../../../../lib/api';
+import { useDirection } from '../../../../hooks/useDirection';
 
 interface Contact {
   id: string;
   phone: string;
   name: string | null;
-  tag: string | null;
+  contactTags?: { tag: { id: string; name: string; color: string } }[];
 }
 
 export default function NewBroadcastPage() {
   const router = useRouter();
+  const { t } = useTranslation('broadcasts');
+  const { isRTL: isRtl } = useDirection();
   const [contacts, setContacts] = useState<Contact[]>([]);
 
   const fetchContacts = useCallback(async () => {
@@ -37,6 +41,7 @@ export default function NewBroadcastPage() {
     message: string;
     recipients: string[];
     scheduledAt?: Date;
+    interactiveContent?: object;
   }) => {
     const createdBroadcast = await api.post('/api/broadcasts', broadcast);
 
@@ -47,23 +52,30 @@ export default function NewBroadcastPage() {
     router.push('/broadcasts');
   };
 
+  const BackIcon = isRtl ? ArrowRight : ArrowLeft;
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center space-x-4">
+      {/* Page header — hidden on mobile (wizard handles its own back navigation) */}
+      <div className="hidden sm:flex items-center gap-4">
         <Link
           href="/broadcasts"
-          className="flex items-center rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-white transition hover:bg-white/10"
+          className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-white transition hover:bg-white/10"
         >
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back
+          <BackIcon className="h-4 w-4" />
+          {t('back')}
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-white">New Broadcast</h1>
-          <p className="text-[#8696A0]">Create and send a broadcast message</p>
+          <h1 className="text-2xl font-bold text-white">{t('form.createTitle')}</h1>
+          <p className="text-[#8696A0]">{t('form.createSubtitle')}</p>
         </div>
       </div>
 
-      <BroadcastForm contacts={contacts} onSave={handleSave} />
+      <BroadcastForm
+        contacts={contacts}
+        onBack={() => router.push('/broadcasts')}
+        onSave={handleSave}
+      />
     </div>
   );
 }

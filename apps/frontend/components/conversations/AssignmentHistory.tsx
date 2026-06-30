@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { useTranslation } from 'react-i18next';
 import { UserCheck, Users, RefreshCw, Clock } from 'lucide-react';
 
 interface AuditLog {
@@ -13,16 +14,6 @@ interface AuditLog {
   user?: { id: string; name: string; email: string } | null;
 }
 
-function timeAgo(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
-
 function ActionIcon({ action }: { action: string }) {
   if (action === 'assign_user') return <UserCheck className="h-4 w-4 text-blue-500" />;
   if (action === 'assign_team') return <Users className="h-4 w-4 text-purple-500" />;
@@ -30,28 +21,39 @@ function ActionIcon({ action }: { action: string }) {
   return <Clock className="h-4 w-4 text-gray-400" />;
 }
 
-function describeAction(log: AuditLog) {
-  const actor = log.user?.name || log.user?.email || 'System';
-  const d = log.details || {};
-  if (log.action === 'assign_user') {
-    return d.agentName
-      ? `${actor} assigned to ${d.agentName}`
-      : `${actor} unassigned agent`;
-  }
-  if (log.action === 'assign_team') {
-    return d.teamName
-      ? `${actor} assigned to team ${d.teamName}`
-      : `${actor} removed team`;
-  }
-  if (log.action === 'status_change') {
-    return `${actor} changed status to ${d.newStatus || d.status || '?'}`;
-  }
-  return `${actor} — ${log.action}`;
-}
-
 export default function AssignmentHistory({ conversationId }: { conversationId: string }) {
+  const { t } = useTranslation('chat');
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
+
+  function timeAgo(dateStr: string) {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return t('assignmentHistory.justNow');
+    if (mins < 60) return t('assignmentHistory.minsAgo', { count: mins });
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return t('assignmentHistory.hrsAgo', { count: hrs });
+    return t('assignmentHistory.daysAgo', { count: Math.floor(hrs / 24) });
+  }
+
+  function describeAction(log: AuditLog) {
+    const actor = log.user?.name || log.user?.email || 'System';
+    const d = log.details || {};
+    if (log.action === 'assign_user') {
+      return d.agentName
+        ? t('assignmentHistory.assignedTo', { actor, name: d.agentName })
+        : t('assignmentHistory.unassignedAgent', { actor });
+    }
+    if (log.action === 'assign_team') {
+      return d.teamName
+        ? t('assignmentHistory.assignedToTeam', { actor, name: d.teamName })
+        : t('assignmentHistory.removedTeam', { actor });
+    }
+    if (log.action === 'status_change') {
+      return t('assignmentHistory.changedStatus', { actor, status: d.newStatus || d.status || '?' });
+    }
+    return t('assignmentHistory.defaultAction', { actor, action: log.action });
+  }
 
   useEffect(() => {
     setLoading(true);
@@ -65,14 +67,14 @@ export default function AssignmentHistory({ conversationId }: { conversationId: 
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-100 dark:border-white/10">
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-[#8696A0]">
-          Assignment History
+          {t('details.assignmentHistory')}
         </p>
       </div>
       <div className="flex-1 overflow-y-auto p-4">
         {loading ? (
-          <p className="text-center text-xs text-gray-400 dark:text-[#8696A0] mt-8">Loading…</p>
+          <p className="text-center text-xs text-gray-400 dark:text-[#8696A0] mt-8">{t('assignmentHistory.loading')}</p>
         ) : logs.length === 0 ? (
-          <p className="text-center text-xs text-gray-400 dark:text-[#8696A0] mt-8">No history yet</p>
+          <p className="text-center text-xs text-gray-400 dark:text-[#8696A0] mt-8">{t('assignmentHistory.noHistory')}</p>
         ) : (
           <ol className="relative border-l border-gray-200 dark:border-white/10 ml-2 space-y-4">
             {logs.map((log) => (

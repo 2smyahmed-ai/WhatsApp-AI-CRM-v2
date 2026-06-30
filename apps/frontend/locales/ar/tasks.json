@@ -1,0 +1,91 @@
+{
+  "title": "المهام",
+  "subtitle": "إدارة ومتابعة مهام فريقك",
+  "badge": "إدارة المهام",
+  "allTeamTasks": "جميع مهام الفريق",
+  "myTasks": "مهامي",
+  "adminSubtitle": "إدارة وتوزيع المهام عبر فريقك — متزامنة في الوقت الفعلي.",
+  "agentSubtitle": "تابع المهام الموكلة إليك وحدّثها.",
+  "newTask": "مهمة جديدة",
+  "noTasks": "لا توجد مهام بعد. أنشئ أول مهمة.",
+  "noTasksSubtitle": "أنشئ أول مهمة للبدء",
+  "noResults": "لا توجد مهام تطابق الفلاتر الحالية.",
+  "clearAllFilters": "مسح جميع الفلاتر",
+  "table": {
+    "title": "المهمة",
+    "assignedTo": "المُعيَّن إليه",
+    "contact": "جهة الاتصال",
+    "status": "الحالة",
+    "dueDate": "الاستحقاق",
+    "createdAt": "تاريخ الإنشاء",
+    "actions": "الإجراءات",
+    "priority": "الأولوية"
+  },
+  "status": {
+    "OPEN": "للتنفيذ",
+    "IN_PROGRESS": "قيد التنفيذ",
+    "DONE": "مكتمل",
+    "CANCELLED": "ملغى"
+  },
+  "priority": {
+    "LOW": "منخفض",
+    "MEDIUM": "متوسط",
+    "HIGH": "عالي"
+  },
+  "filters": {
+    "allStatuses": "جميع الحالات",
+    "allPriorities": "جميع الأولويات",
+    "allAssignees": "جميع المُعيَّنين",
+    "priority": "الأولوية",
+    "assignee": "المُعيَّن إليه",
+    "dueFrom": "الاستحقاق من",
+    "dueTo": "الاستحقاق إلى",
+    "clear": "مسح"
+  },
+  "bulk": {
+    "selected": "{{count}} مهمة محددة",
+    "selectedPlural": "{{count}} مهام محددة",
+    "markAs": "وضع علامة...",
+    "delete": "حذف",
+    "cancel": "إلغاء",
+    "confirm": "تأكيد",
+    "clearSelection": "إلغاء التحديد",
+    "deleteConfirm": "حذف {{count}}؟",
+    "deleting": "جارٍ الحذف...",
+    "yesDelete": "نعم، احذف",
+    "markAsConfirm": "وضع علامة {{status}}؟"
+  },
+  "overdue": "متأخر",
+  "form": {
+    "createTitle": "مهمة جديدة",
+    "editTitle": "تعديل المهمة",
+    "taskTitle": "العنوان *",
+    "titlePlaceholder": "متابعة مكالمة، إرسال عرض...",
+    "description": "الوصف",
+    "descriptionPlaceholder": "تفاصيل اختيارية...",
+    "assignedTo": "تعيين إلى",
+    "unassigned": "غير مُعيَّن",
+    "contact": "جهة الاتصال",
+    "noContact": "بدون جهة اتصال",
+    "selectContact": "اختر جهة اتصال",
+    "status": "الحالة",
+    "priority": "الأولوية",
+    "dueDate": "تاريخ الاستحقاق",
+    "notes": "ملاحظات",
+    "notesPlaceholder": "ملاحظات المهمة...",
+    "save": "حفظ المهمة",
+    "cancel": "إلغاء",
+    "saving": "جارٍ الحفظ...",
+    "updateTask": "تحديث المهمة",
+    "createTask": "إنشاء المهمة"
+  },
+  "deleteConfirm": {
+    "title": "حذف المهمة",
+    "message": "هل أنت متأكد من رغبتك في حذف هذه المهمة؟",
+    "confirm": "حذف",
+    "cancel": "إلغاء",
+    "inline": "حذف؟",
+    "yes": "نعم",
+    "no": "لا"
+  }
+}

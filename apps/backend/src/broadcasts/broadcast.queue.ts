@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma';
 import { providerManager } from '../providers/manager';
 import { emitRealtime } from '../realtime/socket';
 import { logger } from '../lib/logger';
+import interactiveMessageService from '../services/interactive-message.service';
 
 const redisUrl = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
 
@@ -91,8 +92,40 @@ export function ensureBroadcastWorker() {
         phone: recipient.phone,
       });
 
+      const interactiveContent = (broadcast as any).interactiveContent as
+        | { kind: string; [key: string]: unknown }
+        | null
+        | undefined;
+
       try {
-        await providerManager.sendMessage({ phone: recipient.phone, text: personalizedMessage });
+        if (interactiveContent?.kind) {
+          // Personalize the body field inside the interactive payload
+          const personalizedInteractive = {
+            ...interactiveContent,
+            body: personalizeMessage(
+              typeof interactiveContent.body === 'string' ? interactiveContent.body : '',
+              { name: contactName, phone: recipient.phone },
+            ),
+          };
+          // Use native Baileys interactive send (real buttons/list/CTA) instead of text fallback.
+          // We need a conversationId — resolve or create one for this phone.
+          try {
+            const { getOrCreateConversationByPhone } = await import('../conversations/conversation-resolver');
+            const { conversation } = await getOrCreateConversationByPhone(recipient.phone);
+            const { sendInteractiveViaBaileys } = await import('../whatsapp/sender');
+            await sendInteractiveViaBaileys(recipient.phone, personalizedInteractive as any, conversation.id);
+          } catch (interactiveErr) {
+            // If native send fails, fall back to numbered-text so the message still goes out.
+            logger.warn('broadcast.interactive_native_failed_using_text_fallback', {
+              broadcastId,
+              phone: recipient.phone,
+              error: interactiveErr instanceof Error ? interactiveErr.message : String(interactiveErr),
+            });
+            await interactiveMessageService.send(recipient.phone, personalizedInteractive as any);
+          }
+        } else {
+          await providerManager.sendMessage({ phone: recipient.phone, text: personalizedMessage });
+        }
         await prisma.broadcastRecipient.updateMany({
           where: { broadcastId, phone: recipient.phone },
           data: { status: 'sent' },

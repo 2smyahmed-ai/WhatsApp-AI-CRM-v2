@@ -3,13 +3,39 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { prisma } from '../../lib/prisma';
+import { env } from '../../lib/env';
 
 const router = Router();
 
 const ACCESS_TOKEN_TTL = '15m';
 const REFRESH_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7;
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
-const revokedRefreshTokens = new Set<string>();
+// Revoked refresh tokens kept until their natural expiry, then pruned so the
+// set cannot grow without bound. (For multi-instance deployments this should be
+// backed by Redis; see REDIS_URL.)
+const revokedRefreshTokens = new Map<string, number>();
+
+function revokeRefreshToken(token: string) {
+  let expiryMs = Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000;
+  const decoded = jwt.decode(token) as { exp?: number } | null;
+  if (decoded?.exp) {
+    expiryMs = decoded.exp * 1000;
+  }
+  revokedRefreshTokens.set(token, expiryMs);
+  pruneRevokedTokens();
+}
+
+function isRefreshTokenRevoked(token: string): boolean {
+  pruneRevokedTokens();
+  return revokedRefreshTokens.has(token);
+}
+
+function pruneRevokedTokens() {
+  const now = Date.now();
+  for (const [token, expiry] of revokedRefreshTokens) {
+    if (expiry <= now) revokedRefreshTokens.delete(token);
+  }
+}
 
 function getClientKey(req: any) {
   return req.ip || req.headers['x-forwarded-for'] || 'unknown';
@@ -18,7 +44,7 @@ function getClientKey(req: any) {
 function signAccessToken(user: { id: string; email: string; name: string; role?: string; teamId?: string | null }) {
   return jwt.sign(
     { id: user.id, email: user.email, name: user.name, role: user.role, teamId: user.teamId },
-    process.env.JWT_SECRET!,
+    env.jwtSecret,
     { expiresIn: ACCESS_TOKEN_TTL }
   );
 }
@@ -26,21 +52,24 @@ function signAccessToken(user: { id: string; email: string; name: string; role?:
 function signRefreshToken(user: { id: string; email: string; role?: string; teamId?: string | null }) {
   const refreshToken = jwt.sign(
     { id: user.id, email: user.email, role: user.role, teamId: user.teamId, tokenId: crypto.randomUUID() },
-    process.env.JWT_SECRET!,
+    env.jwtSecret,
     { expiresIn: `${REFRESH_TOKEN_TTL_SECONDS}s` }
   );
   return refreshToken;
 }
 
+// `Secure` is required so the cookie is only sent over HTTPS in production.
+const SECURE_COOKIE = env.isProduction ? ' Secure;' : '';
+
 function setRefreshCookie(res: any, token: string) {
   res.setHeader(
     'Set-Cookie',
-    `refreshToken=${token}; HttpOnly; Path=/; Max-Age=${REFRESH_TOKEN_TTL_SECONDS}; SameSite=Lax`
+    `refreshToken=${token}; HttpOnly;${SECURE_COOKIE} Path=/; Max-Age=${REFRESH_TOKEN_TTL_SECONDS}; SameSite=Lax`
   );
 }
 
 function clearRefreshCookie(res: any) {
-  res.setHeader('Set-Cookie', 'refreshToken=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax');
+  res.setHeader('Set-Cookie', `refreshToken=; HttpOnly;${SECURE_COOKIE} Path=/; Max-Age=0; SameSite=Lax`);
 }
 
 router.post('/register', (_req, res) => {
@@ -101,11 +130,11 @@ router.post('/refresh', async (req, res) => {
       ?.split('=')[1];
     const refreshToken = headerToken || cookieToken;
 
-    if (!refreshToken || revokedRefreshTokens.has(refreshToken)) {
+    if (!refreshToken || isRefreshTokenRevoked(refreshToken)) {
       return res.status(401).json({ error: 'Refresh token required' });
     }
 
-    const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET!) as { id: string; email: string };
+    const decoded = jwt.verify(refreshToken, env.jwtSecret) as { id: string; email: string };
     const user = await prisma.user.findUnique({ where: { id: decoded.id } });
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
@@ -123,7 +152,7 @@ router.post('/logout', async (req, res) => {
     const refreshToken = req.headers.cookie?.split(';').find((part: string) => part.trim().startsWith('refreshToken='))
       ?.split('=')[1];
     if (refreshToken) {
-      revokedRefreshTokens.add(refreshToken);
+      revokeRefreshToken(refreshToken);
     }
     clearRefreshCookie(res);
     res.json({ success: true });
@@ -140,7 +169,7 @@ router.get('/me', async (req, res) => {
       return res.status(401).json({ error: 'Access token required' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { id: string; email: string; name?: string };
+    const decoded = jwt.verify(token, env.jwtSecret) as { id: string; email: string; name?: string };
     const user = await prisma.user.findUnique({
       where: { id: decoded.id },
       select: { id: true, email: true, name: true, role: true, teamId: true, createdAt: true },
@@ -166,6 +195,54 @@ router.post('/forgot-password', async (req, res) => {
 
 router.post('/reset-password', async (req, res) => {
   res.status(501).json({ error: 'Password reset is not implemented yet' });
+});
+
+router.post('/change-password', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) {
+      return res.status(401).json({ error: 'Access token required' });
+    }
+
+    const decoded = jwt.verify(token, env.jwtSecret) as { id: string; email: string };
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current password and new password are required' });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: decoded.id } });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const isValidPassword = await bcrypt.compare(currentPassword, user.password);
+    if (!isValidPassword) {
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+
+    if (currentPassword === newPassword) {
+      return res.status(400).json({ error: 'New password must be different from current password' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { id: decoded.id },
+      data: { password: hashedPassword },
+    });
+
+    res.json({ success: true, message: 'Password changed successfully' });
+  } catch (error) {
+    if (error instanceof jwt.JsonWebTokenError) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+    res.status(500).json({ error: 'Password change failed' });
+  }
 });
 
 export default router;

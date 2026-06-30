@@ -1,0 +1,145 @@
+{
+  "title": "لوحة التحكم",
+  "subtitle": "نظرة عامة على نشاط واتساب للأعمال",
+  "greeting": "مرحبًا بعودتك، {{name}}",
+  "tagline": "خطّط، ورتّب الأولويات، وأنجز عملك بسهولة.",
+  "newBroadcast": "حملة جديدة",
+  "importContacts": "استيراد جهات الاتصال",
+  "reminders": {
+    "title": "التذكيرات",
+    "headline": "{{count}} محادثة بانتظار ردّك",
+    "sub": "عُد إلى العمل وحافظ على تفاعل عملائك.",
+    "caughtUp": "أنجزت كل شيء",
+    "caughtUpSub": "لا توجد محادثات مفتوحة بحاجة إلى رد الآن.",
+    "action": "فتح الوارد"
+  },
+  "kpi": {
+    "totalContacts": "إجمالي جهات الاتصال",
+    "totalContactsCaption": "عبر جمهورك بالكامل",
+    "openConversations": "المحادثات المفتوحة",
+    "openConversationsCaption": "بانتظار ردّك",
+    "todayMessages": "رسائل اليوم",
+    "todayMessagesCaption": "المُرسَلة والمُستقبَلة اليوم",
+    "hotLeads": "العملاء الساخنين",
+    "hotLeadsCaption": "عملاء إدارة العملاء المحتملين"
+  },
+  "analytics": {
+    "title": "تحليلات الرسائل",
+    "subtitle": "حجم الرسائل اليومي خلال آخر ٧ أيام",
+    "noData": "لا يوجد نشاط رسائل بعد"
+  },
+  "collab": {
+    "title": "تعاون الفريق",
+    "subtitle": "حجم العمل ومعدل الحل لكل وكيل",
+    "manage": "إدارة",
+    "empty": "لا يوجد نشاط للوكلاء بعد",
+    "workingOnPrefix": "يعمل على",
+    "workingOn": "{{open}} مفتوحة · {{resolved}} محلولة",
+    "completed": "مكتمل",
+    "inProgress": "قيد التنفيذ",
+    "pending": "قيد الانتظار"
+  },
+  "progress": {
+    "title": "تقدّم الحل",
+    "caption": "محلولة",
+    "resolutionCaption": "معدل الحل",
+    "conversionCaption": "تحويل الصفقات"
+  },
+  "tracker": {
+    "title": "مدة الجلسة",
+    "live": "مباشر",
+    "paused": "متوقف",
+    "pause": "إيقاف المؤقت",
+    "resume": "استئناف المؤقت",
+    "reset": "إعادة ضبط المؤقت"
+  },
+  "crmOverview": "نظرة عامة على CRM",
+  "heroTitle": "مركز واتساب",
+  "heroSubtitle": "تتبع جهات الاتصال والمحادثات والحملات والأتمتة من مساحة عمل واحدة.",
+  "contactsLabel": "جهات الاتصال",
+  "conversationsLabel": "المحادثات",
+  "automationLabel": "الأتمتة",
+  "liveStatus": "الحالة المباشرة",
+  "refreshRate": "التحديث",
+  "refreshInterval": "كل دقيقة",
+  "agentPerformance": "أداء الوكلاء",
+  "agentPerformanceSubtitle": "وقت الاستجابة وحجم العمل لكل وكيل",
+  "agentCol": {
+    "name": "الوكيل",
+    "open": "مفتوح",
+    "resolved": "محلول",
+    "avgFirstResponse": "متوسط أول رد"
+  },
+  "resolutionRate": "معدل الحل",
+  "closedDeals": "الصفقات المغلقة",
+  "whatsappConnected": "واتساب متصل",
+  "disconnected": "غير متصل",
+  "pipelineAnalytics": "تحليل المسار",
+  "pipelineSub": "مسار الصفقات والتحويل",
+  "totalDeals": "إجمالي الصفقات",
+  "conversion": "التحويل",
+  "totalValue": "القيمة الإجمالية",
+  "stats": {
+    "openConversations": "المحادثات المفتوحة",
+    "totalContacts": "إجمالي جهات الاتصال",
+    "messagesSent": "الرسائل المُرسَلة",
+    "responseRate": "معدل الاستجابة",
+    "avgResponseTime": "متوسط وقت الاستجابة",
+    "resolvedToday": "تم حله اليوم",
+    "newContactsToday": "جهات اتصال جديدة اليوم",
+    "campaignsSent": "الحملات المُرسَلة",
+    "messagesToday": "رسائل اليوم",
+    "automationsFired": "الأتمتة المُشغَّلة"
+  },
+  "chart": {
+    "title": "نشاط الرسائل",
+    "subtitle": "الرسائل المُرسَلة والمُستقبَلة خلال آخر 7 أيام",
+    "sent": "مُرسَل",
+    "received": "مُستقبَل",
+    "noData": "لا توجد بيانات للرسائل"
+  },
+  "recentConversations": {
+    "title": "المحادثات الأخيرة",
+    "subtitle": "آخر النشاطات في صندوق الوارد",
+    "viewAll": "عرض الكل",
+    "lastActive": "آخر نشاط {{date}}",
+    "noConversations": "لا توجد محادثات حديثة",
+    "noMessages": "لا توجد رسائل بعد"
+  },
+  "quickActions": {
+    "title": "إجراءات سريعة",
+    "newBroadcast": "حملة جديدة",
+    "newContact": "جهة اتصال جديدة",
+    "viewTemplates": "عرض القوالب"
+  },
+  "quickNav": {
+    "title": "وصول سريع",
+    "open": "فتح",
+    "leads": "العملاء المحتملون",
+    "leadsSub": "تتبّع وحوّل العملاء الساخنين",
+    "templates": "القوالب",
+    "templatesSub": "قوالب رسائل جاهزة للإرسال",
+    "tags": "الوسوم",
+    "tagsSub": "نظّم جهات الاتصال بالتسميات"
+  },
+  "session": {
+    "title": "جلسة واتساب",
+    "connected": "متصل",
+    "connecting": "جاري الاتصال",
+    "disconnected": "غير متصل",
+    "disconnectedHint": "غير متصل — امسح رمز QR لإعادة الاتصال.",
+    "connectingHint": "جاري الاتصال بواتساب…",
+    "loadingHint": "جاري تحميل الجلسة…",
+    "todaysMessages": "رسائل اليوم",
+    "sentSuffix": "مُرسَلة",
+    "warmupTitle": "فترة التهيئة",
+    "dayOf": "اليوم {{day}} من ١٥",
+    "remaining": "متبقّي {{count}} · يُعاد التعيين منتصف الليل",
+    "limitReached": "تم بلوغ الحد اليومي · يُعاد التعيين منتصف الليل",
+    "unlocks": "تُفتح الطاقة الكاملة {{date}}",
+    "fullCapacity": "الطاقة الكاملة",
+    "perMinute": "حتى {{count}} / دقيقة",
+    "protectNote": "تحمي هذه الحدود رقمك من حظر واتساب.",
+    "openInbox": "فتح الوارد"
+  }
+}

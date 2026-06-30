@@ -1,6 +1,8 @@
 import type { Server as SocketIOServer } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../lib/prisma';
+import { env } from '../lib/env';
+import { isManager } from '../auth/authorize';
 
 let socketServer: SocketIOServer | null = null;
 
@@ -14,7 +16,7 @@ export function bindRealtimeServer(server: SocketIOServer) {
         socket.handshake.headers.authorization?.toString().replace(/^Bearer\s+/i, '');
       if (!token) return next(new Error('Unauthorized'));
 
-      const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { id: string };
+      const decoded = jwt.verify(token, env.jwtSecret) as { id: string };
       const user = await prisma.user.findUnique({
         where: { id: decoded.id },
         select: { id: true, email: true, name: true, role: true, teamId: true },
@@ -30,7 +32,7 @@ export function bindRealtimeServer(server: SocketIOServer) {
   });
 
   server.on('connection', (socket) => {
-    const user = socket.data.user as { id: string; teamId: string | null };
+    const user = socket.data.user as { id: string; teamId: string | null; role?: string };
 
     // Join team-scoped room so events are isolated per tenant
     if (user.teamId) {
@@ -38,6 +40,12 @@ export function bindRealtimeServer(server: SocketIOServer) {
     }
     // Personal room for direct notifications
     socket.join(`user:${user.id}`);
+    // System Managers have full access and the boards/inbox show every team's
+    // records, so they must receive team-scoped events even when they belong to
+    // no team (or a different team). A dedicated room mirrors every team emit.
+    if (isManager(user.role)) {
+      socket.join('managers');
+    }
 
     // ── Typing indicator relay ──────────────────────────────────────────────
     socket.on('typing:start', (data: { conversationId: string }) => {
@@ -75,9 +83,11 @@ export function bindRealtimeServer(server: SocketIOServer) {
 export function emitRealtime(event: string, payload: unknown, teamId?: string | null) {
   if (!socketServer) return;
   if (teamId) {
-    socketServer.to(`team:${teamId}`).emit(event, payload);
+    // Deliver to the team room AND the managers room. socket.io de-duplicates,
+    // so a manager who is also in that team still receives the event once.
+    socketServer.to(`team:${teamId}`).to('managers').emit(event, payload);
   } else {
-    // Global emit — only for events that truly need it (wa:status, wa:qr)
+    // Global emit — shared (null-team) records and system events (wa:status, wa:qr).
     socketServer.emit(event, payload);
   }
 }

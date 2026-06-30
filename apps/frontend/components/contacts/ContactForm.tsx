@@ -1,111 +1,162 @@
+'use client';
+
 import { useState } from 'react';
+import { X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { useTags, type Tag } from '../../hooks/useTags';
+import ContactTagSelector from './ContactTagSelector';
+import { Modal } from '../ui/modal';
 
 interface Contact {
   id: string;
   phone: string;
   name: string | null;
-  tag: string | null;
   notes: string | null;
   createdAt: string;
 }
 
 interface ContactFormProps {
   contact: Contact | null;
-  onSave: (contact: Partial<Contact>) => void;
+  onSave: (contact: Partial<Contact> & { tagIds?: string[] }) => void;
   onCancel: () => void;
 }
 
 export default function ContactForm({ contact, onSave, onCancel }: ContactFormProps) {
+  const { t } = useTranslation('contacts');
+  const allTags = useTags();
   const [formData, setFormData] = useState({
     phone: contact?.phone || '',
     name: contact?.name || '',
-    tag: contact?.tag || '',
     notes: contact?.notes || '',
   });
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
 
-  const normalizedTags = formData.tag
-    .split(',')
-    .map((tag) => tag.trim())
-    .filter(Boolean);
+  const toggleTag = (id: string) =>
+    setSelectedTagIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(formData);
+    onSave({ ...formData, ...(contact ? {} : { tagIds: selectedTagIds }) });
   };
 
+  const inputCls =
+    'mt-1 block w-full rounded-md border border-gray-300 dark:border-white/10 bg-white dark:bg-[#202C33] py-2 px-3 text-sm text-gray-900 dark:text-white shadow-sm focus:border-[#25D366] focus:outline-none focus:ring-1 focus:ring-[#25D366]';
+  const labelCls = 'block text-sm font-medium text-gray-700 dark:text-white';
+
   return (
-    <div className="fixed inset-0 bg-black/70 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-20 mx-auto p-5 border border-gray-200 dark:border-white/10 w-96 shadow-lg rounded-2xl bg-white dark:bg-[#111B21]">
+    <Modal
+      open
+      onClose={onCancel}
+      aria-label={contact ? t('form.editTitle') : t('form.createTitle')}
+      overlayClassName="items-start overflow-y-auto bg-black/70"
+      className="relative top-20 mx-auto p-5 border border-gray-200 dark:border-white/10 w-96 shadow-lg rounded-2xl bg-white dark:bg-[#111B21]"
+    >
         <div className="mt-3">
           <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-            {contact ? 'Edit Contact' : 'Add Contact'}
+            {contact ? t('form.editTitle') : t('form.createTitle')}
           </h3>
+
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Phone */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-white">Phone</label>
+              <label className={labelCls}>{t('form.phone')}</label>
               <input
                 type="text"
                 required
                 value={formData.phone}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                className="mt-1 block w-full border border-gray-300 dark:border-white/10 bg-white dark:bg-[#202C33] rounded-md shadow-sm py-2 px-3 text-gray-900 dark:text-white focus:outline-none focus:ring-[#25D366] focus:border-[#25D366] dark:focus:ring-[#25D366] dark:focus:border-[#25D366]"
+                className={inputCls}
               />
             </div>
+
+            {/* Name */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-white">Name</label>
+              <label className={labelCls}>{t('form.name')}</label>
               <input
                 type="text"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="mt-1 block w-full border border-gray-300 dark:border-white/10 bg-white dark:bg-[#202C33] rounded-md shadow-sm py-2 px-3 text-gray-900 dark:text-white focus:outline-none focus:ring-[#25D366] focus:border-[#25D366] dark:focus:ring-[#25D366] dark:focus:border-[#25D366]"
+                className={inputCls}
               />
             </div>
+
+            {/* Tags */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-white">Tags</label>
-              <input
-                type="text"
-                value={formData.tag}
-                onChange={(e) => setFormData({ ...formData, tag: e.target.value })}
-                placeholder="VIP, Lead, Hot"
-                className="mt-1 block w-full border border-gray-300 dark:border-white/10 bg-white dark:bg-[#202C33] rounded-md shadow-sm py-2 px-3 text-gray-900 dark:text-white focus:outline-none focus:ring-[#25D366] focus:border-[#25D366] dark:focus:ring-[#25D366] dark:focus:border-[#25D366]"
-              />
-              {normalizedTags.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {normalizedTags.map((tag) => (
-                    <span key={tag} className="rounded-full bg-[#25D366]/10 dark:bg-[#25D366]/15 px-2.5 py-1 text-xs text-[#25D366]">
-                      {tag}
-                    </span>
-                  ))}
+              <label className={labelCls}>{t('form.tags')}</label>
+
+              {contact ? (
+                /* Edit mode — ContactTagSelector handles its own API calls */
+                <div className="mt-2">
+                  <ContactTagSelector contactId={contact.id} />
+                </div>
+              ) : (
+                /* Create mode — chip picker that collects IDs for after creation */
+                <div className="mt-2">
+                  {allTags.length === 0 ? (
+                    <p className="text-xs text-gray-400 dark:text-[#8696A0]">
+                      No tags yet — create them in the Tags page.
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {allTags.map((tag: Tag) => {
+                        const selected = selectedTagIds.includes(tag.id);
+                        return (
+                          <button
+                            key={tag.id}
+                            type="button"
+                            onClick={() => toggleTag(tag.id)}
+                            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all border ${
+                              selected
+                                ? 'text-white border-transparent'
+                                : 'text-gray-600 dark:text-gray-300 border-gray-200 dark:border-white/15 hover:border-gray-300 dark:hover:border-white/30'
+                            }`}
+                            style={selected ? { backgroundColor: tag.color } : {}}
+                          >
+                            <span
+                              className="h-2 w-2 rounded-full shrink-0"
+                              style={{ backgroundColor: tag.color }}
+                            />
+                            {tag.name}
+                            {selected && <X className="h-2.5 w-2.5 opacity-80" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
+
+            {/* Notes */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-white">Notes</label>
+              <label className={labelCls}>{t('form.notes')}</label>
               <textarea
                 value={formData.notes}
                 onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                 rows={3}
-                className="mt-1 block w-full border border-gray-300 dark:border-white/10 bg-white dark:bg-[#202C33] rounded-md shadow-sm py-2 px-3 text-gray-900 dark:text-white focus:outline-none focus:ring-[#25D366] focus:border-[#25D366] dark:focus:ring-[#25D366] dark:focus:border-[#25D366]"
+                className={inputCls}
               />
             </div>
-            <div className="flex justify-end space-x-2">
+
+            <div className="flex justify-end gap-2">
               <button
                 type="button"
                 onClick={onCancel}
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-white bg-gray-100 dark:bg-[#202C33] border border-gray-300 dark:border-white/10 rounded-md shadow-sm hover:bg-gray-200 dark:hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#25D366] dark:focus:ring-[#25D366]"
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-white bg-gray-100 dark:bg-[#202C33] border border-gray-300 dark:border-white/10 rounded-md hover:bg-gray-200 dark:hover:bg-white/10 focus:outline-none"
               >
-                Cancel
+                {t('form.cancel')}
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 text-sm font-medium text-white bg-[#25D366] dark:bg-[#25D366] border border-transparent rounded-md shadow-sm hover:bg-[#25D366]/90 dark:hover:bg-[#25D366]/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#25D366] dark:focus:ring-[#25D366]"
+                className="px-4 py-2 text-sm font-medium text-white bg-[#25D366] rounded-md hover:bg-[#25D366]/90 focus:outline-none"
               >
-                Save
+                {t('form.save')}
               </button>
             </div>
           </form>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

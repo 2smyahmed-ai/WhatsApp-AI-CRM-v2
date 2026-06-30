@@ -1,5 +1,6 @@
 import { prisma } from '../lib/prisma';
 import { emitRealtime } from '../realtime/socket';
+import { assertTeamAccess, NotFoundError, type AuthActor } from '../auth/authorize';
 
 type DealStage = 'NEW' | 'INTERESTED' | 'NEGOTIATION' | 'CLOSED';
 
@@ -54,11 +55,12 @@ export class DealsService {
       ownerId?: string;
       teamId?: string;
     },
+    actor: AuthActor,
   ) {
-    const existing = await prisma.deal.findFirst({
-      where: data.teamId ? { id, teamId: data.teamId } : { id },
-    });
-    if (!existing) throw new Error('Deal not found');
+    const existing = await prisma.deal.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundError('Deal not found');
+    // Block cross-team tampering; admins and same/shared-team pass.
+    assertTeamAccess(actor, existing);
 
     const stageChanged = data.stage && data.stage !== existing.stage;
 
@@ -91,13 +93,12 @@ export class DealsService {
     return deal;
   }
 
-  static async deleteDeal(id: string, teamId?: string) {
-    const existing = await prisma.deal.findFirst({
-      where: teamId ? { id, teamId } : { id },
-    });
-    if (!existing) throw new Error('Deal not found');
+  static async deleteDeal(id: string, actor: AuthActor) {
+    const existing = await prisma.deal.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundError('Deal not found');
+    assertTeamAccess(actor, existing);
     await prisma.deal.delete({ where: { id } });
-    emitRealtime('deal:deleted', { dealId: id }, teamId);
+    emitRealtime('deal:deleted', { dealId: id }, existing.teamId ?? undefined);
     return { success: true };
   }
 }

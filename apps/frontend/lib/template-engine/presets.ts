@@ -1,12 +1,12 @@
 import type { CanonicalTemplate } from './schema'
 
-// ── Production-ready canonical presets ───────────────────────────────────────
+// ── WhatsApp-native preset templates ─────────────────────────────────────────
 // Every preset here:
-//   ✅ compiles to valid Meta components via toMetaComponents()
-//   ✅ previews via toRenderable()
-//   ✅ Baileys gracefully downgrades via toBaileysPayload()
-//   ✅ follows all Meta button/variable/character limits
-//   ✅ ready for Meta approval submission
+//   ✅ Sends correctly via Baileys
+//   ✅ Previews via toRenderable()
+//   ✅ Buttons auto-downgrade to numbered text in WhatsApp
+//   ✅ Variables work with {{name}} syntax
+//   ✅ No Meta API approval needed
 
 export interface PresetGroup {
   category: string
@@ -16,12 +16,12 @@ export interface PresetGroup {
 
 const PRESETS: PresetGroup[] = [
   {
-    category: 'Welcome',
+    category: 'Onboarding',
     color: 'emerald',
     templates: [
       {
         name: 'Welcome Friendly',
-        category: 'MARKETING',
+        category: 'ONBOARDING',
         language: 'en_US',
         body: {
           text: 'Hi {{name}}! 👋 Welcome to *{{business_name}}*.\n\nWe\'re thrilled to have you. How can we help you today?',
@@ -39,7 +39,7 @@ const PRESETS: PresetGroup[] = [
       },
       {
         name: 'Onboarding Welcome',
-        category: 'UTILITY',
+        category: 'ONBOARDING',
         language: 'en_US',
         header: { type: 'TEXT', text: '🎊 Welcome to {{product_name}}' },
         body: {
@@ -62,7 +62,7 @@ const PRESETS: PresetGroup[] = [
     templates: [
       {
         name: 'Order Confirmed',
-        category: 'UTILITY',
+        category: 'ECOMMERCE',
         language: 'en_US',
         header: { type: 'TEXT', text: '✅ Order #{{order_id}} Confirmed' },
         body: {
@@ -83,7 +83,7 @@ const PRESETS: PresetGroup[] = [
       },
       {
         name: 'Order Shipped',
-        category: 'UTILITY',
+        category: 'ECOMMERCE',
         language: 'en_US',
         header: { type: 'TEXT', text: '🚚 Your Order Is On Its Way!' },
         body: {
@@ -103,7 +103,7 @@ const PRESETS: PresetGroup[] = [
       },
       {
         name: 'Abandoned Cart',
-        category: 'MARKETING',
+        category: 'ECOMMERCE',
         language: 'en_US',
         body: {
           text: 'Hey {{name}}! 🛒 You left something behind.\n\nYour cart is still waiting:\n📌 *{{product}}*\n💰 Cart total: *{{cart_value}}*\n\nComplete your purchase now — items may sell out!',
@@ -123,7 +123,7 @@ const PRESETS: PresetGroup[] = [
       },
       {
         name: 'Payment Failed',
-        category: 'UTILITY',
+        category: 'ECOMMERCE',
         language: 'en_US',
         body: {
           text: 'Hi {{name}}, we couldn\'t process the payment for order *#{{order_id}}*.\n\nPlease update your payment details to avoid delays.',
@@ -146,7 +146,7 @@ const PRESETS: PresetGroup[] = [
     templates: [
       {
         name: 'Appointment Reminder',
-        category: 'UTILITY',
+        category: 'APPOINTMENTS',
         language: 'en_US',
         header: { type: 'TEXT', text: '📅 Appointment Reminder' },
         body: {
@@ -168,7 +168,7 @@ const PRESETS: PresetGroup[] = [
       },
       {
         name: 'Booking Confirmed',
-        category: 'UTILITY',
+        category: 'APPOINTMENTS',
         language: 'en_US',
         header: { type: 'TEXT', text: '🎉 Booking Confirmed!' },
         body: {
@@ -191,7 +191,7 @@ const PRESETS: PresetGroup[] = [
     templates: [
       {
         name: 'Support Welcome',
-        category: 'UTILITY',
+        category: 'SUPPORT',
         language: 'en_US',
         body: {
           text: 'Hi {{name}}! 👋 Welcome to *Support*.\n\nHow can we help you today? Choose an option below or type your question — an agent will assist you shortly.',
@@ -209,7 +209,7 @@ const PRESETS: PresetGroup[] = [
       },
       {
         name: 'Ticket Opened',
-        category: 'UTILITY',
+        category: 'SUPPORT',
         language: 'en_US',
         header: { type: 'TEXT', text: '🎫 Support Ticket #{{ticket_id}} Opened' },
         body: {
@@ -223,7 +223,7 @@ const PRESETS: PresetGroup[] = [
       },
       {
         name: 'Ticket Resolved',
-        category: 'UTILITY',
+        category: 'SUPPORT',
         language: 'en_US',
         header: { type: 'TEXT', text: '✅ Ticket #{{ticket_id}} Resolved' },
         body: {
@@ -247,7 +247,7 @@ const PRESETS: PresetGroup[] = [
     templates: [
       {
         name: 'Flash Sale Offer',
-        category: 'MARKETING',
+        category: 'SALES',
         language: 'en_US',
         header: { type: 'TEXT', text: '🔥 Flash Sale — {{discount}}% Off Today!' },
         body: {
@@ -269,7 +269,7 @@ const PRESETS: PresetGroup[] = [
       },
       {
         name: 'Win-Back Offer',
-        category: 'MARKETING',
+        category: 'SALES',
         language: 'en_US',
         body: {
           text: 'Hi {{name}}, we miss you! 💙\n\nIt\'s been a while since your last visit. As a valued customer, we\'d love to welcome you back with *{{discount}}% off* your next purchase.\n\n🎟️ Code: *{{code}}*\n📅 Valid for *{{days}} days* only.',
@@ -292,7 +292,7 @@ const PRESETS: PresetGroup[] = [
     templates: [
       {
         name: 'Feedback Request',
-        category: 'MARKETING',
+        category: 'FOLLOW_UP',
         language: 'en_US',
         body: {
           text: 'Hi {{name}}! 🌟 How was your experience?\n\nWe hope you\'re enjoying *{{product_or_service}}*!\n\nYour feedback helps us improve. Would you mind leaving a quick rating?',
@@ -310,7 +310,7 @@ const PRESETS: PresetGroup[] = [
       },
       {
         name: 'No Reply Follow-up',
-        category: 'MARKETING',
+        category: 'FOLLOW_UP',
         language: 'en_US',
         body: {
           text: 'Hi {{name}}, just checking in! 👋\n\nWe sent you a message a few days ago — did you get a chance to review it?\n\nIf you have any questions, we\'re happy to help. Just reply here!',
@@ -323,7 +323,7 @@ const PRESETS: PresetGroup[] = [
       },
       {
         name: 'Subscription Renewal',
-        category: 'UTILITY',
+        category: 'FOLLOW_UP',
         language: 'en_US',
         header: { type: 'TEXT', text: '🔔 {{service}} Renewal Coming Up' },
         body: {

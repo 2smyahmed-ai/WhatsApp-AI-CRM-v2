@@ -1,16 +1,34 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { getSession, signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { MessageCircle } from 'lucide-react';
+import {
+  MessageCircle, Eye, EyeOff, Lock, Loader,
+  Sun, Moon, Globe, ArrowRight,
+} from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { useTheme } from '@/components/providers/ThemeProvider';
+import { useLanguage } from '@/components/providers/I18nProvider';
 
 export default function LoginPage() {
+  const { t, i18n } = useTranslation('auth');
+  const { t: tCommon } = useTranslation('common');
+  const { theme, toggle: toggleTheme } = useTheme();
+  const { language, setLanguage } = useLanguage();
+  const router = useRouter();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,7 +39,7 @@ export default function LoginPage() {
       const result = await signIn('credentials', { email, password, redirect: false });
 
       if (result?.error) {
-        setError('Invalid email or password');
+        setError(t('login.error.invalidCredentials'));
       } else {
         const session = await getSession();
         if (session?.accessToken && typeof window !== 'undefined') {
@@ -30,82 +48,263 @@ export default function LoginPage() {
         if (session?.refreshToken && typeof window !== 'undefined') {
           window.localStorage.setItem('refreshToken', session.refreshToken);
         }
+        if (rememberMe && typeof window !== 'undefined') {
+          window.localStorage.setItem('rememberMe', 'true');
+        }
         router.push('/dashboard');
       }
     } catch {
-      setError('An error occurred. Please try again.');
+      setError(t('login.error.generic'));
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div className="min-h-screen flex items-center justify-center px-4 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-[#0B141A] dark:to-[#111B21]">
-      <div className="w-full max-w-md rounded-2xl border border-white/60 dark:border-white/10 bg-white dark:bg-[#111B21] p-8 shadow-lift dark:shadow-[0_8px_32px_rgba(0,0,0,0.3)]">
 
-        {/* Logo */}
-        <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-[#25D366] to-[#128C7E] shadow-[0_4px_20px_rgba(37,211,102,0.25)]">
-            <MessageCircle className="h-7 w-7 text-white" fill="white" strokeWidth={0} />
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-[#0B141A]" />
+    );
+  }
+
+  return (
+    <div className="min-h-screen overflow-hidden bg-gray-50 dark:bg-[#0B141A]">
+
+      <div className="relative min-h-screen flex flex-col lg:flex-row">
+        {/* Left side - Premium preview (desktop only) */}
+        <div className="hidden lg:flex lg:w-1/2 flex-col justify-between p-12 relative overflow-hidden">
+          {/* Decorative elements */}
+          <div className="absolute inset-0 -z-10">
+            <div className="absolute top-20 left-12 h-64 w-64 rounded-3xl bg-gradient-to-br from-[#25D366]/10 to-emerald-400/5 blur-2xl" />
+            <div className="absolute bottom-32 right-12 h-72 w-72 rounded-full bg-gradient-to-tl from-blue-400/10 to-cyan-400/5 blur-3xl" />
           </div>
-          <h2 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
-            Sign in to WhatsApp CRM
-          </h2>
-          <p className="mt-2 text-sm text-gray-500 dark:text-[#8696A0]">
-            Contact your administrator if you need access.
-          </p>
+
+          {/* Top logo */}
+          <div className="flex items-center gap-3 text-2xl font-bold">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#25D366] to-[#128C7E] shadow-lg">
+              <MessageCircle className="h-6 w-6 text-white" fill="white" strokeWidth={0} />
+            </div>
+            <span className="text-gray-900 dark:text-white">CRM</span>
+          </div>
+
+          {/* Center content */}
+          <div className="max-w-md space-y-8">
+            <div className="space-y-4">
+              <h1 className="text-5xl font-bold text-gray-900 dark:text-white leading-tight">
+                Professional Messaging at Scale
+              </h1>
+              <p className="text-lg text-gray-600 dark:text-gray-400">
+                Manage customer conversations, qualify leads, and automate workflows with AI-powered insights.
+              </p>
+            </div>
+
+            {/* Feature cards */}
+            <div className="space-y-3">
+              {[
+                { icon: '🚀', title: 'Real-time Sync', desc: 'Instant message delivery' },
+                { icon: '🤖', title: 'AI-Powered', desc: 'Smart lead qualification' },
+                { icon: '📊', title: 'Analytics', desc: 'Track your performance' },
+              ].map((feature) => (
+                <div
+                  key={feature.title}
+                  className="group flex items-start gap-4 p-4 rounded-xl bg-white/50 dark:bg-white/5 backdrop-blur-sm border border-gray-200/50 dark:border-white/10 hover:bg-white/70 dark:hover:bg-white/10 transition-all duration-300"
+                >
+                  <span className="text-2xl flex-shrink-0">{feature.icon}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-gray-900 dark:text-white">{feature.title}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{feature.desc}</p>
+                  </div>
+                  <ArrowRight className="h-5 w-5 text-gray-400 group-hover:text-[#25D366] transition-colors flex-shrink-0 mt-0.5" />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Bottom security notice */}
+          <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+            <Lock className="h-4 w-4 text-[#25D366]" />
+            <span>{t('login.security')}</span>
+          </div>
         </div>
 
-        <form className="space-y-5" onSubmit={handleSubmit}>
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-[#E9EDEF]">
-                Email address
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                required
-                autoComplete="email"
-                className="w-full rounded-lg border border-gray-300 dark:border-white/10 bg-white dark:bg-[#202C33] px-4 py-3 text-sm text-gray-900 dark:text-white outline-none transition focus:border-[#25D366] focus:ring-4 focus:ring-[#25D366]/20 dark:focus:ring-[#25D366]/25"
-                placeholder="you@company.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            <div>
-              <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-[#E9EDEF]">
-                Password
-              </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                required
-                autoComplete="current-password"
-                className="w-full rounded-lg border border-gray-300 dark:border-white/10 bg-white dark:bg-[#202C33] px-4 py-3 text-sm text-gray-900 dark:text-white outline-none transition focus:border-[#25D366] focus:ring-4 focus:ring-[#25D366]/20 dark:focus:ring-[#25D366]/25"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
+        {/* Right side - Login card */}
+        <div className="flex w-full lg:w-1/2 flex-col items-center justify-center px-4 sm:px-6 lg:px-12 py-8 lg:py-0">
+          {/* Top controls (mobile visible, desktop hidden) */}
+          <div className="mb-8 flex w-full max-w-sm items-center justify-between lg:hidden">
+            <button
+              type="button"
+              onClick={() => setLanguage(language === 'en' ? 'ar' : 'en')}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300 text-sm font-medium hover:bg-gray-200 dark:hover:bg-white/20 transition-all duration-200"
+              aria-label="Toggle language"
+            >
+              <Globe className="h-4 w-4" />
+              <span>{language === 'en' ? 'العربية' : 'EN'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/20 transition-all duration-200"
+              aria-label="Toggle theme"
+            >
+              {theme === 'dark' ? (
+                <Sun className="h-4 w-4" />
+              ) : (
+                <Moon className="h-4 w-4" />
+              )}
+            </button>
           </div>
 
-          {error && (
-            <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-4 py-3">
-              <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+          {/* Main login card */}
+          <div className="w-full max-w-sm">
+            {/* Card header */}
+            <div className="mb-8 text-center">
+              <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-[#25D366] to-[#128C7E] shadow-lg shadow-[#25D366]/30">
+                <MessageCircle className="h-8 w-8 text-white" fill="white" strokeWidth={0} />
+              </div>
+              <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+                {t('login.title')}
+              </h2>
+              <p className="text-base text-gray-600 dark:text-gray-400">
+                {t('login.subtitle')}
+              </p>
             </div>
-          )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-lg bg-[#25D366] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#25D366]/90 focus:outline-none focus:ring-4 focus:ring-[#25D366]/25 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {loading ? 'Signing in…' : 'Sign in'}
-          </button>
-        </form>
+            {/* Login card container */}
+            <div className="rounded-2xl border border-gray-200/60 dark:border-white/10 bg-white/80 dark:bg-[#111B21]/80 backdrop-blur-xl shadow-lg dark:shadow-[0_8px_32px_rgba(0,0,0,0.5)] p-8 space-y-6">
+              {/* Error alert */}
+              {error && (
+                <div className="animate-in fade-in slide-in-from-top-2 rounded-xl border border-red-200/50 dark:border-red-500/30 bg-red-50/80 dark:bg-red-500/10 backdrop-blur px-4 py-3">
+                  <p className="text-sm font-medium text-red-800 dark:text-red-300">{error}</p>
+                </div>
+              )}
+
+              <form className="space-y-5" onSubmit={handleSubmit}>
+                {/* Email field */}
+                <div className="space-y-2">
+                  <label htmlFor="email" className="block text-sm font-semibold text-gray-700 dark:text-gray-200">
+                    {t('login.emailLabel')}
+                  </label>
+                  <input
+                    id="email"
+                    name="email"
+                    type="email"
+                    required
+                    autoComplete="email"
+                    disabled={loading}
+                    className="w-full px-4 py-3 text-sm rounded-xl border border-gray-300/60 dark:border-white/10 bg-white/50 dark:bg-white/5 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-600 outline-none transition-all duration-200 hover:bg-white/70 dark:hover:bg-white/8 focus:border-[#25D366] focus:ring-4 focus:ring-[#25D366]/20 dark:focus:ring-[#25D366]/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                    placeholder={t('login.emailPlaceholder')}
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </div>
+
+                {/* Password field */}
+                <div className="space-y-2">
+                  <label htmlFor="password" className="block text-sm font-semibold text-gray-700 dark:text-gray-200">
+                    {t('login.passwordLabel')}
+                  </label>
+                  <div className="relative group">
+                    <input
+                      id="password"
+                      name="password"
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      autoComplete="current-password"
+                      disabled={loading}
+                      className="w-full px-4 py-3 text-sm rounded-xl border border-gray-300/60 dark:border-white/10 bg-white/50 dark:bg-white/5 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-600 outline-none transition-all duration-200 hover:bg-white/70 dark:hover:bg-white/8 focus:border-[#25D366] focus:ring-4 focus:ring-[#25D366]/20 dark:focus:ring-[#25D366]/30 pr-12 disabled:opacity-50 disabled:cursor-not-allowed"
+                      placeholder={t('login.passwordPlaceholder')}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Remember me */}
+                <label className="flex items-center gap-3 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    disabled={loading}
+                    className="h-4 w-4 rounded border border-gray-300 dark:border-white/20 bg-white dark:bg-white/5 text-[#25D366] transition-all checked:border-[#25D366] focus:ring-2 focus:ring-[#25D366]/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white transition-colors">
+                    {t('login.rememberMe')}
+                  </span>
+                </label>
+
+                {/* Sign in button */}
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full px-4 py-3 text-sm font-semibold text-white rounded-xl bg-gradient-to-r from-[#25D366] to-emerald-600 hover:from-[#25D366]/90 hover:to-emerald-600/90 shadow-lg shadow-[#25D366]/30 hover:shadow-[#25D366]/40 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 group"
+                >
+                  {loading ? (
+                    <>
+                      <Loader className="h-4 w-4 animate-spin" />
+                      <span>{t('login.signingIn')}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>{t('login.submitButton')}</span>
+                      <ArrowRight className="h-4 w-4 group-hover:translate-x-0.5 transition-transform" />
+                    </>
+                  )}
+                </button>
+              </form>
+
+              {/* Security notice - desktop visible */}
+              <div className="hidden sm:flex items-center gap-2 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 text-sm">
+                <Lock className="h-4 w-4 text-[#25D366] flex-shrink-0" />
+                <span className="text-emerald-800 dark:text-emerald-300">{t('login.security')}</span>
+              </div>
+            </div>
+
+            {/* Bottom controls (desktop) */}
+            <div className="mt-8 hidden lg:flex items-center justify-between text-xs text-gray-600 dark:text-gray-400">
+              <div className="flex items-center gap-4">
+                <a href="#" className="hover:text-gray-900 dark:hover:text-white transition-colors">
+                  {t('login.privacy')}
+                </a>
+                <a href="#" className="hover:text-gray-900 dark:hover:text-white transition-colors">
+                  {t('login.terms')}
+                </a>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setLanguage(language === 'en' ? 'ar' : 'en')}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+                  aria-label="Toggle language"
+                >
+                  <Globe className="h-4 w-4" />
+                  <span>{language === 'en' ? 'العربية' : 'EN'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleTheme}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+                  aria-label="Toggle theme"
+                >
+                  {theme === 'dark' ? (
+                    <Sun className="h-4 w-4" />
+                  ) : (
+                    <Moon className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

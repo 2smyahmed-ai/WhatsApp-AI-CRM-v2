@@ -1,14 +1,19 @@
 // ─── Backend Template Compiler ────────────────────────────────────────────────
-// Mirrors apps/frontend/lib/template-engine/compiler.ts (no JSX, Node-safe).
 // Converts a CanonicalTemplate stored in MessageTemplate.payload into:
-//   - Meta API components array  (toMetaComponents)
-//   - Meta send payload          (toMetaSendPayload)
 //   - Baileys plaintext payload  (toBaileysPayload)
 //   - Renderable (preview parity)(toRenderable)
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type MetaCategory = 'MARKETING' | 'UTILITY' | 'AUTHENTICATION'
+export type TemplateCategory =
+  | 'GENERAL'
+  | 'ONBOARDING'
+  | 'SALES'
+  | 'SUPPORT'
+  | 'ECOMMERCE'
+  | 'APPOINTMENTS'
+  | 'FOLLOW_UP'
+  | string  // allow legacy DB values (MARKETING, UTILITY, AUTHENTICATION)
 
 export interface CanonicalHeader {
   type: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT'
@@ -27,7 +32,7 @@ export interface CanonicalButton {
 
 export interface CanonicalTemplate {
   name: string
-  category: MetaCategory
+  category: TemplateCategory
   language: string
   header?: CanonicalHeader
   body: { text: string }
@@ -38,26 +43,6 @@ export interface CanonicalTemplate {
     previewValues?: Record<string, string>
     description?: string
   }
-}
-
-export interface MetaComponent {
-  type: 'HEADER' | 'BODY' | 'FOOTER' | 'BUTTONS'
-  format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT'
-  text?: string
-  buttons?: MetaApiButton[]
-  example?: {
-    header_handle?: string[]
-    header_url?: string[]
-    header_text?: string[]
-    body_text?: string[][]
-  }
-}
-
-export interface MetaApiButton {
-  type: 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER'
-  text: string
-  url?: string
-  phone_number?: string
 }
 
 export interface RenderableTemplate {
@@ -107,138 +92,6 @@ function resolveText(text: string, varNames: string[], vars: Record<string, stri
     result = result.replace(new RegExp(`\\{\\{${i + 1}\\}\\}`, 'g'), vars[name] ?? `[${name}]`)
   })
   return interpolateNamed(result, vars)
-}
-
-// ── Meta Components Compiler ──────────────────────────────────────────────────
-
-export function toMetaComponents(template: CanonicalTemplate): MetaComponent[] {
-  const components: MetaComponent[] = []
-  const varNames = template._meta?.variableNames ?? []
-  const previewValues = template._meta?.previewValues ?? {}
-
-  // HEADER
-  if (template.header) {
-    const h = template.header
-    if (h.type === 'TEXT') {
-      const comp: MetaComponent = { type: 'HEADER', format: 'TEXT', text: h.text }
-      if (h.text && /\{\{[\w]+\}\}/.test(h.text)) {
-        comp.example = { header_text: [previewValues[varNames[0]] ?? 'Sample Value'] }
-      }
-      components.push(comp)
-    } else {
-      const comp: MetaComponent = { type: 'HEADER', format: h.type as any }
-      if (h.handle) {
-        comp.example = { header_handle: [h.handle] }
-      } else if (h.url) {
-        comp.example = { header_url: [h.url] }
-      }
-      components.push(comp)
-    }
-  }
-
-  // BODY
-  const bodyComp: MetaComponent = { type: 'BODY', text: template.body.text }
-  if (/\{\{[\w]+\}\}/.test(template.body.text)) {
-    const exampleRow = varNames.map(n => previewValues[n] ?? `Sample ${n}`)
-    if (exampleRow.length > 0) {
-      bodyComp.example = { body_text: [exampleRow] }
-    }
-  }
-  components.push(bodyComp)
-
-  // FOOTER
-  if (template.footer?.text) {
-    components.push({ type: 'FOOTER', text: template.footer.text })
-  }
-
-  // BUTTONS
-  if (template.buttons && template.buttons.length > 0) {
-    const metaBtns: MetaApiButton[] = template.buttons.map(btn => {
-      if (btn.type === 'QUICK_REPLY')  return { type: 'QUICK_REPLY',   text: btn.text }
-      if (btn.type === 'URL')          return { type: 'URL',           text: btn.text, url: btn.url }
-      return { type: 'PHONE_NUMBER', text: btn.text, phone_number: btn.phone_number }
-    })
-    components.push({ type: 'BUTTONS', buttons: metaBtns })
-  }
-
-  return components
-}
-
-// ── Meta Send Payload Compiler ────────────────────────────────────────────────
-
-export function toMetaSendPayload(
-  template: CanonicalTemplate,
-  phone: string,
-  vars: Record<string, string> = {},
-  overrideTemplateName?: string,
-): object {
-  const varNames = template._meta?.variableNames ?? []
-  const templateName = (overrideTemplateName ?? template.name).toLowerCase().replace(/\s+/g, '_')
-  const components: any[] = []
-
-  // Header parameters
-  if (template.header) {
-    const h = template.header
-    if (h.type === 'TEXT' && h.text && /\{\{[\w]+\}\}/.test(h.text)) {
-      const val = varNames.length > 0 ? (vars[varNames[0]] ?? '') : ''
-      components.push({ type: 'header', parameters: [{ type: 'text', text: val }] })
-    } else if (h.type === 'IMAGE') {
-      components.push({
-        type: 'header',
-        parameters: [{ type: 'image', image: { link: h.url ?? vars['media_url'] ?? '' } }],
-      })
-    } else if (h.type === 'VIDEO') {
-      components.push({
-        type: 'header',
-        parameters: [{ type: 'video', video: { link: h.url ?? vars['media_url'] ?? '' } }],
-      })
-    } else if (h.type === 'DOCUMENT') {
-      components.push({
-        type: 'header',
-        parameters: [{
-          type: 'document',
-          document: { link: h.url ?? vars['media_url'] ?? '', filename: h.filename ?? 'document' },
-        }],
-      })
-    }
-  }
-
-  // Body parameters — positional {{1}}, {{2}} mapped from varNames
-  const bodyParams = varNames
-    .map(name => ({ type: 'text', text: String(vars[name] ?? '') }))
-    .filter(p => p.text !== '')
-
-  if (bodyParams.length > 0) {
-    components.push({ type: 'body', parameters: bodyParams })
-  }
-
-  // Button URL dynamic suffix
-  template.buttons?.forEach((btn, i) => {
-    if (btn.type === 'URL' && btn.url && /\{\{[\w]+\}\}/.test(btn.url)) {
-      const match = btn.url.match(/\{\{(\w+)\}\}/)
-      const urlVar = match?.[1]
-      if (urlVar && vars[urlVar]) {
-        components.push({
-          type: 'button',
-          sub_type: 'url',
-          index: String(i),
-          parameters: [{ type: 'text', text: vars[urlVar] }],
-        })
-      }
-    }
-  })
-
-  return {
-    messaging_product: 'whatsapp',
-    recipient_type: 'individual',
-    to: phone.replace(/\D/g, ''),
-    type: 'template',
-    template: {
-      name: templateName,
-      language: { code: template.language ?? 'en_US' },
-      ...(components.length > 0 ? { components } : {}),
-    },
-  }
 }
 
 // ── Baileys Compiler ──────────────────────────────────────────────────────────
@@ -360,13 +213,9 @@ export function legacyBlocksToCanonical(
   if (reminderBlock) bodyParts.push(`📅 *${reminderBlock.title}*\n${reminderBlock.datetime}`)
   if (supportBlock)  bodyParts.push(supportBlock.greeting)
 
-  const metaCat = (['MARKETING', 'UTILITY', 'AUTHENTICATION'] as const).includes(category as any)
-    ? (category as MetaCategory)
-    : 'MARKETING'
-
   const canonical: CanonicalTemplate = {
     name,
-    category: metaCat,
+    category: category ?? 'GENERAL',
     language: language ?? 'en_US',
     body: { text: bodyParts.join('\n\n') || 'Hello {{name}}' },
   }

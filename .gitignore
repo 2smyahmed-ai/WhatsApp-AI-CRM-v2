@@ -20,6 +20,10 @@ out/
 # WhatsApp session credentials
 auth_info_baileys/
 
+# Per-tenant instances (secrets + WhatsApp sessions) — never commit
+apps/backend/tenants/
+tenants/
+
 # Logs
 logs/
 *.log

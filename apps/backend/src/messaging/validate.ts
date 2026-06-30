@@ -126,11 +126,7 @@ export function validate(
     if (!lastInboundAt) {
       warnings.push(warn(
         'SESSION_WINDOW_CLOSED',
-        `No inbound message recorded for this conversation. ${
-          provider === 'meta'
-            ? 'The recipient must message first, or use a template.'
-            : 'Ensure the recipient has opted in.'
-        }`,
+        'No inbound message recorded for this conversation. Ensure the recipient has opted in.',
         'conversation.lastInboundAt',
       ));
     } else {
@@ -156,27 +152,10 @@ export function validate(
     }
   }
 
-  // ── 3. Template approval ────────────────────────────────────────────────
-  if (kind === 'template' && caps.templates.requiresApproval) {
-    const status = context.templateApproval?.metaStatus ?? null;
-    if (status === null) {
-      warnings.push(warn(
-        'TEMPLATE_NOT_APPROVED',
-        'Template approval status is unknown. Confirm it is APPROVED in Meta Business Manager.',
-        'template.status',
-      ));
-    } else if (status !== 'APPROVED') {
-      errors.push(err(
-        'TEMPLATE_NOT_APPROVED',
-        `Template status is '${status}'. Only APPROVED templates can be sent via Meta.`,
-        'template.status',
-      ));
-    }
-    // Verify all positional variables are filled
+  // ── 3. Template variable completeness ──────────────────────────────────
+  if (kind === 'template') {
     const marker = findBlock<TemplateMarkerBlock>(blocks, 'template_marker');
     if (marker) {
-      const positionalVars = Object.keys(marker.variables).filter((k) => /^\d+$/.test(k));
-      // Check that {{n}} in the body text has a corresponding value
       for (const comp of marker.components) {
         if (comp.type === 'body') {
           const placeholders = [...comp.text.matchAll(/\{\{(\d+)\}\}/g)].map((m) => m[1]);
@@ -312,7 +291,7 @@ export function validate(
   }
 
   // ── 9. Body text ────────────────────────────────────────────────────────
-  const META_BODY_MAX = 4096;
+  const BODY_MAX = 4096;
   const bodyBlock = findBlock<BodyTextBlock>(blocks, 'body_text');
   if (kind === 'text' && !bodyBlock) {
     errors.push(err('EMPTY_BODY', 'Text message has no body block', 'blocks'));
@@ -320,10 +299,10 @@ export function validate(
   if (bodyBlock) {
     if (!bodyBlock.text.trim()) {
       errors.push(err('EMPTY_BODY', 'Message body is empty', 'blocks.body_text.text'));
-    } else if (bodyBlock.text.length > META_BODY_MAX) {
+    } else if (bodyBlock.text.length > BODY_MAX) {
       errors.push(err(
         'BODY_TOO_LONG',
-        `Body is ${bodyBlock.text.length} chars (max ${META_BODY_MAX})`,
+        `Body is ${bodyBlock.text.length} chars (max ${BODY_MAX})`,
         'blocks.body_text.text',
         true,
       ));

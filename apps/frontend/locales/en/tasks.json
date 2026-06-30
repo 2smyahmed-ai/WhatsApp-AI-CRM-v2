@@ -1,0 +1,91 @@
+{
+  "title": "Tasks",
+  "subtitle": "Manage and track your team's tasks",
+  "badge": "Task management",
+  "allTeamTasks": "All Team Tasks",
+  "myTasks": "My Tasks",
+  "adminSubtitle": "Manage and assign tasks across your team — synced in realtime.",
+  "agentSubtitle": "Track and update your assigned tasks.",
+  "newTask": "New Task",
+  "noTasks": "No tasks yet. Create your first task.",
+  "noTasksSubtitle": "Create your first task to get started",
+  "noResults": "No tasks match the current filters.",
+  "clearAllFilters": "Clear all filters",
+  "table": {
+    "title": "Task",
+    "assignedTo": "Assignee",
+    "contact": "Contact",
+    "status": "Status",
+    "dueDate": "Due",
+    "createdAt": "Created",
+    "actions": "Actions",
+    "priority": "Priority"
+  },
+  "status": {
+    "OPEN": "To Do",
+    "IN_PROGRESS": "In Progress",
+    "DONE": "Done",
+    "CANCELLED": "Cancelled"
+  },
+  "priority": {
+    "LOW": "Low",
+    "MEDIUM": "Medium",
+    "HIGH": "High"
+  },
+  "filters": {
+    "allStatuses": "All Statuses",
+    "allPriorities": "All Priorities",
+    "allAssignees": "All Assignees",
+    "priority": "Priority",
+    "assignee": "Assignee",
+    "dueFrom": "Due from",
+    "dueTo": "Due to",
+    "clear": "Clear"
+  },
+  "bulk": {
+    "selected": "{{count}} task selected",
+    "selectedPlural": "{{count}} tasks selected",
+    "markAs": "Mark as…",
+    "delete": "Delete",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "clearSelection": "Clear selection",
+    "deleteConfirm": "Delete {{count}}?",
+    "deleting": "Deleting…",
+    "yesDelete": "Yes, delete",
+    "markAsConfirm": "Mark as {{status}}?"
+  },
+  "overdue": "Overdue",
+  "form": {
+    "createTitle": "New Task",
+    "editTitle": "Edit Task",
+    "taskTitle": "Title *",
+    "titlePlaceholder": "Follow-up call, Send proposal…",
+    "description": "Description",
+    "descriptionPlaceholder": "Optional details…",
+    "assignedTo": "Assign to",
+    "unassigned": "Unassigned",
+    "contact": "Contact",
+    "noContact": "No contact",
+    "selectContact": "Select contact",
+    "status": "Status",
+    "priority": "Priority",
+    "dueDate": "Due date",
+    "notes": "Notes",
+    "notesPlaceholder": "Task notes...",
+    "save": "Save Task",
+    "cancel": "Cancel",
+    "saving": "Saving…",
+    "updateTask": "Update Task",
+    "createTask": "Create Task"
+  },
+  "deleteConfirm": {
+    "title": "Delete Task",
+    "message": "Are you sure you want to delete this task?",
+    "confirm": "Delete",
+    "cancel": "Cancel",
+    "inline": "Delete?",
+    "yes": "Yes",
+    "no": "No"
+  }
+}

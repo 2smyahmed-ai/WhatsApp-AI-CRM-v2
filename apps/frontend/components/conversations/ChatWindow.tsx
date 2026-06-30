@@ -18,6 +18,8 @@ import {
   MessageSquare,
   ChevronRight,
   ChevronLeft,
+  PanelLeft,
+  Info,
   Users,
   User,
   GitBranch,
@@ -26,19 +28,31 @@ import {
   Phone,
   VideoIcon,
   MoreVertical,
+  Zap,
+  Bot,
+  Tag,
 } from 'lucide-react';
 import MessageBubble from '../messages/MessageRenderer';
 import InteractiveComposer from '../chat/InteractiveComposer';
+import InteractiveSidebar, { type SidebarMessage } from '../chat/InteractiveSidebar';
 import SaveContactModal from './SaveContactModal';
 import InternalNotes from './InternalNotes';
 import AssignmentHistory from './AssignmentHistory';
 import EmojiPicker from '../ui/EmojiPicker';
+import Avatar from '../ui/Avatar';
 import ForwardModal from './ForwardModal';
+import ContactTagSelector from '../contacts/ContactTagSelector';
+import QualificationPanel from '../leads/QualificationPanel';
+import { useTranslation } from 'react-i18next';
 import { api, apiForm } from '../../lib/api';
 import { useSocket } from '../../hooks/useSocket';
+import { useToast } from '../../hooks/useToast';
 import { getSocket } from '../../lib/socket';
 import { formatPhone } from '../../lib/phone';
 import { useSession } from 'next-auth/react';
+import { useDirection } from '../../hooks/useDirection';
+import { useGlobalBot } from '../../hooks/useGlobalBot';
+import { isManager } from '../../lib/roles';
 
 interface Message {
   id: string;
@@ -86,6 +100,11 @@ interface Conversation {
   assignedUser?: { id: string; name: string | null; email: string } | null;
   assignedTeamId?: string | null;
   assignedTeam?: { id: string; name: string } | null;
+  // AI Bot fields
+  botEnabled?: boolean;
+  /** Tri-state per-chat override: true = force ON, false = force OFF, null/undefined = Auto (follow global rules). */
+  botOverride?: boolean | null;
+  botPausedUntil?: string | null;
 }
 
 interface ChatWindowProps {
@@ -93,25 +112,18 @@ interface ChatWindowProps {
   recipientContacts?: Array<{ id: string; name: string | null; phone: string }>;
   onContactSaved?: () => void;
   onConversationNotFound?: () => void;
+  /** Mobile only: return to the conversation list. */
+  onBack?: () => void;
 }
 
-const EMOJIS = ['😀', '😂', '😍', '😭', '😘', '🤔', '👍', '🙌', '🔥', '❤️', '✨', '🎉', '🚀', '💯'];
 const ATTACHMENT_OPTIONS = [
-  { label: 'Photos', accept: 'image/*', icon: ImageIcon, color: 'from-violet-500 to-purple-600' },
-  { label: 'Video', accept: 'video/*', icon: Video, color: 'from-rose-500 to-pink-600' },
-  { label: 'Audio', accept: 'audio/*', icon: Music2, color: 'from-amber-500 to-orange-600' },
-  { label: 'Document', accept: '.pdf,.doc,.docx,.txt,.xls,.xlsx,.ppt,.pptx', icon: FileText, color: 'from-sky-500 to-blue-600' },
+  { labelKey: 'composer.attachPhoto',    accept: 'image/*',                                    icon: ImageIcon, color: 'from-violet-500 to-purple-600' },
+  { labelKey: 'message.videoMessage',    accept: 'video/*',                                    icon: Video,     color: 'from-rose-500 to-pink-600' },
+  { labelKey: 'composer.attachAudio',    accept: 'audio/*',                                    icon: Music2,    color: 'from-amber-500 to-orange-600' },
+  { labelKey: 'composer.attachDocument', accept: '.pdf,.doc,.docx,.txt,.xls,.xlsx,.ppt,.pptx', icon: FileText,  color: 'from-sky-500 to-blue-600' },
 ];
 
 const PIPELINE_STAGES = ['', 'LEAD', 'QUALIFIED', 'NEGOTIATION', 'WON', 'LOST'] as const;
-const PIPELINE_LABELS: Record<string, string> = {
-  '': 'No Pipeline',
-  LEAD: 'Lead',
-  QUALIFIED: 'Qualified',
-  NEGOTIATION: 'Negotiation',
-  WON: 'Won',
-  LOST: 'Lost',
-};
 
 function blocksToText(blocks: Array<{ type: string; [key: string]: unknown }>): string {
   return blocks.map((b) => {
@@ -155,9 +167,128 @@ function getPreferredAudioMimeType() {
 
 type RightPanelTab = 'details' | 'notes' | 'history';
 
-export default function ChatWindow({ conversationId, recipientContacts = [], onContactSaved, onConversationNotFound }: ChatWindowProps) {
+// ── MessageDTO → legacy Message adapter ───────────────────────────────────────
+// Used so the modern crm:event path (via useRealtimeSync / Zustand store) can
+// also update ChatWindow's local state without a full re-fetch.
+function dtoToMsg(dto: any): Message & { clientId?: string; schemaVersion?: number; renderable?: any } {
+  const isOutbound = dto.direction === 'outbound';
+  const content = dto.content ?? {};
+
+  let body = '';
+  let type: Message['type'] = undefined;
+  let mediaUrl: string | null = null;
+  let mediaMimeType: string | null = null;
+  let mediaFileName: string | null = null;
+  let mediaCaption: string | null = null;
+  let mediaDuration: number | null = null;
+
+  if (content.kind === 'text') {
+    body = content.body ?? '';
+  } else if (content.kind === 'media') {
+    const m = content.media ?? {};
+    body = content.caption ?? '';
+    mediaCaption = content.caption ?? null;
+    mediaUrl = m.url ?? null;
+    mediaMimeType = m.mime ?? null;
+    mediaFileName = m.fileName ?? null;
+    mediaDuration = m.durationSec != null ? Math.round(m.durationSec) : null;
+    const mt = (m.mediaType ?? '').toLowerCase();
+    type = mt === 'image' || mt === 'sticker' ? 'IMAGE'
+      : mt === 'video' ? 'VIDEO'
+      : mt === 'audio' || mt === 'voice' ? 'AUDIO'
+      : 'DOCUMENT';
+  } else if (content.kind === 'template') {
+    body = content.templateName ?? '';
+  } else if (content.kind) {
+    body = content.body ?? content.text ?? '';
+  }
+
+  const statusMap: Record<string, Message['status']> = {
+    queued: 'PROCESSED', sending: 'SENT', provider_accepted: 'SENT',
+    server_confirmed: 'SENT', delivered: 'DELIVERED', read: 'READ',
+    received: 'RECEIVED', processed: 'PROCESSED', failed: 'FAILED', expired: 'FAILED',
+  };
+
+  return {
+    id: dto.id,
+    clientId: dto.clientId,
+    fromMe: isOutbound,
+    direction: isOutbound ? 'OUTBOUND' : 'INBOUND',
+    body,
+    type,
+    mediaUrl,
+    mediaMimeType,
+    mediaFileName,
+    mediaCaption,
+    mediaDuration,
+    timestamp: dto.timestamp,
+    status: statusMap[(dto.status ?? '').toLowerCase()] ?? 'PROCESSED',
+    replyToId: dto.reply?.messageId ?? null,
+    replyToBody: dto.reply?.preview ?? null,
+    // Carry normalized fields so MessageRenderer uses the rich renderable
+    ...(dto.schemaVersion === 1 ? { schemaVersion: 1, renderable: dto.renderable } : {}),
+  } as any;
+}
+
+function BotTestPanel({ conversationId }: { conversationId: string }) {
+  const { t } = useTranslation('chat');
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [sent, setSent] = useState(false);
+
+  const runSimulate = async () => {
+    if (!input.trim() || loading) return;
+    setLoading(true);
+    setError('');
+    setSent(false);
+    try {
+      await api.post(`/api/conversations/${conversationId}/bot/simulate`, { message: input.trim() });
+      setInput('');
+      setSent(true);
+      setTimeout(() => setSent(false), 2000);
+    } catch {
+      setError(t('details.aiBotTestFailed'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 rounded-xl border border-dashed border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/[0.03] p-3">
+      <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-gray-400 dark:text-[#8696A0]">
+        {t('details.aiBotTest')}
+      </p>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && runSimulate()}
+          placeholder={t('details.aiBotTestPlaceholder')}
+          className="min-w-0 flex-1 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#202C33] px-2.5 py-1.5 text-xs text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-[#8696A0] focus:border-[#25D366] focus:outline-none"
+        />
+        <button
+          type="button"
+          onClick={runSimulate}
+          disabled={loading || !input.trim()}
+          className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-[#25D366] text-white transition-colors hover:bg-[#1FAA5C] disabled:opacity-40"
+        >
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+        </button>
+      </div>
+      {sent && <p className="mt-1.5 text-[11px] text-[#25D366]">↑ {t('details.aiBotSimulated')}</p>}
+      {error && <p className="mt-1.5 text-[11px] text-red-500">{error}</p>}
+    </div>
+  );
+}
+
+export default function ChatWindow({ conversationId, recipientContacts = [], onContactSaved, onConversationNotFound, onBack }: ChatWindowProps) {
+  const { t } = useTranslation(['chat', 'common', 'templates']);
   const router = useRouter();
   const { data: session } = useSession();
+  const { dir, isRTL } = useDirection();
+  const toast = useToast();
 
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -177,26 +308,50 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
   const [isScrolledToBottom, setIsScrolledToBottom] = useState(true);
   const [unreadWhileScrolled, setUnreadWhileScrolled] = useState(0);
   const [savedReplies, setSavedReplies] = useState<Array<{ shortcut: string; message: string }>>([]);
-  const [templates, setTemplates] = useState<Array<{ id: string; name: string; content: string; type?: string; payload?: { blocks?: Array<{ type: string; url?: string; caption?: string; mediaType?: string; [key: string]: unknown }>; category?: string } }>>([]);
+  const [templates, setTemplates] = useState<Array<{
+    id: string; name: string; content: string; type?: string;
+    payload?: {
+      // Legacy blocks format
+      blocks?: Array<{ type: string; url?: string; caption?: string; mediaType?: string; [key: string]: unknown }>;
+      category?: string;
+      // Canonical format (new builder)
+      body?: { text: string };
+      header?: { type: string; url?: string; text?: string; filename?: string };
+      footer?: { text: string };
+      buttons?: Array<{ type: string; text: string; url?: string; phone_number?: string }>;
+    };
+  }>>([]);
   const [templateFollowUp, setTemplateFollowUp] = useState('');
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [showSaveContactModal, setShowSaveContactModal] = useState(false);
   const [rightTab, setRightTab] = useState<RightPanelTab>('details');
-  const [showRightPanel, setShowRightPanel] = useState(true);
+  // Default the details panel open only where it docks inline (2xl+). On smaller
+  // screens it overlays the chat, so start closed to avoid covering it on load.
+  const [showRightPanel, setShowRightPanel] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
   const [peerTyping, setPeerTyping] = useState(false);
   const [replyTo, setReplyTo] = useState<{ id: string; body: string; fromMe: boolean } | null>(null);
-  const [forwardMessage, setForwardMessage] = useState<string | null>(null);
+  const [forwardMessage, setForwardMessage] = useState<any | null>(null);
   const [showInteractiveComposer, setShowInteractiveComposer] = useState(false);
+  const [showInteractiveSidebar, setShowInteractiveSidebar] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Message[]>([]);
   const [showSearch, setShowSearch] = useState(false);
+  const [paginationCursor, setPaginationCursor] = useState<string | null>(null);
+  const [hasOlderMessages, setHasOlderMessages] = useState(false);
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const [isBotToggling, setIsBotToggling] = useState(false);
+
+  // Global AI-bot master switch (synced live with the AI settings page).
+  const { enabled: globalBotEnabled, saving: globalBotSaving, toggle: toggleGlobalBot } = useGlobalBot();
+  const canToggleGlobalBot = isManager((session?.user as any)?.role);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const emojiBarRef = useRef<HTMLDivElement>(null);
+  const emojiButtonRef = useRef<HTMLButtonElement>(null);
   const attachmentMenuRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -204,12 +359,21 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const recordingTimerRef = useRef<number | null>(null);
 
+  const isLoadingOlderRef = useRef(false);
+  const isAtBottomRef = useRef(true);
+
   const fetchConversation = useCallback(async () => {
     if (!conversationId) return;
     try {
-      const data = await api.get(`/api/conversations/${conversationId}`);
-      if (data) {
-        setConversation(data);
+      const [convData, msgsData] = await Promise.all([
+        api.get(`/api/conversations/${conversationId}`),
+        api.get(`/api/conversations/${conversationId}/messages?limit=50`),
+      ]);
+      if (convData) {
+        const { messages: _strippedMsgs, ...conversationMeta } = convData;
+        setConversation({ ...conversationMeta, messages: msgsData?.messages ?? [] });
+        setPaginationCursor(msgsData?.nextCursor ?? null);
+        setHasOlderMessages(Boolean(msgsData?.hasMore));
       } else {
         setConversation(null);
         onConversationNotFound?.();
@@ -218,6 +382,31 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
       setConversation(null);
     }
   }, [conversationId, onConversationNotFound]);
+
+  const loadOlderMessages = useCallback(async () => {
+    if (!conversationId || !hasOlderMessages || isLoadingOlderRef.current || !paginationCursor) return;
+    isLoadingOlderRef.current = true;
+    setIsLoadingOlder(true);
+    const el = scrollContainerRef.current;
+    const prevScrollHeight = el?.scrollHeight ?? 0;
+    try {
+      const data = await api.get(`/api/conversations/${conversationId}/messages?limit=50&cursor=${encodeURIComponent(paginationCursor)}`);
+      if (data?.messages?.length) {
+        setConversation((prev) => prev ? { ...prev, messages: [...data.messages, ...(prev.messages ?? [])] } : prev);
+        setPaginationCursor(data.nextCursor ?? null);
+        setHasOlderMessages(Boolean(data.hasMore));
+        requestAnimationFrame(() => {
+          const container = scrollContainerRef.current;
+          if (container) container.scrollTop = container.scrollHeight - prevScrollHeight;
+        });
+      }
+    } catch {
+      // silent — user can scroll up again to retry
+    } finally {
+      isLoadingOlderRef.current = false;
+      setIsLoadingOlder(false);
+    }
+  }, [conversationId, hasOlderMessages, paginationCursor]);
 
   const markAsRead = useCallback(() => {
     if (!conversationId) return;
@@ -234,19 +423,20 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
   }, []);
 
   const fetchTeams = useCallback(async () => {
+    const role = (session?.user as any)?.role ?? '';
+    const isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(role);
     try {
-      const data = await api.get('/api/teams/all');
-      setTeams(Array.isArray(data) ? data : []);
-    } catch {
-      // non-admin: fall back to current team only
-      try {
+      if (isAdmin) {
+        const data = await api.get('/api/teams/all');
+        setTeams(Array.isArray(data) ? data : []);
+      } else {
         const data = await api.get('/api/teams');
         if (data?.team) setTeams([data.team]);
-      } catch {
-        setTeams([]);
       }
+    } catch {
+      setTeams([]);
     }
-  }, []);
+  }, [session]);
 
   const fetchSavedReplies = useCallback(async () => {
     try {
@@ -271,6 +461,8 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
       setConversation(null);
       setIsScrolledToBottom(true);
       setUnreadWhileScrolled(0);
+      setPaginationCursor(null);
+      setHasOlderMessages(false);
       fetchConversation();
       markAsRead();
     }
@@ -293,12 +485,16 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
   }, [conversation?.contact?.id, conversation?.contact?.name]);
 
   useEffect(() => {
-    if (isScrolledToBottom) {
+    if (isAtBottomRef.current) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
     }
-  }, [conversation?.messages?.length, isScrolledToBottom]);
+    // isScrolledToBottom intentionally excluded: we only auto-scroll when messages
+    // arrive, not when the user manually scrolls to the bottom.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversation?.messages?.length]);
 
   const scrollToBottom = useCallback(() => {
+    isAtBottomRef.current = true;
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     setIsScrolledToBottom(true);
     setUnreadWhileScrolled(0);
@@ -306,15 +502,14 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (emojiBarRef.current && !emojiBarRef.current.contains(e.target as Node)) setShowEmojiBar(false);
       if (attachmentMenuRef.current && !attachmentMenuRef.current.contains(e.target as Node))
         setShowAttachmentMenu(false);
     };
-    if (showEmojiBar || showAttachmentMenu) {
+    if (showAttachmentMenu) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [showEmojiBar, showAttachmentMenu]);
+  }, [showAttachmentMenu]);
 
   useEffect(() => {
     if (!showTemplatePicker) return;
@@ -340,6 +535,14 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
     el.style.height = `${Math.min(el.scrollHeight, 80)}px`;
   }, [message]);
 
+  // Open the details panel by default only where it docks inline (2xl+),
+  // so it never overlays the chat on load on smaller screens.
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1536px)').matches) {
+      setShowRightPanel(true);
+    }
+  }, []);
+
   useSocket('message:new', useCallback((data: any) => {
     if (data.conversationId !== conversationId) return;
     if (data.message) {
@@ -351,22 +554,16 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
 
         // Try to find an optimistic placeholder to replace:
         const optimisticIdx = msgs.findIndex((m: any) => {
-          // Precise: match by clientId if both sides carry it
+          // Precise: match by clientId (best — avoids all false positives)
           if (data.message.clientId && (m as any).clientId === data.message.clientId) return true;
           if (!m.id?.toString().startsWith?.('optimistic-')) return false;
-          // Fallback body match (text or caption)
+          // Fallback: exact body text match for optimistic placeholders
           if (m.body && data.message.body && m.body === data.message.body) return true;
-          // optimistic attachment placeholder like "[filename.ext]"
+          // Fallback: attachment placeholder like "[filename.ext]"
           if (m.body && m.body.startsWith('[') && m.body.endsWith(']')) {
             const inner = m.body.slice(1, -1);
             if (data.message.mediaFileName && data.message.mediaFileName === inner) return true;
           }
-          // fallback: similar timestamp proximity (within 10s)
-          try {
-            const t1 = new Date(m.timestamp).getTime();
-            const t2 = new Date(data.message.timestamp).getTime();
-            if (Number.isFinite(t1) && Number.isFinite(t2) && Math.abs(t1 - t2) < 10000) return true;
-          } catch {}
           return false;
         });
         let next: any[];
@@ -443,11 +640,123 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
     if (data.conversationId === conversationId) setPeerTyping(false);
   }, [conversationId]));
 
+  // ── Modern real-time path: crm:event (message.created) ────────────────────
+  // This is the reliable backup path. useRealtimeSync already handles these
+  // events to update the Zustand store; we duplicate the handling here so
+  // ChatWindow's local state is also updated immediately without a re-fetch.
+  useSocket('crm:event', useCallback((event: any) => {
+    if (event.type !== 'message.created') return;
+    const dto = event.payload?.message;
+    if (!dto || dto.conversationId !== conversationId) return;
+
+    const newMsg = dtoToMsg(dto);
+
+    setConversation((prev) => {
+      if (!prev) return prev;
+      const msgs = prev.messages ?? [];
+      if (msgs.some((m) => m.id === newMsg.id)) return prev;
+
+      // Reconcile against an optimistic placeholder by clientId
+      const optimisticIdx = msgs.findIndex((m: any) =>
+        newMsg.clientId && m.clientId === newMsg.clientId,
+      );
+      let next: any[];
+      if (optimisticIdx !== -1) {
+        next = [...msgs];
+        next[optimisticIdx] = newMsg;
+      } else {
+        next = [...msgs, newMsg];
+      }
+      next.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      return { ...prev, messages: next };
+    });
+
+    setIsScrolledToBottom((atBottom) => {
+      if (!atBottom && dto.direction === 'inbound') {
+        setUnreadWhileScrolled((n) => n + 1);
+      }
+      return atBottom;
+    });
+
+    // Notify conversation list sidebar
+    try {
+      window.dispatchEvent(new CustomEvent('conversation:message', {
+        detail: { conversationId, message: newMsg },
+      }));
+    } catch {}
+
+    markAsRead();
+  }, [conversationId, markAsRead]));
+
+  // ── Socket reconnect: refetch to catch messages missed while disconnected ──
+  useEffect(() => {
+    if (!conversationId) return;
+    const s = getSocket();
+    let connectedOnce = s.connected;
+
+    function handleConnect() {
+      if (connectedOnce) {
+        // This is a RE-connect (not the initial connect); refetch to fill the gap.
+        fetchConversation();
+      }
+      connectedOnce = true;
+    }
+
+    s.on('connect', handleConnect);
+    return () => { s.off('connect', handleConnect); };
+  }, [conversationId, fetchConversation]);
+
+  // Polling fallback — ensures messages appear even when the socket isn't delivering events.
+  // Runs every 5 s while the tab is visible; merges new messages without discarding older
+  // loaded pages or pending optimistic placeholders.
+  const pollForNewMessages = useCallback(async () => {
+    if (!conversationId) return;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    try {
+      const data = await api.get(`/api/conversations/${conversationId}/messages?limit=30`);
+      if (!data?.messages?.length) return;
+      setConversation((prev) => {
+        if (!prev) return prev;
+        let msgs = [...(prev.messages ?? [])];
+        let changed = false;
+        for (const newMsg of data.messages) {
+          if (msgs.some((m) => m.id === newMsg.id)) continue;
+          // Replace optimistic placeholder if present (same logic as the socket handler)
+          const optIdx = msgs.findIndex((m: any) => {
+            if (!m.id?.toString().startsWith('optimistic-')) return false;
+            if (newMsg.clientId && m.clientId === newMsg.clientId) return true;
+            if (m.body && newMsg.body && m.body === newMsg.body) return true;
+            return false;
+          });
+          if (optIdx !== -1) {
+            msgs = [...msgs];
+            msgs[optIdx] = newMsg;
+          } else {
+            msgs = [...msgs, newMsg];
+          }
+          changed = true;
+        }
+        if (!changed) return prev;
+        msgs.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+        return { ...prev, messages: msgs };
+      });
+    } catch {}
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (!conversationId) return;
+    const id = setInterval(pollForNewMessages, 5000);
+    return () => clearInterval(id);
+  }, [conversationId, pollForNewMessages]);
+
   const contactName = useMemo(
-    () => conversation?.contact?.name || formatPhone(conversation?.contact?.phone) || 'Unknown contact',
+    () => conversation?.contact?.name || formatPhone(conversation?.contact?.phone) || t('window.unknownContact'),
     [conversation?.contact?.name, conversation?.contact?.phone],
   );
-  const contactPhone = useMemo(() => formatPhone(conversation?.contact?.phone), [conversation?.contact?.phone]);
+  const contactPhone = useMemo(
+    () => formatPhone(conversation?.contact?.phone),
+    [conversation?.contact?.phone],
+  );
   const contactId = conversation?.contact?.id;
   const contactAvatar = conversation?.contact?.customFields?.avatarUrl;
   const messages = conversation?.messages ?? [];
@@ -487,6 +796,28 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
     if (!conversationId) return;
     await api.put(`/api/conversations/${conversationId}/status`, { status });
     // socket conversation:updated handles state update
+  };
+
+  const setBotOverride = async (botOverride: boolean | null) => {
+    if (!conversationId || !conversation || isBotToggling) return;
+    setIsBotToggling(true);
+    try {
+      const result = await api.put(`/api/conversations/${conversationId}/bot`, { botOverride });
+      if (result) setConversation((prev) => prev ? { ...prev, botEnabled: result.botEnabled, botOverride: result.botOverride, botPausedUntil: result.botPausedUntil } : prev);
+    } finally {
+      setIsBotToggling(false);
+    }
+  };
+
+  const handleBotResume = async () => {
+    if (!conversationId || isBotToggling) return;
+    setIsBotToggling(true);
+    try {
+      const result = await api.put(`/api/conversations/${conversationId}/bot/resume`, {});
+      if (result) setConversation((prev) => prev ? { ...prev, botPausedUntil: result.botPausedUntil } : prev);
+    } finally {
+      setIsBotToggling(false);
+    }
   };
 
   const emitTyping = useCallback((isTyping: boolean) => {
@@ -537,7 +868,7 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
     setRecordingError(null);
     setRecordedAudio(null);
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      setRecordingError('Audio recording is not supported in this browser.');
+      setRecordingError(t('window.audioNotSupported'));
       return;
     }
     try {
@@ -566,7 +897,7 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
       recorder.start();
     } catch (error) {
       console.error('Recording failed:', error);
-      setRecordingError('We could not access the microphone. Check browser permissions.');
+      setRecordingError(t('window.micPermissionError'));
       setIsRecording(false);
     }
   }, []);
@@ -596,12 +927,27 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
         }
       }
       // Optimistic: show message immediately
+      const attachMime = attachment?.type ?? recordedAudio?.type ?? '';
+      const optimisticMediaType: Message['type'] = attachMime.startsWith('image/')
+        ? 'IMAGE' : attachMime.startsWith('video/')
+        ? 'VIDEO' : attachMime.startsWith('audio/')
+        ? 'AUDIO' : attachment || recordedAudio
+        ? 'DOCUMENT' : undefined;
+      const optimisticBlobUrl = (attachment || recordedAudio) &&
+        (optimisticMediaType === 'IMAGE' || optimisticMediaType === 'VIDEO' || optimisticMediaType === 'AUDIO')
+          ? URL.createObjectURL((attachment || recordedAudio) as File)
+          : null;
       const optimisticMsg: Message & { clientId?: string } = {
         id: optimisticId,
         clientId,
         fromMe: true,
         direction: 'OUTBOUND',
-        body: attachment ? `[${attachment.name}]` : finalMessage,
+        body: optimisticMediaType ? (finalMessage ?? '') : finalMessage,
+        type: optimisticMediaType,
+        mediaUrl: optimisticBlobUrl,
+        mediaMimeType: attachMime || null,
+        mediaFileName: attachment?.name ?? recordedAudio?.name ?? null,
+        mediaCaption: optimisticMediaType ? (finalMessage ?? '') : undefined,
         status: 'PROCESSED',
         timestamp: new Date().toISOString(),
         replyToId: replyTo?.id ?? null,
@@ -661,17 +1007,63 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
         });
       }
       // Keep optimistic message in place — socket 'message:new' will replace it smoothly.
-    } catch (error) {
+    } catch (error: any) {
       // Remove optimistic message on failure
       setConversation((prev) => {
         if (!prev) return prev;
         return { ...prev, messages: (prev.messages ?? []).filter((m) => m.id !== optimisticId) };
       });
-      setSendError(error instanceof Error ? error.message : 'Failed to send message');
+
+      // Handle warm-up daily limit errors (HTTP 429)
+      if (error?.status === 429 && error?.data?.code === 'WARMUP_DAILY_LIMIT') {
+        const { sent, limit, dayNumber, fullyUnlockedAt } = error.data;
+        const unlockDate = fullyUnlockedAt ? new Date(fullyUnlockedAt).toLocaleDateString() : 'N/A';
+        const errorMsg = `Daily limit reached: ${sent}/${limit} messages sent today. Resets at midnight. (Day ${dayNumber} of 15 warm-up — full capacity on ${unlockDate})`;
+        toast.warning(errorMsg);
+        setSendError(errorMsg);
+      } else {
+        const errorMsg = error instanceof Error ? error.message : t('window.failedToSend');
+        setSendError(errorMsg);
+      }
     } finally {
       setIsSending(false);
     }
   };
+
+  const sendSidebarMessage = useCallback(async (msg: SidebarMessage) => {
+    if (!conversationId) return;
+    const targetPhone = recipientPhone || conversation?.contact?.phone || '';
+    if (!targetPhone) return;
+    const optimisticId = `optimistic-${Date.now()}`;
+    const clientId = `client-${Date.now()}`;
+    setConversation((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        messages: [...(prev.messages ?? []), {
+          id: optimisticId,
+          clientId,
+          fromMe: true,
+          direction: 'OUTBOUND' as const,
+          body: msg.text,
+          status: 'PROCESSED',
+          timestamp: new Date().toISOString(),
+        }],
+      };
+    });
+    try {
+      await api.post(`/api/conversations/${conversationId}/reply`, {
+        phone: targetPhone,
+        message: msg.text,
+        clientId,
+      });
+    } catch {
+      setConversation((prev) => {
+        if (!prev) return prev;
+        return { ...prev, messages: (prev.messages ?? []).filter((m) => m.id !== optimisticId) };
+      });
+    }
+  }, [conversationId, recipientPhone, conversation?.contact?.phone]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -685,12 +1077,12 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
     setAttachment(file);
     setRecordedAudio(null);
     setShowAttachmentMenu(false);
-    if (file?.type?.startsWith('audio/')) setTypingHint('Audio attachment ready');
+    if (file?.type?.startsWith('audio/')) setTypingHint(t('window.audioAttachmentReady'));
   };
 
   const handleDeleteMessage = async (messageId: string) => {
     if (!conversationId) return;
-    if (!confirm('Delete this message? This cannot be undone.')) return;
+    if (!confirm(t('window.deleteConfirmMsg'))) return;
     const backup = conversation?.messages ?? [];
     // Optimistic removal locally
     setConversation((prev) => {
@@ -711,33 +1103,18 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
 
     try {
       await api.delete(`/api/conversations/${conversationId}/messages/${messageId}`);
-      // Refresh conversation state from server to get latest lastMessage
-      try {
-        const fresh = await api.get(`/api/conversations/${conversationId}`);
-        if (fresh) setConversation(fresh);
-        const last = fresh?.messages?.length ? fresh.messages[fresh.messages.length - 1] : null;
-        if (last) {
-          try {
-            window.dispatchEvent(new CustomEvent('conversation:message', {
-              detail: { conversationId, message: last },
-            }));
-          } catch {}
-        } else {
-          try { window.dispatchEvent(new Event('conversations:refetch')); } catch {}
-        }
-      } catch {
-        try { window.dispatchEvent(new Event('conversations:refetch')); } catch {}
-      }
+      fetchConversation().catch(() => {});
+      try { window.dispatchEvent(new Event('conversations:refetch')); } catch {}
     } catch (err) {
       // restore backup on error
       setConversation((prev) => (prev ? { ...prev, messages: backup } : prev));
-      setSendError('Failed to delete message');
+      setSendError(t('window.failedToDelete'));
     }
   };
 
   if (!conversationId) {
     return (
-      <div className="relative flex h-full items-center justify-center overflow-hidden bg-[#f0f2f5] dark:bg-[#0B141A]">
+      <div dir={dir} className="relative flex h-full w-full min-w-0 items-center justify-center overflow-hidden bg-[#f0f2f5] dark:bg-[#0B141A]">
         <div className="absolute inset-0 chat-doodle-bg opacity-40 dark:opacity-20 pointer-events-none" />
         <div className="relative z-10 max-w-md px-8 text-center">
           <div className="mx-auto mb-6 flex h-32 w-32 items-center justify-center">
@@ -746,13 +1123,13 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
               <MessageSquare className="h-10 w-10 text-white" strokeWidth={1.75} />
             </div>
           </div>
-          <h2 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">Keep your messages flowing</h2>
+          <h2 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">{t('window.emptyTitle')}</h2>
           <p className="mt-2 text-sm leading-relaxed text-gray-500 dark:text-[#8696A0]">
-            Select a conversation from the sidebar to start chatting, manage assignments, and keep your team in sync.
+            {t('window.emptySubtitle')}
           </p>
           <div className="mt-8 flex items-center justify-center gap-2 text-[11px] uppercase tracking-[0.18em] text-gray-400 dark:text-[#5C6970]">
             <span className="h-px w-8 bg-gray-300 dark:bg-white/10" />
-            End-to-end workflow
+            {t('window.emptyBadge')}
             <span className="h-px w-8 bg-gray-300 dark:bg-white/10" />
           </div>
         </div>
@@ -762,21 +1139,21 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
 
   if (!conversation) {
     return (
-      <div className="relative flex h-full items-center justify-center bg-[#f0f2f5] dark:bg-[#0B141A]">
+      <div dir={dir} className="relative flex h-full w-full min-w-0 items-center justify-center bg-[#f0f2f5] dark:bg-[#0B141A]">
         <div className="absolute inset-0 chat-doodle-bg opacity-30 dark:opacity-15 pointer-events-none" />
         <div className="relative flex flex-col items-center gap-4">
           <div className="relative">
             <div className="absolute inset-0 animate-ping rounded-full bg-[#25D366]/20" />
             <div className="relative h-12 w-12 animate-spin rounded-full border-[3px] border-gray-200 dark:border-white/10 border-t-[#25D366]" />
           </div>
-          <p className="text-sm font-medium text-gray-500 dark:text-[#8696A0]">Loading conversation...</p>
+          <p className="text-sm font-medium text-gray-500 dark:text-[#8696A0]">{t('window.loading')}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="relative flex h-full overflow-hidden bg-white dark:bg-[#111B21] chat-shell-light dark:chat-shell-dark">
+    <div dir={dir} className="relative flex h-full w-full min-w-0 overflow-hidden rounded-tr-2xl chat-shell-light">
       <style>{`
         /* WhatsApp's iconic doodle pattern background */
         .chat-doodle-bg {
@@ -788,12 +1165,12 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
         }
 
         .chat-shell-light {
-          background-color: #131313;
+          background-color: #f0f2f5;
           background-image:
-            radial-gradient(at 20% 0%, rgba(37, 211, 102, 0.03) 0px, transparent 50%),
+            radial-gradient(at 20% 0%, rgba(37, 211, 102, 0.04) 0px, transparent 50%),
             radial-gradient(at 80% 100%, rgba(18, 140, 126, 0.03) 0px, transparent 50%);
         }
-        .chat-shell-dark {
+        :is(.dark) .chat-shell-light {
           background-color: #111B21;
           background-image:
             radial-gradient(at 20% 0%, rgba(37, 211, 102, 0.05) 0px, transparent 50%),
@@ -801,11 +1178,11 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
         }
 
         .glass-header-light {
-          background: #111B21;
+          background: rgba(255, 255, 255, 0.92);
           backdrop-filter: saturate(180%) blur(16px);
           -webkit-backdrop-filter: saturate(180%) blur(16px);
         }
-        .glass-header-dark {
+        :is(.dark) .glass-header-light {
           background: rgba(17, 27, 33, 0.85);
           backdrop-filter: saturate(180%) blur(16px);
           -webkit-backdrop-filter: saturate(180%) blur(16px);
@@ -901,20 +1278,38 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
           padding: 2px;
         }
 
-        /* Right panel slide-in on mobile */
-        @media (max-width: 1023px) {
+        /* Right panel slides in as an overlay on all screens except 2xl+ where it docks inline */
+        .right-panel-mobile {
+          position: absolute;
+          top: 0;
+          inset-inline-end: 0;
+          bottom: 0;
+          z-index: 50;
+          box-shadow: -20px 0 50px -10px rgba(0,0,0,0.25);
+          animation: slide-in-right 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+          width: min(85vw, 360px);
+        }
+        [dir="rtl"] .right-panel-mobile {
+          box-shadow: 20px 0 50px -10px rgba(0,0,0,0.25);
+          animation: slide-in-left 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        @media (min-width: 1536px) {
           .right-panel-mobile {
-            position: absolute;
-            top: 0;
-            right: 0;
-            bottom: 0;
-            z-index: 50;
-            box-shadow: -20px 0 50px -10px rgba(0,0,0,0.25);
-            animation: slide-in-right 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            position: relative;
+            width: 320px;
+            box-shadow: none;
+            animation: none;
+          }
+          [dir="rtl"] .right-panel-mobile {
+            box-shadow: none;
           }
         }
         @keyframes slide-in-right {
           from { transform: translateX(100%); }
+          to { transform: translateX(0); }
+        }
+        @keyframes slide-in-left {
+          from { transform: translateX(-100%); }
           to { transform: translateX(0); }
         }
 
@@ -938,18 +1333,22 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
 
       {/* ===== MAIN CHAT AREA ===== */}
       <div className="relative flex min-w-0 flex-1 flex-col">
-        {/* Header */}
-        <div className="relative z-20 flex items-center justify-between gap-2 border-b border-black/5 dark:border-white/5 glass-header-light dark:glass-header-dark px-3 sm:px-5 py-3">
+        {/* Header — forced LTR so layout is identical in EN and AR */}
+        <div dir="ltr" className="relative z-20 flex items-center justify-between gap-2 border-b border-black/5 dark:border-white/5 glass-header-light rounded-tr-2xl px-3 sm:px-5 py-3">
           <div className="flex min-w-0 flex-1 items-center gap-3">
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                className="md:hidden icon-btn -ms-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-600 dark:text-[#AEBAC1]"
+                aria-label={t('common:actions.back', 'Back')}
+              >
+                <PanelLeft className="h-5 w-5" />
+              </button>
+            )}
             <div className="relative shrink-0">
               <div className="avatar-ring rounded-full">
-                <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-[#25D366] to-[#128C7E] text-base font-semibold text-white">
-                  {contactAvatar ? (
-                    <img src={contactAvatar} alt={contactName} className="h-full w-full object-cover" />
-                  ) : (
-                    contactName.charAt(0).toUpperCase()
-                  )}
-                </div>
+                <Avatar src={contactAvatar} name={contactName} contactId={contactId} size={44} />
               </div>
               {statusLabel === 'open' && (
                 <div className="absolute -right-0.5 -bottom-0.5 h-3 w-3 rounded-full bg-[#25D366] ring-2 ring-white dark:ring-[#111B21]">
@@ -966,7 +1365,7 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <h3 className="truncate text-[15px] font-semibold tracking-tight text-gray-900 dark:text-white">{contactName}</h3>
+                <h3 className="truncate text-[15px] font-semibold tracking-tight text-gray-900 dark:text-white"><bdi>{contactName}</bdi></h3>
                 {!isOpen && (
                   <span className="shrink-0 rounded-md bg-gray-200/80 dark:bg-white/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-gray-700 dark:text-[#8696A0]">
                     {conversation.status}
@@ -979,41 +1378,75 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
                     <span className="recording-wave inline-flex h-3 items-end">
                       <span /><span /><span />
                     </span>
-                    typing...
+                    {t('window.typing')}
                   </p>
                 ) : (
-                  <p className="truncate text-xs text-gray-500 dark:text-[#8696A0]">{contactPhone || 'Online'}</p>
+                  <p dir="ltr" className="truncate text-xs text-gray-500 dark:text-[#8696A0]">{contactPhone || 'Online'}</p>
                 )}
               </div>
             </div>
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
-            {contactId && (
-              <div className="hidden md:flex items-center gap-1.5 mr-1">
+            {conversation && globalBotEnabled !== null && (() => {
+              if (canToggleGlobalBot) {
+                // Managers: button controls the GLOBAL bot master switch.
+                const botOn = globalBotEnabled === true;
+                return (
+                  <button
+                    type="button"
+                    disabled={globalBotSaving}
+                    onClick={() => toggleGlobalBot(!botOn).catch(() =>
+                      toast.error(t('details.headerBotError', { defaultValue: 'Failed to update the AI bot' })),
+                    )}
+                    title={t('details.headerBotTitle')}
+                    className={`mr-1 flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-60 ${
+                      botOn
+                        ? 'border-[#25D366]/40 bg-[#25D366]/10 text-[#1FAA5C] dark:text-[#25D366]'
+                        : 'border-gray-200 dark:border-white/10 bg-white/60 dark:bg-white/5 text-gray-500 dark:text-[#8696A0]'
+                    }`}
+                  >
+                    <Bot className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">{botOn ? t('details.headerBotOn') : t('details.headerBotOff')}</span>
+                    <span className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${botOn ? 'bg-[#25D366]' : 'bg-gray-300 dark:bg-white/20'}`}>
+                      <span className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${botOn ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                    </span>
+                  </button>
+                );
+              }
+              // Employees: button controls the PER-CONVERSATION bot override.
+              // forcedOff = botOverride is explicitly false; otherwise bot is on/auto.
+              const forcedOff = conversation.botOverride === false;
+              const effectiveOn = !forcedOff && globalBotEnabled === true;
+              return (
                 <button
                   type="button"
-                  onClick={() => router.push(`/tasks?contactId=${encodeURIComponent(contactId)}`)}
-                  className="rounded-full border border-gray-200 dark:border-white/10 bg-white/60 dark:bg-white/5 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-[#E9EDEF] transition-all hover:border-[#25D366]/40 hover:bg-[#25D366]/10 hover:text-[#1FAA5C]"
+                  disabled={isBotToggling}
+                  onClick={() => setBotOverride(forcedOff ? null : false)}
+                  title={forcedOff
+                    ? t('details.headerBotEnableChat', { defaultValue: 'Enable bot for this conversation' })
+                    : t('details.headerBotDisableChat', { defaultValue: 'Disable bot for this conversation' })}
+                  className={`mr-1 flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-60 ${
+                    effectiveOn
+                      ? 'border-[#25D366]/40 bg-[#25D366]/10 text-[#1FAA5C] dark:text-[#25D366]'
+                      : 'border-gray-200 dark:border-white/10 bg-white/60 dark:bg-white/5 text-gray-500 dark:text-[#8696A0]'
+                  }`}
                 >
-                  Task
+                  <Bot className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">{effectiveOn ? t('details.headerBotOn') : t('details.headerBotOff')}</span>
+                  <span className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${effectiveOn ? 'bg-[#25D366]' : 'bg-gray-300 dark:bg-white/20'}`}>
+                    <span className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${effectiveOn ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                  </span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => router.push(`/deals?contactId=${encodeURIComponent(contactId)}`)}
-                  className="rounded-full border border-gray-200 dark:border-white/10 bg-white/60 dark:bg-white/5 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-[#E9EDEF] transition-all hover:border-[#25D366]/40 hover:bg-[#25D366]/10 hover:text-[#1FAA5C]"
-                >
-                  Deal
-                </button>
-              </div>
-            )}
+              );
+            })()}
             {!conversation?.contact?.name && (
               <button
                 type="button"
                 onClick={() => setShowSaveContactModal(true)}
                 className="mr-1 rounded-full bg-gradient-to-br from-[#25D366] to-[#1FAA5C] px-3 py-1.5 text-xs font-semibold text-white shadow-md shadow-[#25D366]/30 transition-all hover:shadow-lg hover:shadow-[#25D366]/40 active:scale-95"
               >
-                Save Contact
+                {t('details.saveContactBtn')}
               </button>
             )}
             {/* Search toggle */}
@@ -1031,10 +1464,12 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
             <button
               type="button"
               onClick={() => setShowRightPanel((v) => !v)}
-              className="icon-btn flex h-9 w-9 items-center justify-center rounded-full text-gray-600 dark:text-[#AEBAC1] transition-colors"
+              className={`icon-btn flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
+                showRightPanel ? 'bg-[#25D366]/15 text-[#25D366]' : 'text-gray-600 dark:text-[#AEBAC1]'
+              }`}
               aria-label={showRightPanel ? 'Hide details' : 'Show details'}
             >
-              {showRightPanel ? <ChevronRight className="h-[18px] w-[18px]" /> : <ChevronLeft className="h-[18px] w-[18px]" />}
+              <Info className="h-[18px] w-[18px]" />
             </button>
           </div>
         </div>
@@ -1043,7 +1478,7 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
         {showSearch && (
           <div className="slide-down relative z-10 border-b border-black/5 dark:border-white/5 bg-white/80 dark:bg-[#111B21]/80 backdrop-blur-sm px-4 py-2.5">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-[#8696A0]" />
+              <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-[#8696A0]" />
               <input
                 type="text"
                 value={searchQuery}
@@ -1055,15 +1490,15 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
                     setSearchResults(Array.isArray(data) ? data : []);
                   } catch { setSearchResults([]); }
                 }}
-                placeholder="Search messages in this conversation..."
+                placeholder={t('window.searchMessages')}
                 autoFocus
-                className="w-full rounded-full border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#202C33] pl-10 pr-10 py-2 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-[#8696A0] focus:border-[#25D366] focus:outline-none focus:ring-2 focus:ring-[#25D366]/20"
+                className="w-full rounded-full border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#202C33] ps-10 pe-10 py-2 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-[#8696A0] focus:border-[#25D366] focus:outline-none focus:ring-2 focus:ring-[#25D366]/20"
               />
               {searchQuery && (
                 <button
                   type="button"
                   onClick={() => { setSearchQuery(''); setSearchResults([]); }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-gray-400 hover:bg-gray-200 dark:hover:bg-white/10"
+                  className="absolute end-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-gray-400 hover:bg-gray-200 dark:hover:bg-white/10"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
@@ -1080,7 +1515,7 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
               <button
                 key={r.id}
                 type="button"
-                className="block w-full px-4 py-2.5 text-left transition-colors hover:bg-gray-50 dark:hover:bg-white/5 border-b border-gray-100 dark:border-white/5 last:border-0"
+                className="block w-full px-4 py-2.5 text-start transition-colors hover:bg-gray-50 dark:hover:bg-white/5 border-b border-gray-100 dark:border-white/5 last:border-0"
                 onClick={() => {
                   setShowSearch(false);
                   setSearchQuery('');
@@ -1089,9 +1524,9 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
               >
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-[#25D366]">
-                    {r.fromMe ? 'You' : 'Contact'}
+                    {r.fromMe ? t('message.you') : t('details.contactInfo')}
                   </p>
-                  <p className="text-[11px] text-gray-400 dark:text-[#8696A0]">
+                  <p dir="ltr" className="text-[11px] text-gray-400 dark:text-[#8696A0]">
                     {new Date(r.timestamp).toLocaleString()}
                   </p>
                 </div>
@@ -1102,18 +1537,20 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
         )}
 
         {/* Messages area */}
-        <div className="relative flex-1 overflow-hidden chat-shell-light dark:chat-shell-dark">
+        <div className="relative flex-1 overflow-hidden chat-shell-light">
           <div className="absolute inset-0 chat-doodle-bg pointer-events-none" />
           <div
             ref={scrollContainerRef}
-            className="chat-scroll relative h-full overflow-y-auto overflow-x-hidden px-3 sm:px-6 py-4"
+            className="chat-scroll relative h-full overflow-y-auto overflow-x-hidden px-3 sm:px-6 pt-4 pb-4"
             onScroll={() => {
               const el = scrollContainerRef.current;
               if (!el) return;
               const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-              const atBottom = distanceFromBottom < 140;
+              const atBottom = distanceFromBottom < 40;
+              isAtBottomRef.current = atBottom;
               setIsScrolledToBottom(atBottom);
               if (atBottom) setUnreadWhileScrolled(0);
+              if (el.scrollTop < 80) loadOlderMessages();
             }}
           >
               {messages.length === 0 ? (
@@ -1122,19 +1559,29 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
                   <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-[#25D366]/20 to-[#128C7E]/10">
                     <MessageSquare className="h-7 w-7 text-[#25D366]" strokeWidth={1.75} />
                   </div>
-                  <p className="text-base font-semibold text-gray-900 dark:text-white">No messages yet</p>
+                  <p className="text-base font-semibold text-gray-900 dark:text-white">{t('window.noMessages')}</p>
                   <p className="mt-1.5 text-sm text-gray-500 dark:text-[#8696A0]">
-                    Send the first reply, share a file, or record a voice note to begin the conversation.
+                    {t('window.noMessagesSubtitle')}
                   </p>
                 </div>
               </div>
               ) : (
-              messages.map((msg, idx) => {
+              <>
+              {isLoadingOlder && (
+                <div className="flex justify-center py-3">
+                  <div className="flex items-center gap-2 rounded-full bg-white/80 dark:bg-[#202C33] px-4 py-2 text-xs text-gray-500 dark:text-[#8696A0] shadow-sm">
+                    <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-gray-300 dark:border-white/20 border-t-[#25D366]" />
+                    {t('window.loadingOlder')}
+                  </div>
+                </div>
+              )}
+              {messages.map((msg, idx) => {
                 // Group consecutive messages from same sender within 2 minutes
                 const prev = messages[idx - 1];
                 const msgDate = new Date(msg.timestamp);
                 const prevDate = prev ? new Date(prev.timestamp) : null;
-                const isGrouped = prev && prev.fromMe === msg.fromMe &&
+                const sameSender = prev?.fromMe === msg.fromMe;
+                const isGrouped = prev && sameSender &&
                   (msgDate.getTime() - new Date(prev.timestamp).getTime() < 120000);
 
                 // Date separator: show when day changes
@@ -1147,8 +1594,8 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
                   const today = new Date();
                   const yesterday = new Date(today);
                   yesterday.setDate(yesterday.getDate() - 1);
-                  if (msgDate.toDateString() === today.toDateString()) return 'Today';
-                  if (msgDate.toDateString() === yesterday.toDateString()) return 'Yesterday';
+                  if (msgDate.toDateString() === today.toDateString()) return t('window.today');
+                  if (msgDate.toDateString() === yesterday.toDateString()) return t('window.yesterday');
                   return msgDate.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
                 })();
 
@@ -1183,12 +1630,13 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
                         textareaRef.current?.focus();
                       }}
                       onDelete={handleDeleteMessage}
-                      onForward={(body: string) => setForwardMessage(body)}
+                      onForward={(msg: any) => setForwardMessage(msg)}
                     />
                   </div>
                   </div>
                 );
-              })
+              })}
+              </>
             )}
             <div ref={messagesEndRef} />
           </div>
@@ -1197,11 +1645,11 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
             <button
               type="button"
               onClick={scrollToBottom}
-              className="pop-in absolute bottom-4 right-4 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white dark:bg-[#202C33] border border-gray-200 dark:border-white/10 shadow-xl text-gray-600 dark:text-[#AEBAC1] hover:text-[#25D366] hover:border-[#25D366]/30 transition-all hover:scale-105"
+              className="pop-in absolute bottom-4 end-4 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white dark:bg-[#202C33] border border-gray-200 dark:border-white/10 shadow-xl text-gray-600 dark:text-[#AEBAC1] hover:text-[#25D366] hover:border-[#25D366]/30 transition-all hover:scale-105"
               aria-label="Scroll to bottom"
             >
               {unreadWhileScrolled > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-gradient-to-br from-[#25D366] to-[#1FAA5C] px-1.5 text-[10px] font-bold text-white shadow-md ring-2 ring-white dark:ring-[#0B141A]">
+                <span className="absolute -top-1.5 -end-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-gradient-to-br from-[#25D366] to-[#1FAA5C] px-1.5 text-[10px] font-bold text-white shadow-md ring-2 ring-white dark:ring-[#0B141A]">
                   {unreadWhileScrolled > 99 ? '99+' : unreadWhileScrolled}
                 </span>
               )}
@@ -1211,7 +1659,7 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
         </div>
 
         {/* Input area */}
-        <div className="relative z-10 border-t border-black/5 dark:border-white/5 bg-[#f0f2f5] dark:bg-[#1F2C33] px-3 sm:px-5 py-3">
+        <div className="relative z-10 border-t border-black/5 dark:border-white/5 bg-[#f0f2f5] dark:bg-[#1F2C33] px-3 sm:px-5 pt-3 pb-3">
           {/* Peer agent typing indicator */}
           {peerTyping && (
             <div className="mb-2 flex items-center gap-2 px-1 text-xs text-gray-500 dark:text-[#8696A0]">
@@ -1220,7 +1668,7 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
                 <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#25D366] [animation-delay:150ms]" />
                 <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#25D366] [animation-delay:300ms]" />
               </span>
-              <span className="font-medium">Another agent is typing</span>
+              <span className="font-medium">{t('window.anotherAgentTyping')}</span>
             </div>
           )}
           {sendError && (
@@ -1237,10 +1685,10 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
             </div>
           )}
           {replyTo && (
-            <div className="pop-in reply-bar mb-2 flex items-start gap-3 rounded-xl border-l-[3px] border-[#25D366] px-3 py-2 pr-2">
+            <div className="pop-in reply-bar mb-2 flex items-start gap-3 rounded-xl border-s-[3px] border-[#25D366] px-3 py-2 pe-2">
               <div className="flex-1 min-w-0">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-[#25D366]">
-                  Replying to {replyTo.fromMe ? 'yourself' : contactName}
+                  {replyTo.fromMe ? t('window.replyingToSelf') : t('window.replyingTo', { name: contactName })}
                 </p>
                 <p className="mt-0.5 text-xs text-gray-600 dark:text-[#AEBAC1] truncate">{replyTo.body}</p>
               </div>
@@ -1260,7 +1708,7 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-[#1FAA5C]">
-                  {recordedAudio ? 'Voice note ready' : 'Attachment ready'}
+                  {recordedAudio ? t('window.voiceNoteReady') : t('window.attachmentReady')}
                 </p>
                 <p className="truncate text-sm font-medium text-gray-900 dark:text-white">
                   {recordedAudio?.name || attachment?.name}
@@ -1286,14 +1734,15 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
               <span className="recording-wave inline-flex h-5 items-end text-red-500">
                 <span /><span /><span /><span /><span />
               </span>
-              <span className="font-mono text-sm font-semibold text-red-600 dark:text-red-300">{recordingLabel}</span>
-              <span className="ml-auto text-xs text-red-500">Recording...</span>
+              <span dir="ltr" className="font-mono text-sm font-semibold text-red-600 dark:text-red-300">{recordingLabel}</span>
+              <span className="ml-auto text-xs text-red-500">{t('window.recording')}</span>
             </div>
           )}
 
           <div className="flex items-end gap-1.5 sm:gap-2">
             <div className="relative" ref={emojiBarRef}>
               <button
+                ref={emojiButtonRef}
                 onClick={() => setShowEmojiBar((v) => !v)}
                 className={`icon-btn flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
                   showEmojiBar ? 'text-[#25D366]' : 'text-gray-500 dark:text-[#8696A0]'
@@ -1305,6 +1754,7 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
               </button>
               {showEmojiBar && (
                 <EmojiPicker
+                  anchorRef={emojiButtonRef}
                   onSelect={(emoji) => { insertEmoji(emoji); }}
                   onClose={() => setShowEmojiBar(false)}
                 />
@@ -1323,17 +1773,17 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
                 <Paperclip className="h-[22px] w-[22px]" />
               </button>
               {showAttachmentMenu && (
-                <div className="float-in absolute bottom-full left-0 z-50 mb-3 min-w-[220px] overflow-hidden rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#233138] shadow-2xl">
+                <div className="float-in absolute bottom-full start-0 z-50 mb-3 min-w-[220px] overflow-hidden rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#233138] shadow-2xl">
                   <input ref={fileInputRef} type="file" onChange={handleAttachmentChange} className="hidden" />
                   <div className="border-b border-gray-100 dark:border-white/5 px-4 py-2.5">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-gray-400 dark:text-[#8696A0]">Share</p>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-gray-400 dark:text-[#8696A0]">{t('details.share')}</p>
                   </div>
                   <div className="p-2">
                     {ATTACHMENT_OPTIONS.map((option) => {
                       const Icon = option.icon;
                       return (
                         <button
-                          key={option.label}
+                          key={option.labelKey}
                           type="button"
                           onClick={() => openAttachmentPicker(option.accept)}
                           className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left text-sm font-medium text-gray-700 dark:text-[#E9EDEF] transition-colors hover:bg-gray-50 dark:hover:bg-white/5"
@@ -1341,7 +1791,7 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
                           <span className={`flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br ${option.color} text-white shadow-sm`}>
                             <Icon className="h-4 w-4" />
                           </span>
-                          {option.label}
+                          {t(option.labelKey)}
                         </button>
                       );
                     })}
@@ -1364,46 +1814,95 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
                   <FileText className="h-[20px] w-[20px]" />
                 </button>
                 {showTemplatePicker && (
-                  <div className="float-in absolute bottom-full left-0 z-50 mb-3 w-80 overflow-hidden rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#233138] shadow-2xl">
+                  <div className="float-in absolute bottom-full start-0 z-50 mb-3 w-80 overflow-hidden rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#233138] shadow-2xl">
                     <div className="flex items-center justify-between border-b border-gray-100 dark:border-white/5 px-4 py-2.5">
                       <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-gray-400 dark:text-[#8696A0]">
-                        Templates · {templates.length}
+                        {t('templates:title')} · {templates.length}
                       </span>
                       <button type="button" onClick={() => setShowTemplatePicker(false)} className="rounded-full p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-white/10">
                         <X className="h-3.5 w-3.5" />
                       </button>
                     </div>
                     <div className="max-h-72 overflow-y-auto chat-scroll p-2 space-y-1">
-                      {templates.map((t) => {
+                      {templates.map((tpl) => {
                         const contactName = conversation?.contact?.name ?? '';
                         const contactPhone = conversation?.contact?.phone ?? '';
-                        const blocks = t.payload?.blocks ?? [];
                         const subst = (s: string) => s.replace(/\{\{(\w+)\}\}/g, (_: string, k: string) => {
                           if (k === 'name') return contactName;
                           if (k === 'phone') return contactPhone;
                           return '';
                         });
-                        const mediaBlock = blocks.find((b) => b.type === 'media' && b.url);
-                        const nonMediaBlocks = blocks.filter((b) => b.type !== 'media');
-                        const mediaCaptionText = blocks.length > 0
-                          ? subst((mediaBlock?.caption as string) || '')
-                          : subst(t.content);
-                        const followUpText = nonMediaBlocks.length > 0 ? subst(blocksToText(nonMediaBlocks)) : '';
-                        const previewText = blocks.length > 0 ? subst(blocksToText(blocks)) : subst(t.content);
-                        const hasButtons = blocks.some((b) => b.type === 'buttons' || b.type === 'reminder' || b.type === 'support');
+
+                        // Detect canonical vs legacy payload
+                        const isCanonical = typeof tpl.payload?.body?.text === 'string';
+                        const canonicalHeader = isCanonical ? tpl.payload?.header : undefined;
+                        const canonicalMediaUrl = (
+                          canonicalHeader &&
+                          (canonicalHeader.type === 'IMAGE' || canonicalHeader.type === 'VIDEO' || canonicalHeader.type === 'DOCUMENT') &&
+                          canonicalHeader.url
+                        ) ? canonicalHeader.url : undefined;
+
+                        // Legacy blocks
+                        const blocks = (!isCanonical && tpl.payload?.blocks) ? tpl.payload.blocks : [];
+                        const legacyMediaBlock = blocks.find((b) => b.type === 'media' && b.url);
+
+                        // Resolved media URL (canonical takes priority)
+                        const mediaUrl = canonicalMediaUrl ?? (legacyMediaBlock?.url as string | undefined);
+                        const hasMedia = Boolean(mediaUrl);
+                        const hasButtons = isCanonical
+                          ? (tpl.payload?.buttons?.length ?? 0) > 0
+                          : blocks.some((b) => b.type === 'buttons' || b.type === 'reminder' || b.type === 'support');
+
+                        // Body text for the message input
+                        let bodyText: string;
+                        if (isCanonical && tpl.payload?.body) {
+                          bodyText = subst(tpl.payload.body.text);
+                          if (tpl.payload.footer?.text) bodyText += `\n\n_${tpl.payload.footer.text}_`;
+                          if (tpl.payload.buttons?.length) {
+                            bodyText += '\n\n' + tpl.payload.buttons.map((b, i) => {
+                              if (b.type === 'URL' && b.url) return `🔗 ${b.text}: ${subst(b.url)}`;
+                              if (b.type === 'PHONE_NUMBER' && b.phone_number) return `📞 ${b.text}: ${b.phone_number}`;
+                              return `${i + 1}. ${b.text}`;
+                            }).join('\n');
+                          }
+                        } else {
+                          const nonMediaBlocks = blocks.filter((b) => b.type !== 'media');
+                          bodyText = blocks.length > 0
+                            ? subst((legacyMediaBlock?.caption as string) || '')
+                            : subst(tpl.content);
+                          const followUpText = nonMediaBlocks.length > 0 ? subst(blocksToText(nonMediaBlocks)) : '';
+                          // For legacy format, store follow-up text separately (set below)
+                          void followUpText;
+                        }
+
+                        const previewText = isCanonical
+                          ? subst(tpl.payload?.body?.text ?? tpl.content)
+                          : (blocks.length > 0 ? subst(blocksToText(blocks)) : subst(tpl.content));
+
                         return (
                           <button
-                            key={t.id}
+                            key={tpl.id}
                             type="button"
                             onClick={async () => {
-                              setMessage(mediaCaptionText);
-                              setTemplateFollowUp(mediaBlock ? followUpText : '');
-                              if (mediaBlock?.url) {
+                              setMessage(bodyText);
+
+                              // Legacy: set follow-up text for non-media blocks
+                              if (!isCanonical) {
+                                const nonMediaBlocks = blocks.filter((b) => b.type !== 'media');
+                                const followUpText = nonMediaBlocks.length > 0 ? subst(blocksToText(nonMediaBlocks)) : '';
+                                setTemplateFollowUp(legacyMediaBlock ? followUpText : '');
+                              } else {
+                                setTemplateFollowUp('');
+                              }
+
+                              // Fetch and attach media (both canonical and legacy)
+                              if (mediaUrl) {
                                 try {
-                                  const resp = await fetch(mediaBlock.url as string);
+                                  const resp = await fetch(mediaUrl);
                                   const blob = await resp.blob();
-                                  const urlParts = (mediaBlock.url as string).split('/');
-                                  const fileName = urlParts[urlParts.length - 1] || 'media';
+                                  const urlParts = mediaUrl.split('/');
+                                  const rawFileName = urlParts[urlParts.length - 1] || 'media';
+                                  const fileName = canonicalHeader?.filename ?? rawFileName;
                                   const file = new File([blob], fileName, { type: blob.type });
                                   setAttachment(file);
                                 } catch {
@@ -1416,8 +1915,8 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
                             className="group/tpl w-full rounded-xl border border-transparent px-3 py-2.5 text-left transition-all hover:border-[#25D366]/30 hover:bg-[#25D366]/5 dark:hover:bg-[#25D366]/10"
                           >
                             <div className="flex items-center gap-1.5">
-                              <p className="flex-1 text-sm font-semibold text-gray-900 dark:text-white group-hover/tpl:text-[#1FAA5C]">{t.name}</p>
-                              {mediaBlock && <span className="rounded-full bg-violet-100 dark:bg-violet-900/40 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-600 dark:text-violet-300">Media</span>}
+                              <p className="flex-1 text-sm font-semibold text-gray-900 dark:text-white group-hover/tpl:text-[#1FAA5C]">{tpl.name}</p>
+                              {hasMedia && <span className="rounded-full bg-violet-100 dark:bg-violet-900/40 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-600 dark:text-violet-300">Media</span>}
                               {hasButtons && <span className="rounded-full bg-blue-100 dark:bg-blue-900/40 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-blue-600 dark:text-blue-300">Btns</span>}
                             </div>
                             <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-gray-500 dark:text-[#8696A0]">{previewText}</p>
@@ -1430,30 +1929,18 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
               </div>
             )}
 
-            {/* Interactive message composer button */}
-            <button
-              type="button"
-              onClick={() => setShowInteractiveComposer(true)}
-              className={`icon-btn hidden sm:flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
-                showInteractiveComposer ? 'text-[#25D366]' : 'text-gray-500 dark:text-[#8696A0]'
-              }`}
-              title="Send interactive message (buttons, list, CTA)"
-            >
-              <StickyNote className="h-[20px] w-[20px]" />
-            </button>
-
             <div className="relative flex-1">
               <textarea
                 ref={textareaRef}
                 value={message}
                 onChange={handleMessageChange}
                 onKeyDown={handleKeyDown}
-                placeholder="Type a message..."
-                className="message-input-focus min-h-[36px] max-h-20 w-full resize-none rounded-2xl border border-transparent bg-white dark:bg-[#2A3942] px-4 py-2 pr-12 text-[15px] text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-[#8696A0] shadow-sm transition-all"
+                placeholder={t('composer.placeholder')}
+                className="message-input-focus min-h-[36px] max-h-20 w-full resize-none rounded-2xl border border-transparent bg-white dark:bg-[#2A3942] px-4 py-2 pe-12 text-[15px] text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-[#8696A0] shadow-sm transition-all"
                 rows={1}
               />
               {typingHint && (
-                <div className="pointer-events-none absolute bottom-2.5 right-3 rounded-full bg-[#25D366]/10 px-2 py-0.5 text-[10px] font-semibold text-[#1FAA5C]">
+                <div className="pointer-events-none absolute bottom-2.5 end-3 rounded-full bg-[#25D366]/10 px-2 py-0.5 text-[10px] font-semibold text-[#1FAA5C]">
                   {typingHint}
                 </div>
               )}
@@ -1494,30 +1981,41 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
       {/* ===== RIGHT PANEL ===== */}
       {showRightPanel && (
         <>
-          {/* Mobile backdrop */}
+          {/* Overlay backdrop (shown until the panel docks inline at 2xl) */}
           <div
-            className="lg:hidden absolute inset-0 z-40 bg-black/40 backdrop-blur-sm"
+            className="2xl:hidden absolute inset-0 z-40 bg-black/40 backdrop-blur-sm"
             onClick={() => setShowRightPanel(false)}
           />
-          <div className="right-panel-mobile lg:relative flex w-[88%] sm:w-[400px] lg:w-80 shrink-0 flex-col border-l border-black/5 dark:border-white/5 bg-white dark:bg-[#111B21]">
-            {/* Panel header with close on mobile */}
-            <div className="lg:hidden flex items-center justify-between border-b border-gray-200 dark:border-white/5 px-4 py-3">
-              <p className="text-sm font-semibold text-gray-900 dark:text-white">Conversation Details</p>
+          <div className="right-panel-mobile flex flex-col border-l border-black/5 dark:border-white/5 bg-white dark:bg-[#111B21] overflow-hidden">
+            {/* Interactive sidebar takes over the panel when active */}
+            {showInteractiveSidebar ? (
+              <div className="flex h-full flex-col overflow-hidden">
+                <InteractiveSidebar
+                  onSend={(msg) => { sendSidebarMessage(msg); }}
+                  onClose={() => setShowInteractiveSidebar(false)}
+                  contactName={conversation?.contact?.name ?? undefined}
+                />
+              </div>
+            ) : (
+            <>
+            {/* Panel header with close (shown whenever the panel overlays) */}
+            <div className="2xl:hidden flex items-center justify-between border-b border-gray-200 dark:border-white/5 px-4 py-3 gap-2">
+              <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{t('details.conversationDetails')}</p>
               <button
                 type="button"
                 onClick={() => setShowRightPanel(false)}
-                className="rounded-full p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-white/10"
+                className="shrink-0 flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-white/10 dark:text-[#AEBAC1] transition-colors"
               >
-                <X className="h-4 w-4" />
+                <X className="h-5 w-5" />
               </button>
             </div>
 
             {/* Tab bar */}
             <div className="relative flex border-b border-gray-200 dark:border-white/5">
               {([
-                { id: 'details' as const, label: 'Details', icon: MessageSquare, color: '#25D366' },
-                { id: 'notes' as const, label: 'Notes', icon: StickyNote, color: '#F59E0B' },
-                { id: 'history' as const, label: 'History', icon: GitBranch, color: '#3B82F6' },
+                { id: 'details' as const, labelKey: 'details.tabDetails', icon: MessageSquare, color: '#25D366' },
+                { id: 'notes' as const, labelKey: 'details.tabNotes', icon: StickyNote, color: '#F59E0B' },
+                { id: 'history' as const, labelKey: 'details.tabHistory', icon: GitBranch, color: '#3B82F6' },
               ]).map((tab) => {
                 const Icon = tab.icon;
                 const isActive = rightTab === tab.id;
@@ -1530,7 +2028,7 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
                     style={{ color: isActive ? tab.color : undefined }}
                   >
                     <Icon className={`h-4 w-4 transition-colors ${isActive ? '' : 'text-gray-400 dark:text-[#8696A0]'}`} />
-                    <span className={isActive ? '' : 'text-gray-500 dark:text-[#8696A0]'}>{tab.label}</span>
+                    <span className={isActive ? '' : 'text-gray-500 dark:text-[#8696A0]'}>{t(tab.labelKey)}</span>
                     {isActive && (
                       <div
                         className="absolute bottom-0 left-1/4 right-1/4 h-0.5 rounded-t-full"
@@ -1550,28 +2048,38 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
                     <div className="absolute -top-12 -right-12 h-32 w-32 rounded-full bg-[#25D366]/10 blur-2xl pointer-events-none" />
                     <div className="relative flex items-center gap-3">
                       <div className="avatar-ring rounded-full">
-                        <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-[#25D366] to-[#128C7E] text-base font-bold text-white">
-                          {contactAvatar ? (
-                            <img src={contactAvatar} alt={contactName} className="h-full w-full object-cover" />
-                          ) : (
-                            contactName.charAt(0).toUpperCase()
-                          )}
-                        </div>
+                        <Avatar src={contactAvatar} name={contactName} contactId={contactId} size={48} />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-bold text-gray-900 dark:text-white">{contactName}</p>
-                        <p className="truncate text-xs text-gray-500 dark:text-[#8696A0]">{contactPhone}</p>
+                        <p className="truncate text-sm font-bold text-gray-900 dark:text-white"><bdi>{contactName}</bdi></p>
+                        <p dir="ltr" className="truncate text-xs text-gray-500 dark:text-[#8696A0]">{contactPhone}</p>
                       </div>
                     </div>
                     {contactId && (
                       <button
                         type="button"
-                        onClick={() => router.push(`/contacts?id=${contactId}`)}
+                        onClick={() => router.push(`/contacts/${contactId}`)}
                         className="relative mt-3 w-full rounded-xl border border-gray-200 dark:border-white/10 bg-white/80 dark:bg-white/5 py-2 text-xs font-semibold text-gray-700 dark:text-[#E9EDEF] transition-all hover:border-[#25D366]/40 hover:bg-[#25D366]/5 hover:text-[#1FAA5C]"
                       >
-                        View Full Profile →
+                        {t('details.viewFullProfile')}
                       </button>
                     )}
+                  </div>
+                )}
+
+                {/* AI Sales Intelligence */}
+                {contactId && (
+                  <QualificationPanel contactId={contactId} />
+                )}
+
+                {/* Tags */}
+                {contactId && (
+                  <div>
+                    <label className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-gray-500 dark:text-[#8696A0]">
+                      <Tag className="h-3 w-3" />
+                      {t('details.tags')}
+                    </label>
+                    <ContactTagSelector contactId={contactId} />
                   </div>
                 )}
 
@@ -1579,20 +2087,20 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
                 <div>
                   <label className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-gray-500 dark:text-[#8696A0]">
                     <span className={`h-1.5 w-1.5 rounded-full ${statusLabel === 'open' ? 'bg-[#25D366]' : statusLabel === 'pending' ? 'bg-amber-400' : 'bg-slate-400'}`} />
-                    Status
+                    {t('details.status')}
                   </label>
                   <select
                     value={conversation.status}
                     onChange={(e) => handleStatusChange(e.target.value)}
-                    className="w-full appearance-none rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#202C33] px-3 py-2.5 pr-9 text-sm font-medium text-gray-900 dark:text-white shadow-sm transition-all focus:border-[#25D366] focus:outline-none focus:ring-2 focus:ring-[#25D366]/20"
-                    style={{ backgroundImage: `url("data:image/svg+xml;charset=US-ASCII,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238696A0' d='M3 5l3 3 3-3z'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}
+                    className="w-full appearance-none rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#202C33] px-3 py-2.5 pe-9 text-sm font-medium text-gray-900 dark:text-white shadow-sm transition-all focus:border-[#25D366] focus:outline-none focus:ring-2 focus:ring-[#25D366]/20"
+                    style={{ backgroundImage: `url("data:image/svg+xml;charset=US-ASCII,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238696A0' d='M3 5l3 3 3-3z'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: isRTL ? 'left 12px center' : 'right 12px center' }}
                   >
-                    <option value="OPEN">Open</option>
-                    <option value="PENDING">Pending</option>
-                    <option value="ON_HOLD">On Hold</option>
-                    <option value="RESOLVED">Resolved</option>
-                    <option value="ARCHIVED">Archived</option>
-                    <option value="SPAM">Spam</option>
+                    <option value="OPEN">{t('details.statusOptions.OPEN')}</option>
+                    <option value="PENDING">{t('details.statusOptions.PENDING')}</option>
+                    <option value="ON_HOLD">{t('details.statusOptions.ON_HOLD')}</option>
+                    <option value="RESOLVED">{t('details.statusOptions.RESOLVED')}</option>
+                    <option value="ARCHIVED">{t('details.statusOptions.ARCHIVED')}</option>
+                    <option value="SPAM">{t('details.statusOptions.SPAM')}</option>
                   </select>
                 </div>
 
@@ -1600,17 +2108,17 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
                 <div>
                   <label className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-gray-500 dark:text-[#8696A0]">
                     <GitBranch className="h-3 w-3" />
-                    Pipeline Stage
+                    {t('details.pipelineStage')}
                   </label>
                   <select
                     value={conversation.pipeline || ''}
                     onChange={(e) => handlePipelineChange(e.target.value)}
-                    className="w-full appearance-none rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#202C33] px-3 py-2.5 pr-9 text-sm font-medium text-gray-900 dark:text-white shadow-sm transition-all focus:border-[#25D366] focus:outline-none focus:ring-2 focus:ring-[#25D366]/20"
-                    style={{ backgroundImage: `url("data:image/svg+xml;charset=US-ASCII,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238696A0' d='M3 5l3 3 3-3z'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}
+                    className="w-full appearance-none rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#202C33] px-3 py-2.5 pe-9 text-sm font-medium text-gray-900 dark:text-white shadow-sm transition-all focus:border-[#25D366] focus:outline-none focus:ring-2 focus:ring-[#25D366]/20"
+                    style={{ backgroundImage: `url("data:image/svg+xml;charset=US-ASCII,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238696A0' d='M3 5l3 3 3-3z'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: isRTL ? 'left 12px center' : 'right 12px center' }}
                   >
                     {PIPELINE_STAGES.map((stage) => (
                       <option key={stage} value={stage}>
-                        {PIPELINE_LABELS[stage]}
+                        {stage === '' ? t('details.pipeline.none') : t(`details.pipeline.${stage}`)}
                       </option>
                     ))}
                   </select>
@@ -1620,16 +2128,16 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
                 <div>
                   <label className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-gray-500 dark:text-[#8696A0]">
                     <User className="h-3 w-3" />
-                    Assigned Agent
+                    {t('details.assignedAgent')}
                     {isAssigning && <Loader2 className="h-3 w-3 animate-spin text-[#25D366]" />}
                   </label>
                   <select
                     value={conversation.assignedTo || ''}
                     onChange={(e) => handleAssignAgent(e.target.value)}
-                    className="w-full appearance-none rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#202C33] px-3 py-2.5 pr-9 text-sm font-medium text-gray-900 dark:text-white shadow-sm transition-all focus:border-[#25D366] focus:outline-none focus:ring-2 focus:ring-[#25D366]/20"
-                    style={{ backgroundImage: `url("data:image/svg+xml;charset=US-ASCII,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238696A0' d='M3 5l3 3 3-3z'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}
+                    className="w-full appearance-none rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#202C33] px-3 py-2.5 pe-9 text-sm font-medium text-gray-900 dark:text-white shadow-sm transition-all focus:border-[#25D366] focus:outline-none focus:ring-2 focus:ring-[#25D366]/20"
+                    style={{ backgroundImage: `url("data:image/svg+xml;charset=US-ASCII,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238696A0' d='M3 5l3 3 3-3z'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: isRTL ? 'left 12px center' : 'right 12px center' }}
                   >
-                    <option value="">Unassigned</option>
+                    <option value="">{t('details.unassigned')}</option>
                     {agents.map((agent) => (
                       <option key={agent.id} value={agent.id}>
                         {agent.name || agent.email}
@@ -1652,15 +2160,15 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
                 <div>
                   <label className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-gray-500 dark:text-[#8696A0]">
                     <Users className="h-3 w-3" />
-                    Assigned Team
+                    {t('details.assignedTeam')}
                   </label>
                   <select
                     value={conversation.assignedTeamId || ''}
                     onChange={(e) => handleAssignTeam(e.target.value)}
-                    className="w-full appearance-none rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#202C33] px-3 py-2.5 pr-9 text-sm font-medium text-gray-900 dark:text-white shadow-sm transition-all focus:border-[#25D366] focus:outline-none focus:ring-2 focus:ring-[#25D366]/20"
-                    style={{ backgroundImage: `url("data:image/svg+xml;charset=US-ASCII,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238696A0' d='M3 5l3 3 3-3z'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}
+                    className="w-full appearance-none rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#202C33] px-3 py-2.5 pe-9 text-sm font-medium text-gray-900 dark:text-white shadow-sm transition-all focus:border-[#25D366] focus:outline-none focus:ring-2 focus:ring-[#25D366]/20"
+                    style={{ backgroundImage: `url("data:image/svg+xml;charset=US-ASCII,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238696A0' d='M3 5l3 3 3-3z'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: isRTL ? 'left 12px center' : 'right 12px center' }}
                   >
-                    <option value="">No Team</option>
+                    <option value="">{t('details.noTeam')}</option>
                     {teams.map((team) => (
                       <option key={team.id} value={team.id}>
                         {team.name}
@@ -1678,6 +2186,77 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
                     </div>
                   )}
                 </div>
+
+                {/* AI Bot */}
+                <div>
+                  <label className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-gray-500 dark:text-[#8696A0]">
+                    <Bot className="h-3 w-3" />
+                    {t('details.aiBot')}
+                    {isBotToggling && <Loader2 className="h-3 w-3 animate-spin text-[#25D366]" />}
+                  </label>
+                  <div className="rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#202C33] px-3 py-2.5">
+                    {(() => {
+                      // Tri-state: true = force ON, false = force OFF, null = Auto (follow global rules).
+                      const override: boolean | null =
+                        conversation.botOverride ?? (conversation.botEnabled ? true : null);
+                      // A human-handoff pause only applies in Auto mode. An explicit
+                      // ON/OFF override is sticky and ignores the pause entirely.
+                      const isPaused = override === null && !!conversation.botPausedUntil
+                        && new Date(conversation.botPausedUntil) > new Date();
+                      const modes: Array<{ value: boolean | null; label: string }> = [
+                        { value: null,  label: t('details.aiBotModeAuto') },
+                        { value: true,  label: t('details.aiBotModeOn') },
+                        { value: false, label: t('details.aiBotModeOff') },
+                      ];
+                      return (
+                        <>
+                          <div className="grid grid-cols-3 gap-1 rounded-lg bg-gray-100 dark:bg-[#111B21] p-1">
+                            {modes.map((m) => {
+                              const active = override === m.value;
+                              return (
+                                <button
+                                  key={String(m.value)}
+                                  type="button"
+                                  disabled={isBotToggling}
+                                  onClick={() => setBotOverride(m.value)}
+                                  className={`rounded-md py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 ${
+                                    active
+                                      ? 'bg-[#25D366] text-black'
+                                      : 'text-gray-500 dark:text-[#8696A0] hover:text-gray-800 dark:hover:text-white'
+                                  }`}
+                                >
+                                  {m.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <p className="mt-1.5 text-[11px] text-gray-400 dark:text-[#8696A0]">
+                            {override === null ? t('details.aiBotAutoHint')
+                              : override ? t('details.aiBotOnHint')
+                              : t('details.aiBotOffHint')}
+                          </p>
+                          {isPaused && (
+                            <>
+                              <p className="mt-1 text-[11px] text-amber-500">
+                                {t('details.aiBotPaused', { time: new Date(conversation.botPausedUntil!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) })}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={handleBotResume}
+                                disabled={isBotToggling}
+                                className="mt-2 w-full rounded-lg border border-[#25D366]/30 py-1 text-xs font-semibold text-[#25D366] hover:bg-[#25D366]/5 transition-colors disabled:opacity-50"
+                              >
+                                {t('details.aiBotResumeNow')}
+                              </button>
+                            </>
+                          )}
+                        </>
+                      );
+                    })()}
+                    {/* Test panel */}
+                    <BotTestPanel conversationId={conversationId!} />
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1690,13 +2269,15 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
             {rightTab === 'history' && conversationId && (
               <AssignmentHistory conversationId={conversationId} />
             )}
+          </>
+          )}
           </div>
         </>
       )}
 
       {forwardMessage !== null && (
         <ForwardModal
-          messageBody={forwardMessage}
+          message={forwardMessage}
           onClose={() => setForwardMessage(null)}
         />
       )}
@@ -1705,7 +2286,7 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
         <InteractiveComposer
           conversationId={conversationId}
           phone={recipientPhone || conversation?.contact?.phone || ''}
-          provider="meta"
+          provider="baileys"
           onClose={() => setShowInteractiveComposer(false)}
           onSent={() => {
             fetchConversation();

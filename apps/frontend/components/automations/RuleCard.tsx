@@ -1,4 +1,5 @@
 import { Edit, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface AutomationRule {
   id: string;
@@ -18,19 +19,10 @@ interface RuleCardProps {
 }
 
 export default function RuleCard({ rule, onEdit, onDelete, onToggle }: RuleCardProps) {
+  const { t } = useTranslation('automations');
+
   const getTriggerLabel = (trigger: string) => {
-    switch (trigger) {
-      case 'KEYWORD':
-        return 'Keyword';
-      case 'FIRST_MESSAGE':
-        return 'First Message';
-      case 'ANY_MESSAGE':
-        return 'Any Message';
-      case 'OUTSIDE_HOURS':
-        return 'Outside Hours';
-      default:
-        return trigger;
-    }
+    return (t as any)(`triggers.${trigger}`, { defaultValue: trigger });
   };
 
   return (
@@ -67,7 +59,7 @@ export default function RuleCard({ rule, onEdit, onDelete, onToggle }: RuleCardP
 
       <div className="space-y-2">
         <div className="flex items-center">
-          <span className="text-sm font-medium text-gray-600 dark:text-[#8696A0]">Trigger:</span>
+          <span className="text-sm font-medium text-gray-600 dark:text-[#8696A0]">{t('card.trigger')}:</span>
           <span className="ml-2 rounded-full border border-[#25D366]/30 dark:border-[#25D366]/30 bg-[#25D366]/10 dark:bg-[#25D366]/15 px-2 py-1 text-xs text-[#25D366]">
             {getTriggerLabel(rule.trigger)}
           </span>
@@ -75,13 +67,13 @@ export default function RuleCard({ rule, onEdit, onDelete, onToggle }: RuleCardP
 
         {rule.keyword && (
           <div className="flex items-center">
-            <span className="text-sm font-medium text-gray-600 dark:text-[#8696A0]">Keyword:</span>
+            <span className="text-sm font-medium text-gray-600 dark:text-[#8696A0]">{t('card.keyword')}:</span>
             <span className="ml-2 text-sm text-gray-900 dark:text-white">&quot;{rule.keyword}&quot;</span>
           </div>
         )}
 
         <div>
-          <span className="text-sm font-medium text-gray-600 dark:text-[#8696A0]">Response:</span>
+          <span className="text-sm font-medium text-gray-600 dark:text-[#8696A0]">{t('card.response')}:</span>
           <p className="mt-1 line-clamp-2 text-sm text-gray-900 dark:text-white">{rule.response}</p>
         </div>
       </div>

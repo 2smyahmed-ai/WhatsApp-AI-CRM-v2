@@ -1,11 +1,11 @@
 import type {
-  CanonicalTemplate, Provider, ValidationIssue, ValidationResult,
+  CanonicalTemplate, ValidationIssue, ValidationResult,
 } from './schema'
 
-export function validateTemplate(
-  template: CanonicalTemplate,
-  provider: Provider,
-): ValidationResult {
+// Baileys-first validation. Validates what will actually render correctly
+// in real WhatsApp via Baileys. No Meta API rules applied.
+
+export function validateTemplate(template: CanonicalTemplate): ValidationResult {
   const issues: ValidationIssue[] = []
 
   // ── Name ──────────────────────────────────────────────────────────────────
@@ -13,25 +13,14 @@ export function validateTemplate(
     issues.push({ level: 'error', field: 'name', message: 'Template name is required.' })
   } else if (template.name.length > 512) {
     issues.push({ level: 'error', field: 'name', message: 'Template name must be 512 characters or fewer.' })
-  } else if (!/^[a-zA-Z0-9_ ]+$/.test(template.name)) {
-    issues.push({
-      level: 'warning',
-      field: 'name',
-      message: 'Template name should only contain letters, numbers, spaces, and underscores (Meta requirement for submission).',
-    })
-  }
-
-  // ── Category ──────────────────────────────────────────────────────────────
-  if (!template.category) {
-    issues.push({ level: 'error', field: 'category', message: 'Category is required for Meta submission.' })
   }
 
   // ── Body ──────────────────────────────────────────────────────────────────
   const bodyText = template.body?.text ?? ''
   if (!bodyText.trim()) {
     issues.push({ level: 'error', field: 'body', message: 'Body text is required.' })
-  } else if (bodyText.length > 1024) {
-    issues.push({ level: 'error', field: 'body', message: `Body text is ${bodyText.length} chars — max is 1,024.` })
+  } else if (bodyText.length > 4096) {
+    issues.push({ level: 'error', field: 'body', message: `Body text is ${bodyText.length} chars — WhatsApp limit is 4,096.` })
   }
 
   // ── Header ────────────────────────────────────────────────────────────────
@@ -45,24 +34,16 @@ export function validateTemplate(
       }
       const vars = [...(h.text ?? '').matchAll(/\{\{(\w+)\}\}/g)]
       if (vars.length > 1) {
-        issues.push({ level: 'error', field: 'header', message: 'Header text supports at most 1 variable.' })
+        issues.push({ level: 'warning', field: 'header', message: 'Header text works best with at most 1 variable.' })
       }
     }
 
     if (h.type === 'IMAGE' || h.type === 'VIDEO' || h.type === 'DOCUMENT') {
-      if (!h.url && !h.handle) {
+      if (!(h as any).url) {
         issues.push({
           level: 'warning',
           field: 'header',
-          message: `No media URL set for ${h.type.toLowerCase()} header — provide a URL or upload a file before submitting to Meta.`,
-        })
-      }
-      if (provider === 'baileys') {
-        issues.push({
-          level: 'warning',
-          field: 'header',
-          message: `Baileys: ${h.type.toLowerCase()} header will be sent as a separate media message before the body text.`,
-          downgrade: 'Media sent first, then body as a second message.',
+          message: `No media URL set for ${h.type.toLowerCase()} header — add a URL or upload a file before sending.`,
         })
       }
     }
@@ -79,25 +60,23 @@ export function validateTemplate(
     if (/\{\{[\w]+\}\}/.test(ft)) {
       issues.push({ level: 'error', field: 'footer', message: 'Footer cannot contain variables.' })
     }
-    if (provider === 'baileys') {
-      issues.push({
-        level: 'info',
-        field: 'footer',
-        message: 'Baileys: footer will be appended to the body text in italics.',
-        downgrade: 'Footer merged into body text as _italic_ line.',
-      })
-    }
+    issues.push({
+      level: 'info',
+      field: 'footer',
+      message: 'Footer will be appended to the body text in italics on WhatsApp.',
+      downgrade: 'Footer merged into body as _italic_ line.',
+    })
   }
 
   // ── Buttons ───────────────────────────────────────────────────────────────
   if (template.buttons && template.buttons.length > 0) {
     const buttons = template.buttons
-    const qr  = buttons.filter(b => b.type === 'QUICK_REPLY')
-    const url  = buttons.filter(b => b.type === 'URL')
+    const qr    = buttons.filter(b => b.type === 'QUICK_REPLY')
+    const url   = buttons.filter(b => b.type === 'URL')
     const phone = buttons.filter(b => b.type === 'PHONE_NUMBER')
     const hasCta = url.length > 0 || phone.length > 0
 
-    // Mixed types
+    // Cannot mix types
     if (qr.length > 0 && hasCta) {
       issues.push({
         level: 'error',
@@ -106,31 +85,28 @@ export function validateTemplate(
       })
     }
 
-    // QR limits
-    if (qr.length > 3) {
-      issues.push({ level: 'error', field: 'buttons', message: 'Maximum 3 Quick Reply buttons allowed by Meta.' })
+    // QR limits (Baileys: up to 10, auto-downgraded to numbered text)
+    if (qr.length > 10) {
+      issues.push({ level: 'error', field: 'buttons', message: 'Maximum 10 quick reply options allowed.' })
     }
 
     // CTA limits
     if (url.length > 1) {
-      issues.push({ level: 'error', field: 'buttons', message: 'Maximum 1 URL button allowed by Meta.' })
+      issues.push({ level: 'error', field: 'buttons', message: 'Maximum 1 URL button allowed.' })
     }
     if (phone.length > 1) {
-      issues.push({ level: 'error', field: 'buttons', message: 'Maximum 1 Phone Number button allowed by Meta.' })
-    }
-    if (hasCta && url.length + phone.length > 2) {
-      issues.push({ level: 'error', field: 'buttons', message: 'Maximum 2 Call-to-Action buttons total (1 URL + 1 Phone).' })
+      issues.push({ level: 'error', field: 'buttons', message: 'Maximum 1 phone number button allowed.' })
     }
 
     // Label length
     for (const btn of buttons) {
       if (!btn.text?.trim()) {
         issues.push({ level: 'error', field: 'buttons', message: 'All button labels must be non-empty.' })
-      } else if (btn.text.length > 25) {
+      } else if (btn.text.length > 60) {
         issues.push({
-          level: 'error',
+          level: 'warning',
           field: 'buttons',
-          message: `Button "${btn.text.slice(0, 20)}…" is ${btn.text.length} chars — max is 25.`,
+          message: `Button "${btn.text.slice(0, 20)}…" label is ${btn.text.length} chars — keep it concise for best rendering.`,
         })
       }
     }
@@ -149,24 +125,13 @@ export function validateTemplate(
       }
     }
 
-    // Baileys downgrade
-    if (provider === 'baileys') {
-      issues.push({
-        level: 'warning',
-        field: 'buttons',
-        message: 'Baileys does not support interactive buttons — will be rendered as numbered plain-text options.',
-        downgrade: '1. Button one\n2. Button two\n\nReply with a number.',
-      })
-    }
-
-    // Media header + buttons requires approved template
-    if (template.header && template.header.type !== 'TEXT' && hasCta && provider === 'meta') {
-      issues.push({
-        level: 'info',
-        field: 'buttons',
-        message: 'Media header + CTA buttons require an approved Meta template before sending.',
-      })
-    }
+    // Inform about auto-downgrade behaviour
+    issues.push({
+      level: 'info',
+      field: 'buttons',
+      message: 'Buttons are auto-formatted as numbered text options in WhatsApp.',
+      downgrade: '1️⃣ Option A\n2️⃣ Option B\n\nReply with the number of your choice.',
+    })
   }
 
   const errors   = issues.filter(i => i.level === 'error').length
@@ -174,8 +139,7 @@ export function validateTemplate(
 
   return {
     valid: errors === 0,
-    metaReady: errors === 0 && !!template.name?.trim() && !!bodyText.trim() && !!template.category,
-    baileysSupported: true,
+    sendable: errors === 0 && !!template.name?.trim() && !!bodyText.trim(),
     issues,
     errors,
     warnings,

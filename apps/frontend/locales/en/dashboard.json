@@ -1,0 +1,145 @@
+{
+  "title": "Dashboard",
+  "subtitle": "Overview of your WhatsApp business activity",
+  "greeting": "Welcome back, {{name}}",
+  "tagline": "Plan, prioritize, and accomplish your work with ease.",
+  "newBroadcast": "New Broadcast",
+  "importContacts": "Import Contacts",
+  "reminders": {
+    "title": "Reminders",
+    "headline": "{{count}} chats awaiting your reply",
+    "sub": "Jump back in and keep your customers moving.",
+    "caughtUp": "You're all caught up",
+    "caughtUpSub": "No open conversations need a reply right now.",
+    "action": "Open Inbox"
+  },
+  "kpi": {
+    "totalContacts": "Total Contacts",
+    "totalContactsCaption": "Across your whole audience",
+    "openConversations": "Open Conversations",
+    "openConversationsCaption": "Awaiting your reply",
+    "todayMessages": "Messages Today",
+    "todayMessagesCaption": "Sent & received today",
+    "hotLeads": "Hot Leads",
+    "hotLeadsCaption": "Lead management customers"
+  },
+  "analytics": {
+    "title": "Message Analytics",
+    "subtitle": "Daily message volume over the last 7 days",
+    "noData": "No message activity yet"
+  },
+  "collab": {
+    "title": "Team Collaboration",
+    "subtitle": "Workload and resolution per agent",
+    "manage": "Manage",
+    "empty": "No agent activity yet",
+    "workingOnPrefix": "Working on",
+    "workingOn": "{{open}} open · {{resolved}} resolved",
+    "completed": "Completed",
+    "inProgress": "In Progress",
+    "pending": "Pending"
+  },
+  "progress": {
+    "title": "Resolution Progress",
+    "caption": "Resolved",
+    "resolutionCaption": "Resolution rate",
+    "conversionCaption": "Deal conversion"
+  },
+  "tracker": {
+    "title": "Session Uptime",
+    "live": "Live",
+    "paused": "Paused",
+    "pause": "Pause timer",
+    "resume": "Resume timer",
+    "reset": "Reset timer"
+  },
+  "crmOverview": "CRM overview",
+  "heroTitle": "WhatsApp command center",
+  "heroSubtitle": "Track contacts, conversations, broadcasts, and automations from a single workspace built for operators.",
+  "contactsLabel": "Contacts",
+  "conversationsLabel": "Conversations",
+  "automationLabel": "Automation",
+  "liveStatus": "Live status",
+  "refreshRate": "Refresh",
+  "refreshInterval": "Every minute",
+  "agentPerformance": "Agent Performance",
+  "agentPerformanceSubtitle": "Response time and workload per agent",
+  "agentCol": {
+    "name": "Agent",
+    "open": "Open",
+    "resolved": "Resolved",
+    "avgFirstResponse": "Avg. First Response"
+  },
+  "resolutionRate": "Resolution rate",
+  "closedDeals": "Closed Deals",
+  "whatsappConnected": "WhatsApp Connected",
+  "disconnected": "Disconnected",
+  "pipelineAnalytics": "Pipeline Analytics",
+  "pipelineSub": "Deal funnel and conversion",
+  "totalDeals": "Total Deals",
+  "conversion": "Conversion",
+  "totalValue": "Total Value",
+  "stats": {
+    "openConversations": "Open Conversations",
+    "totalContacts": "Total Contacts",
+    "messagesSent": "Messages Sent",
+    "responseRate": "Response Rate",
+    "avgResponseTime": "Avg. Response Time",
+    "resolvedToday": "Resolved Today",
+    "newContactsToday": "New Contacts Today",
+    "campaignsSent": "Campaigns Sent",
+    "messagesToday": "Messages Today",
+    "automationsFired": "Automations Fired"
+  },
+  "chart": {
+    "title": "Message Activity",
+    "subtitle": "Messages sent and received over the last 7 days",
+    "sent": "Sent",
+    "received": "Received",
+    "noData": "No message data available"
+  },
+  "recentConversations": {
+    "title": "Recent Conversations",
+    "subtitle": "Latest activity in your inbox",
+    "viewAll": "View all",
+    "lastActive": "Last active {{date}}",
+    "noConversations": "No recent conversations",
+    "noMessages": "No messages yet"
+  },
+  "quickActions": {
+    "title": "Quick Actions",
+    "newBroadcast": "New Broadcast",
+    "newContact": "New Contact",
+    "viewTemplates": "View Templates"
+  },
+  "quickNav": {
+    "title": "Quick Access",
+    "open": "Open",
+    "leads": "Leads",
+    "leadsSub": "Track & convert hot leads",
+    "templates": "Templates",
+    "templatesSub": "Ready-made message templates",
+    "tags": "Tags",
+    "tagsSub": "Organize contacts with labels"
+  },
+  "session": {
+    "title": "WhatsApp Session",
+    "connected": "Connected",
+    "connecting": "Connecting",
+    "disconnected": "Disconnected",
+    "disconnectedHint": "Not connected — scan the QR code to reconnect.",
+    "connectingHint": "Connecting to WhatsApp…",
+    "loadingHint": "Loading session…",
+    "todaysMessages": "Today's Messages",
+    "sentSuffix": "sent",
+    "warmupTitle": "Warm-up",
+    "dayOf": "Day {{day}} of 15",
+    "remaining": "{{count}} remaining · resets at midnight",
+    "limitReached": "Daily limit reached · resets at midnight",
+    "unlocks": "Full capacity unlocks {{date}}",
+    "fullCapacity": "Full capacity",
+    "perMinute": "Up to {{count}} / min",
+    "protectNote": "These limits protect your number from WhatsApp bans.",
+    "openInbox": "Open Inbox"
+  }
+}

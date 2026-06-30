@@ -1,0 +1,64 @@
+{
+  "title": "Deals",
+  "subtitle": "Track opportunities through your pipeline — updates sync in realtime.",
+  "badge": "Sales Pipeline",
+  "newDeal": "New Deal",
+  "editDeal": "Edit Deal",
+  "totalDeals": "Total Deals",
+  "pipeline": "Pipeline",
+  "won": "Won",
+  "winRate": "Win Rate",
+  "stages": {
+    "NEW": "New Leads",
+    "INTERESTED": "Interested",
+    "NEGOTIATION": "Negotiating",
+    "CLOSED": "Closed / Won"
+  },
+  "emptyStage": {
+    "NEW": "No new leads yet.",
+    "INTERESTED": "No interested prospects.",
+    "NEGOTIATION": "Nothing in negotiation.",
+    "CLOSED": "No deals won yet."
+  },
+  "addDeal": "Add deal",
+  "noContact": "No contact",
+  "unassigned": "Unassigned",
+  "form": {
+    "contact": "Contact",
+    "selectContact": "Select a contact",
+    "title": "Title *",
+    "titlePlaceholder": "Opportunity title",
+    "stage": "Stage",
+    "value": "Value ($)",
+    "assignedTo": "Assigned To",
+    "unassigned": "Unassigned",
+    "notes": "Notes",
+    "notesPlaceholder": "Internal notes about this deal...",
+    "cancel": "Cancel",
+    "save": "Save",
+    "update": "Update Deal",
+    "create": "Create Deal",
+    "saving": "Saving..."
+  },
+  "deleteConfirm": {
+    "title": "Delete this deal?",
+    "message": "\"{{title}}\" will be permanently removed.",
+    "confirm": "Yes, delete",
+    "cancel": "Cancel"
+  },
+  "timeAgo": {
+    "justNow": "just now",
+    "minutesAgo": "{{count}}m ago",
+    "hoursAgo": "{{count}}h ago",
+    "daysAgo": "{{count}}d ago"
+  },
+  "toast": {
+    "created": "Deal created.",
+    "updated": "Deal updated.",
+    "deleted": "Deal deleted.",
+    "saveFailed": "Failed to save deal",
+    "deleteFailed": "Failed to delete deal",
+    "loadFailed": "Failed to load deals",
+    "advanceFailed": "Failed to advance stage"
+  }
+}

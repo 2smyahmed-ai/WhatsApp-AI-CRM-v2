@@ -1,20 +1,27 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Activity, MessagesSquare, ShieldCheck, Sparkles, Clock3, Users2 } from 'lucide-react';
+import Link from 'next/link';
+import { Plus, Upload, MessageSquare, Send, Users, LayoutTemplate, TrendingUp, Tag, ArrowUpRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { useSession } from 'next-auth/react';
+import { cn } from '../../../lib/utils';
 import { api } from '../../../lib/api';
-import StatsCards from '../../../components/dashboard/StatsCards';
-import MessagesChart from '../../../components/dashboard/MessagesChart';
-import RecentConversations from '../../../components/dashboard/RecentConversations';
-import ConnectionStatus from '../../../components/shared/ConnectionStatus';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useSocket } from '../../../hooks/useSocket';
+import KpiCards from '../../../components/dashboard/donezo/KpiCards';
+import MessagesChart from '../../../components/dashboard/MessagesChart';
+import SessionStatusWidget from '../../../components/dashboard/SessionStatusWidget';
+import Reminders from '../../../components/dashboard/donezo/Reminders';
+import AgentCollaboration from '../../../components/dashboard/donezo/AgentCollaboration';
+import ProgressGauge from '../../../components/dashboard/donezo/ProgressGauge';
+import UptimeTracker from '../../../components/dashboard/donezo/UptimeTracker';
+import RecentConversations from '../../../components/dashboard/RecentConversations';
 
 interface OverviewData {
   totalContacts: number;
   openConversations: number;
   todayMessages: number;
-  automationsFired: number;
+  hotLeads: number;
 }
 
 interface AgentStat {
@@ -34,249 +41,333 @@ interface PipelineStats {
   conversionRate: number;
 }
 
+const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'TEAM_LEAD'];
+
+const GLASS = 'rounded-[20px] bg-white/80 backdrop-blur-xl border border-gray-100 shadow-[0_2px_20px_rgba(0,0,0,0.05)] dark:bg-[#182229] dark:border-transparent dark:shadow-[0_4px_24px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.05)]';
+
+const QUICK_NAV_ITEMS = [
+  {
+    href: '/leads',
+    labelKey: 'quickNav.leads',
+    subKey:   'quickNav.leadsSub',
+    Icon: TrendingUp,
+    iconClass:   'bg-gradient-to-br from-violet-500 to-purple-600',
+    iconShadow:  'shadow-[0_4px_14px_rgba(124,58,237,0.5)]',
+    glowClass:   'bg-violet-400',
+    topLine:     'bg-violet-400',
+    hoverShadow: 'group-hover:shadow-[0_12px_40px_rgba(124,58,237,0.2)] dark:group-hover:shadow-[0_12px_40px_rgba(139,92,246,0.25)]',
+    accentText:  'text-violet-600 dark:text-violet-400',
+    arrowColor:  'text-violet-500 dark:text-violet-400',
+  },
+  {
+    href: '/templates',
+    labelKey: 'quickNav.templates',
+    subKey:   'quickNav.templatesSub',
+    Icon: LayoutTemplate,
+    iconClass:   'bg-gradient-to-br from-sky-500 to-blue-600',
+    iconShadow:  'shadow-[0_4px_14px_rgba(14,165,233,0.5)]',
+    glowClass:   'bg-sky-400',
+    topLine:     'bg-sky-400',
+    hoverShadow: 'group-hover:shadow-[0_12px_40px_rgba(14,165,233,0.2)] dark:group-hover:shadow-[0_12px_40px_rgba(56,189,248,0.25)]',
+    accentText:  'text-sky-600 dark:text-sky-400',
+    arrowColor:  'text-sky-500 dark:text-sky-400',
+  },
+  {
+    href: '/tags',
+    labelKey: 'quickNav.tags',
+    subKey:   'quickNav.tagsSub',
+    Icon: Tag,
+    iconClass:   'bg-gradient-to-br from-amber-500 to-orange-500',
+    iconShadow:  'shadow-[0_4px_14px_rgba(245,158,11,0.5)]',
+    glowClass:   'bg-amber-400',
+    topLine:     'bg-amber-400',
+    hoverShadow: 'group-hover:shadow-[0_12px_40px_rgba(245,158,11,0.2)] dark:group-hover:shadow-[0_12px_40px_rgba(251,191,36,0.25)]',
+    accentText:  'text-amber-600 dark:text-amber-500',
+    arrowColor:  'text-amber-500 dark:text-amber-400',
+  },
+] as const;
+
+function Skeleton() {
+  return (
+    <div className="animate-pulse space-y-4" role="status" aria-label="Loading dashboard">
+      <div className="h-10 w-1/2 rounded-2xl bg-gray-200 dark:bg-white/8" />
+      {/* Mobile quick actions placeholder */}
+      <div className="grid grid-cols-4 gap-2 lg:hidden">
+        {[...Array(4)].map((_, i) => <div key={i} className={`h-20 ${GLASS}`} />)}
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[...Array(4)].map((_, i) => <div key={i} className={`h-36 ${GLASS}`} />)}
+      </div>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+        <div className={`h-72 ${GLASS} lg:col-span-8`} />
+        <div className={`h-72 ${GLASS} lg:col-span-4`} />
+        <div className={`h-48 ${GLASS} lg:col-span-3`} />
+        <div className={`h-48 ${GLASS} lg:col-span-5`} />
+        <div className={`h-48 ${GLASS} lg:col-span-4`} />
+        <div className={`h-60 ${GLASS} lg:col-span-8`} />
+        <div className={`h-60 ${GLASS} lg:col-span-4`} />
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
+  const { t } = useTranslation('dashboard');
+  const { t: tCommon } = useTranslation('common');
+  const { data: session } = useSession();
+
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [messagesData, setMessagesData] = useState<any[]>([]);
   const [agentStats, setAgentStats] = useState<AgentStat[]>([]);
   const [pipelineStats, setPipelineStats] = useState<PipelineStats | null>(null);
-  const [status, setStatus] = useState<'connected' | 'disconnected' | 'connecting'>('disconnected');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 60000); // Refresh every minute
-    return () => clearInterval(interval);
-  }, []);
+  const role = (session?.user as any)?.role ?? 'AGENT';
+  const isAdmin = ADMIN_ROLES.includes(role);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const [overviewData, messagesData, statusData, agentData, pipelineData] = await Promise.all([
+      setError(null);
+      const [overviewData, msgData, , agentData, pipelineData] = await Promise.all([
         api.get('/api/analytics/overview'),
         api.get('/api/analytics/messages'),
-        api.get('/api/whatsapp/status'),
+        api.get('/api/whatsapp/status').catch(() => null),
         api.get('/api/analytics/agents').catch(() => []),
         api.get('/api/analytics/pipeline').catch(() => null),
       ]);
-
       setOverview(overviewData);
-      setMessagesData(messagesData);
-      setStatus(statusData.status);
+      setMessagesData(msgData);
       setAgentStats(Array.isArray(agentData) ? agentData : []);
       setPipelineStats(pipelineData?.totalDeals !== undefined ? pipelineData : null);
-    } catch (error) {
-      console.error('Failed to fetch dashboard data:', error);
+    } catch (err: any) {
+      console.error('Failed to fetch dashboard data:', err);
+      setError(err?.message || 'Failed to load dashboard data');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+    const id = setInterval(fetchData, 60_000);
+    return () => clearInterval(id);
+  }, [fetchData]);
 
   const onMessageNew = useCallback((data: { isNewContact?: boolean }) => {
-    setOverview((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        todayMessages: prev.todayMessages + 1,
-        ...(data.isNewContact ? { totalContacts: prev.totalContacts + 1 } : {}),
-      };
-    });
+    setOverview((prev) => prev ? {
+      ...prev,
+      todayMessages: prev.todayMessages + 1,
+      ...(data.isNewContact ? { totalContacts: prev.totalContacts + 1 } : {}),
+    } : prev);
   }, []);
+
   const onConversationUpdated = useCallback((data: { status?: string }) => {
     if (!data.status) return;
-    setOverview((prev) => {
-      if (!prev) return prev;
-      if (data.status === 'OPEN') return { ...prev, openConversations: prev.openConversations + 1 };
-      return { ...prev, openConversations: Math.max(0, prev.openConversations - 1) };
-    });
+    setOverview((prev) => prev ? (
+      data.status === 'OPEN'
+        ? { ...prev, openConversations: prev.openConversations + 1 }
+        : { ...prev, openConversations: Math.max(0, prev.openConversations - 1) }
+    ) : prev);
   }, []);
+
   useSocket('message:new', onMessageNew);
   useSocket('conversation:updated', onConversationUpdated);
 
-  if (loading && !overview) {
-    return (
-      <div className="space-y-6">
-        <section className="overflow-hidden rounded-2xl border border-white/10 bg-[#111B21] p-6 shadow-[0_8px_20px_rgba(0,0,0,0.15)]">
-          <div className="grid gap-6 lg:grid-cols-[1.4fr_0.9fr]">
-            <div className="space-y-4">
-              <div className="h-6 w-28 rounded-full bg-white/10" />
-              <div className="h-10 w-3/4 rounded-xl bg-white/10" />
-              <div className="h-5 w-full max-w-2xl rounded-full bg-white/8" />
-              <div className="grid gap-3 sm:grid-cols-3">
-                {[...Array(3)].map((_, i) => (
-                  <div key={i} className="h-24 rounded-xl border border-white/10 bg-[#202C33]" />
-                ))}
-              </div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-[#202C33]/60 p-5">
-              <div className="h-5 w-24 rounded-full bg-white/10" />
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                {[...Array(2)].map((_, i) => (
-                  <div key={i} className="h-24 rounded-xl border border-white/10 bg-[#202C33]" />
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
+  if (loading && !overview) return <Skeleton />;
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-28 rounded-2xl border border-white/10 bg-[#202C33]" />
+  const totalResolved = agentStats.reduce((s, a) => s + a.resolvedConversations, 0);
+  const totalOpen = agentStats.reduce((s, a) => s + a.openConversations, 0);
+  let gaugePercent = 0;
+  if (totalResolved + totalOpen > 0) gaugePercent = (totalResolved / (totalResolved + totalOpen)) * 100;
+  else if (pipelineStats && pipelineStats.totalDeals > 0) gaugePercent = pipelineStats.conversionRate;
+
+  const gaugeLegend = [
+    { label: t('collab.completed'), swatch: 'bg-[#16A34A] dark:bg-[#25D366]' },
+    { label: t('collab.inProgress'), swatch: 'bg-[#8ad3ab] dark:bg-[#1fa85a]' },
+    { label: t('collab.pending'), swatch: 'dz-hatch border border-gray-300 dark:border-white/20' },
+  ];
+
+  return (
+    <div className="relative space-y-4">
+      {/* Ambient gradient blobs — visible through glass cards */}
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 overflow-hidden select-none">
+        <div className="absolute -top-20 right-0 h-80 w-80 rounded-full bg-emerald-300/25 blur-3xl dark:bg-[#25D366]/6" />
+        <div className="absolute top-1/3 -left-16 h-64 w-64 rounded-full bg-sky-300/20 blur-3xl dark:bg-blue-500/4" />
+        <div className="absolute bottom-20 right-1/3 h-52 w-52 rounded-full bg-violet-300/15 blur-3xl dark:bg-violet-500/3" />
+      </div>
+
+      {/* ── Hero card (hidden on mobile) ──────────────────────────────────── */}
+      <div className="hidden sm:block relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#16A34A] via-[#15803D] to-[#0c4a2b] p-5 sm:p-6 shadow-[0_12px_32px_-8px_rgba(22,163,74,0.4)] dark:from-[#0f3d22] dark:via-[#0c3a27] dark:to-[#091f15]">
+        {/* Decorative glows */}
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 select-none">
+          <div className="absolute -right-10 -top-10 h-48 w-48 rounded-full bg-white/8 blur-2xl" />
+          <div className="absolute bottom-0 left-0 h-32 w-40 rounded-full bg-[#25D366]/15 blur-2xl" />
+          <div className="absolute inset-0 opacity-[0.03] hero-dot-grid" />
+        </div>
+
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="mb-2.5 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold text-white/90 backdrop-blur-sm">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#4ade80] animate-pulse" />
+              {t('badge', { defaultValue: 'Live' })}
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">{t('title')}</h1>
+            <p className="mt-1 text-sm text-white/65">{t('tagline')}</p>
+          </div>
+
+          <div className="flex gap-2 sm:shrink-0">
+            <Link
+              href="/broadcasts/new"
+              className="flex flex-1 sm:flex-none items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-[#15803D] shadow-sm transition-all hover:bg-white/95 active:scale-95"
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              {t('newBroadcast')}
+            </Link>
+            <Link
+              href="/contacts"
+              className="flex flex-1 sm:flex-none items-center justify-center gap-2 rounded-xl border border-white/25 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white backdrop-blur-sm transition-all hover:bg-white/20 active:scale-95"
+            >
+              <Upload className="h-4 w-4" aria-hidden="true" />
+              {t('importContacts')}
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Error banner ─────────────────────────────────────────────────── */}
+      {error && !overview && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-400">
+          <p className="font-medium">{error}</p>
+          <button type="button" onClick={() => void fetchData()} className="mt-2 text-xs font-semibold underline underline-offset-2">
+            {tCommon('retry')}
+          </button>
+        </div>
+      )}
+
+      {/* ── Mobile Quick Actions (tablet only: sm → lg) ──────────────────── */}
+      <div className="hidden sm:grid sm:grid-cols-4 gap-2 lg:hidden">
+        {[
+          { href: '/conversations', Icon: MessageSquare, label: 'Inbox' },
+          { href: '/broadcasts/new', Icon: Send, label: 'Broadcast' },
+          { href: '/contacts', Icon: Users, label: 'Contacts' },
+          { href: '/templates', Icon: LayoutTemplate, label: 'Templates' },
+        ].map(({ href, Icon, label }) => (
+          <Link
+            key={href}
+            href={href}
+            className={cn(GLASS, 'flex flex-col items-center gap-2 p-3 transition-all active:scale-95 select-none')}
+          >
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#16A34A]/10 dark:bg-[#25D366]/10">
+              <Icon className="h-5 w-5 text-[#16A34A] dark:text-[#25D366]" aria-hidden="true" />
+            </span>
+            <span className="text-[11px] font-semibold text-gray-700 dark:text-white">{label}</span>
+          </Link>
+        ))}
+      </div>
+
+      {/* ── KPI row ──────────────────────────────────────────────────────── */}
+      {overview && <KpiCards data={overview} />}
+
+      {/* ── Quick Navigate ───────────────────────────────────────────────── */}
+      <div>
+        <p className="mb-2.5 ps-0.5 text-[11px] font-semibold uppercase tracking-widest text-gray-400 dark:text-white/30">
+          {t('quickNav.title')}
+        </p>
+        <div className="grid grid-cols-3 gap-3">
+          {QUICK_NAV_ITEMS.map(({ href, labelKey, subKey, Icon, iconClass, iconShadow, glowClass, topLine, hoverShadow, accentText, arrowColor }) => (
+            <Link
+              key={href}
+              href={href}
+              className={cn(
+                GLASS,
+                'group relative flex flex-col gap-3 overflow-hidden p-3.5 sm:p-4',
+                'transition-all duration-300 ease-out',
+                '-translate-y-0 hover:-translate-y-[3px]',
+                hoverShadow,
+                'active:scale-[0.97] active:translate-y-0',
+                'select-none',
+              )}
+            >
+              {/* Top accent line — slides in on hover */}
+              <div className={cn(
+                'pointer-events-none absolute inset-x-0 top-0 h-[2px] origin-center scale-x-0 rounded-full opacity-70 transition-transform duration-300 group-hover:scale-x-100',
+                topLine,
+              )} />
+
+              {/* Corner glow blob */}
+              <div className={cn(
+                'pointer-events-none absolute -end-5 -top-5 h-[72px] w-[72px] rounded-full blur-2xl opacity-0 transition-opacity duration-500 group-hover:opacity-30 dark:group-hover:opacity-20',
+                glowClass,
+              )} />
+
+              {/* Icon */}
+              <div className={cn(
+                'flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-[13px] transition-transform duration-300 group-hover:scale-110',
+                iconClass,
+                iconShadow,
+              )}>
+                <Icon className="h-4 w-4 sm:h-5 sm:w-5 text-white" aria-hidden="true" />
+              </div>
+
+              {/* Text */}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[12px] sm:text-[13px] font-bold leading-snug text-gray-900 dark:text-white">
+                  {t(labelKey)}
+                </p>
+                <p className="mt-0.5 hidden sm:block text-[11px] leading-snug text-gray-400 dark:text-white/35 line-clamp-1">
+                  {t(subKey)}
+                </p>
+              </div>
+
+              {/* Open label + arrow */}
+              <div className="flex items-center justify-between gap-1">
+                <span className={cn('text-[10px] sm:text-[11px] font-semibold', accentText)}>
+                  {t('quickNav.open')}
+                </span>
+                <ArrowUpRight className={cn(
+                  'h-3 w-3 sm:h-3.5 sm:w-3.5 transition-transform duration-200',
+                  'group-hover:translate-x-0.5 group-hover:-translate-y-0.5',
+                  arrowColor,
+                )} aria-hidden="true" />
+              </div>
+            </Link>
           ))}
         </div>
       </div>
-    );
-  }
 
-  return (
-    <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-[#111B21] p-6 shadow-[0_8px_20px_rgba(0,0,0,0.15)]">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(37,211,102,0.12),transparent_32%)]" />
-        <div className="relative grid gap-6 lg:grid-cols-[1.4fr_0.9fr]">
-          <div className="space-y-4">
-            <div className="inline-flex items-center gap-2 rounded-full border border-[#25D366]/30 bg-[#25D366]/10 px-3 py-1.5 text-xs font-medium text-[#25D366]">
-              <Sparkles className="h-3.5 w-3.5" />
-              CRM overview
-            </div>
-            <div>
-              <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">WhatsApp command center</h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-[#8696A0] sm:text-base">
-                Track contacts, conversations, broadcasts, and automations from a single workspace built for operators.
-              </p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                <Users2 className="h-5 w-5 text-cyan-300" />
-                <p className="mt-2 text-xs uppercase tracking-[0.25em] text-[#8696A0]">Contacts</p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                <MessagesSquare className="h-5 w-5 text-emerald-300" />
-                <p className="mt-2 text-xs uppercase tracking-[0.25em] text-[#8696A0]">Conversations</p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                <Activity className="h-5 w-5 text-amber-300" />
-                <p className="mt-2 text-xs uppercase tracking-[0.25em] text-[#8696A0]">Automation</p>
-              </div>
-            </div>
-          </div>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-white">Live status</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 ">
-              <ConnectionStatus status={status} />
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="rounded-2xl bg-[#202C33] p-3">
-                  <Clock3 className="h-4 w-4 text-cyan-300" />
-                  <p className="mt-2 text-[#8696A0]">Refresh</p>
-                  <p className="font-medium text-white">Every minute</p>
-                </div>
-                <div className="rounded-2xl bg-[#202C33] p-3">
-                  <ShieldCheck className="h-4 w-4 text-emerald-300" />
-                  <p className="mt-2 text-[#8696A0]">Sync</p>
-                  <p className="font-medium text-white">Connected</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+      {/* ── Dashboard grid ───────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+
+        {/* Row 1 — Chart (primary) + Session widget */}
+        <div className="lg:col-span-8">
+          <MessagesChart data={messagesData} />
         </div>
-      </section>
+        <div className="lg:col-span-4">
+          <SessionStatusWidget />
+        </div>
 
-      {overview && <StatsCards data={overview} />}
+        {/* Row 2 — Reminders + Agent leaderboard + Recent conversations */}
+        <div className="lg:col-span-3">
+          <Reminders openCount={overview?.openConversations ?? 0} />
+        </div>
+        <div className="lg:col-span-5">
+          <AgentCollaboration agents={agentStats} isAdmin={isAdmin} />
+        </div>
+        <div className="lg:col-span-4">
+          <RecentConversations />
+        </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <MessagesChart data={messagesData} />
-        <RecentConversations />
+        {/* Row 3 — Resolution gauge + Uptime tracker */}
+        <div className="lg:col-span-8">
+          <ProgressGauge percent={gaugePercent} caption={t('progress.caption')} legend={gaugeLegend} />
+        </div>
+        <div className="lg:col-span-4">
+          <UptimeTracker />
+        </div>
+
       </div>
-
-      {agentStats.length > 0 && (
-        <section className="rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#111B21] overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-200 dark:border-white/5">
-            <h2 className="text-base font-semibold text-gray-900 dark:text-white">Agent Performance</h2>
-            <p className="text-xs text-gray-500 dark:text-[#8696A0] mt-0.5">Response time and workload per agent</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-[#202C33]">
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-[#8696A0]">Agent</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-[#8696A0]">Open</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-[#8696A0]">Resolved</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-[#8696A0]">Avg. First Response</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                {agentStats.map((agent) => (
-                  <tr key={agent.agentId} className="hover:bg-gray-50 dark:hover:bg-white/3 transition-colors">
-                    <td className="px-6 py-3">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900 dark:text-white">{agent.name}</p>
-                        <p className="text-xs text-gray-500 dark:text-[#8696A0]">{agent.email}</p>
-                      </div>
-                    </td>
-                    <td className="px-6 py-3 text-sm text-gray-700 dark:text-gray-300">{agent.openConversations}</td>
-                    <td className="px-6 py-3 text-sm text-gray-700 dark:text-gray-300">{agent.resolvedConversations}</td>
-                    <td className="px-6 py-3 text-sm text-gray-700 dark:text-gray-300">
-                      {agent.avgFirstResponseMin !== null
-                        ? agent.avgFirstResponseMin < 60
-                          ? `${agent.avgFirstResponseMin}m`
-                          : `${Math.round(agent.avgFirstResponseMin / 60)}h`
-                        : '—'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
-
-      {pipelineStats && pipelineStats.totalDeals > 0 && (
-        <section className="rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#111B21] overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-200 dark:border-white/5 flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Pipeline Analytics</h2>
-              <p className="text-xs text-gray-500 dark:text-[#8696A0] mt-0.5">Deal funnel and conversion</p>
-            </div>
-            <div className="flex items-center gap-6 text-sm">
-              <div className="text-center">
-                <p className="text-lg font-bold text-gray-900 dark:text-white">{pipelineStats.totalDeals}</p>
-                <p className="text-xs text-gray-500 dark:text-[#8696A0]">Total Deals</p>
-              </div>
-              <div className="text-center">
-                <p className="text-lg font-bold text-[#25D366]">{pipelineStats.conversionRate}%</p>
-                <p className="text-xs text-gray-500 dark:text-[#8696A0]">Conversion</p>
-              </div>
-              <div className="text-center">
-                <p className="text-lg font-bold text-gray-900 dark:text-white">${pipelineStats.totalValue.toLocaleString()}</p>
-                <p className="text-xs text-gray-500 dark:text-[#8696A0]">Total Value</p>
-              </div>
-            </div>
-          </div>
-          <div className="p-6">
-            <div className="grid grid-cols-4 gap-4">
-              {pipelineStats.stages.map((s, i) => {
-                const pct = pipelineStats.totalDeals > 0 ? Math.round((s.count / pipelineStats.totalDeals) * 100) : 0;
-                const colors = ['bg-blue-400', 'bg-purple-400', 'bg-amber-400', 'bg-[#25D366]'];
-                return (
-                  <div key={s.stage} className="rounded-xl border border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-[#202C33] p-4">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-[#8696A0]">{s.stage}</p>
-                    <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{s.count}</p>
-                    <p className="text-xs text-gray-500 dark:text-[#8696A0]">${s.value.toLocaleString()}</p>
-                    <div className="mt-3 h-1.5 w-full rounded-full bg-gray-200 dark:bg-white/10">
-                      <div
-                        className={`h-1.5 rounded-full ${colors[i]} ${
-                          pct === 0 ? 'w-0' : pct <= 10 ? 'w-[10%]' : pct <= 25 ? 'w-1/4' : pct <= 50 ? 'w-1/2' : pct <= 75 ? 'w-3/4' : 'w-full'
-                        }`}
-                      />
-                    </div>
-                    <p className="mt-1 text-xs text-gray-400 dark:text-[#8696A0]">{pct}% of total</p>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-      )}
     </div>
   );
 }

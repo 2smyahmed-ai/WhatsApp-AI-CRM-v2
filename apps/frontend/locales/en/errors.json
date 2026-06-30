@@ -1,0 +1,26 @@
+{
+  "generic": "Something went wrong. Please try again.",
+  "network": "Network error. Please check your connection.",
+  "unauthorized": "You are not authorized to perform this action.",
+  "forbidden": "Access denied.",
+  "notFound": "The requested resource was not found.",
+  "serverError": "Server error. Please try again later.",
+  "timeout": "Request timed out. Please try again.",
+  "validation": "Please check the form for errors.",
+  "whatsapp": {
+    "notConnected": "WhatsApp is not connected",
+    "sendFailed": "Failed to send message",
+    "connectionLost": "WhatsApp connection lost",
+    "qrExpired": "QR code expired. Please refresh.",
+    "sessionInvalid": "Session invalid. Please reconnect."
+  },
+  "form": {
+    "required": "This field is required",
+    "invalidEmail": "Enter a valid email address",
+    "invalidPhone": "Enter a valid phone number",
+    "tooShort": "Must be at least {{min}} characters",
+    "tooLong": "Must be no more than {{max}} characters",
+    "alreadyExists": "This {{field}} already exists",
+    "invalidFormat": "Invalid format"
+  }
+}

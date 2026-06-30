@@ -1,0 +1,107 @@
+{
+  "badge": "ذكاء المبيعات",
+  "title": "إدارة العملاء المحتملين",
+  "subtitle": "عملاء مؤهَّلون بالذكاء الاصطناعي ومرتَّبون حسب الأولوية لتبدأ بأفضل الفرص.",
+  "search": "ابحث بالاسم أو الرقم",
+  "analyzeNow": "تحليل",
+  "analyzing": "جارٍ التحليل…",
+  "reanalyze": "إعادة التحليل",
+  "openConversation": "فتح المحادثة",
+  "lastAnalyzed": "حُلِّل {{time}}",
+  "neverAnalyzed": "لم يُحلَّل بعد",
+  "score": "التقييم",
+  "confidence": "الثقة",
+  "priorityLabel": "الأولوية",
+  "summary": "ملخص الذكاء الاصطناعي",
+  "recommendation": "الخطوة التالية المقترحة",
+  "signals": "إشارات الشراء",
+  "noSignals": "لم تُكتشف إشارات شراء محددة.",
+  "history": "سجل الحالة",
+  "noHistory": "لا توجد تغييرات في الحالة بعد.",
+  "empty": {
+    "title": "لا يوجد عملاء محتملون هنا بعد",
+    "subtitle": "يتم تأهيل العملاء تلقائيًا عند مراسلتهم لك. عُد قريبًا.",
+    "filtered": "لا يوجد عملاء يطابقون هذا العرض."
+  },
+  "stats": {
+    "total": "إجمالي العملاء",
+    "needsAttention": "يحتاج اهتمام",
+    "buyingIntent": "نية شراء",
+    "hot": "عملاء ساخنون",
+    "noHandoff": "بلا وكيل مسند"
+  },
+  "tabs": {
+    "all": "الكل",
+    "newLeads": "عملاء جدد",
+    "followUp": "متابعة",
+    "hot": "عملاء ساخنون",
+    "customers": "العملاء",
+    "lost": "مفقودون",
+    "spam": "سبام"
+  },
+  "status": {
+    "NEW_LEAD": "عميل محتمل جديد",
+    "QUALIFIED": "مؤهَّل",
+    "HOT": "عميل ساخن",
+    "WARM": "عميل دافئ",
+    "COLD": "عميل بارد",
+    "CUSTOMER": "عميل",
+    "LOST": "مفقود",
+    "NOT_INTERESTED": "غير مهتم",
+    "SPAM": "سبام"
+  },
+  "priority": {
+    "LOW": "منخفضة",
+    "NORMAL": "عادية",
+    "HIGH": "عالية",
+    "URGENT": "عاجلة"
+  },
+  "signalLabels": {
+    "pricingRequest": "طلب أسعار",
+    "meetingRequest": "طلب اجتماع",
+    "callRequest": "طلب اتصال",
+    "urgency": "استعجال",
+    "readyToBuy": "جاهز للشراء"
+  },
+  "flags": {
+    "needsAttention": "يحتاج اهتمام",
+    "buyingIntent": "نية شراء"
+  },
+  "panel": {
+    "title": "ذكاء المبيعات",
+    "noData": "لا يوجد تقييم بالذكاء الاصطناعي لهذا العميل بعد.",
+    "analyzePrompt": "شغِّل تحليلًا لتقييم هذا العميل."
+  },
+  "notifications": {
+    "title": "الإشعارات",
+    "empty": "لا جديد لديك",
+    "emptyHint": "سيظهر هنا نشاط العملاء المهم.",
+    "markAllRead": "تعليم الكل كمقروء",
+    "viewAll": "عرض كل العملاء",
+    "type": {
+      "BUYING_INTENT": "نية شراء",
+      "NEEDS_ATTENTION": "يحتاج اهتمام",
+      "STATUS_UPGRADE": "ترقية الحالة"
+    },
+    "popup": {
+      "openChat": "فتح المحادثة",
+      "dismiss": "إغلاق"
+    }
+  },
+  "refreshAlerts": "تحديث وإرسال تنبيهات",
+  "refreshing": "جارٍ إرسال التنبيهات…",
+  "toast": {
+    "analyzed": "تم تحليل العميل",
+    "analyzeFailed": "تعذّر تحليل هذا العميل",
+    "loadFailed": "فشل تحميل العملاء",
+    "alertsSent": "تم إرسال {{count}} تنبيه للفريق",
+    "noUnhandled": "جميع العملاء الساخنين لديهم وكيل — لا حاجة لتنبيهات",
+    "refreshFailed": "فشل إرسال التنبيهات"
+  },
+  "timeAgo": {
+    "justNow": "الآن",
+    "minutesAgo": "منذ {{count}} د",
+    "hoursAgo": "منذ {{count}} س",
+    "daysAgo": "منذ {{count}} ي"
+  }
+}

@@ -5,6 +5,8 @@ import { useSearchParams } from 'next/navigation';
 import ConversationList from '../../../components/conversations/ConversationList';
 import ChatWindow from '../../../components/conversations/ChatWindow';
 import { api } from '../../../lib/api';
+import { useTranslation } from 'react-i18next';
+import { useChatOpen } from '../../../stores/chat-open-store';
 
 interface Contact {
   id: string;
@@ -17,7 +19,14 @@ function ConversationsPageContent() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const searchParams = useSearchParams();
   const targetPhone = searchParams.get('phone');
+  const targetConversationId = searchParams.get('conversationId');
   const conversationListRef = useRef<{ refetch: () => void } | null>(null);
+  const setChatOpen = useChatOpen((s) => s.setOpen);
+
+  useEffect(() => {
+    setChatOpen(!!selectedConversationId);
+    return () => setChatOpen(false);
+  }, [selectedConversationId, setChatOpen]);
 
   const fetchContacts = useCallback(async () => {
     try {
@@ -54,20 +63,31 @@ function ConversationsPageContent() {
     void resolveConversation();
   }, [targetPhone]);
 
+  // Deep-link straight to a conversation by id (e.g. from a notification).
+  useEffect(() => {
+    if (targetConversationId) setSelectedConversationId(targetConversationId);
+  }, [targetConversationId]);
+
   return (
-    <div className="flex h-[calc(100vh-9rem)] min-h-[680px] overflow-hidden rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#111B21] shadow-card dark:shadow-[0_8px_20px_rgba(0,0,0,0.2)]">
-      <div className="w-[360px] shrink-0 border-r border-gray-200 dark:border-white/5 bg-gray-50 dark:bg-[#0B141A]">
+    <div dir="ltr" className="absolute inset-0 flex sm:relative sm:inset-auto sm:mx-0 sm:my-0 sm:h-full overflow-hidden rounded-none sm:rounded-2xl border-0 sm:border border-gray-200 dark:border-white/10 bg-white dark:bg-[#111B21] shadow-card dark:shadow-[0_8px_20px_rgba(0,0,0,0.2)]">
+      {/* Conversation list — full-width on mobile, hidden once a chat is open */}
+      <div
+        className={`${selectedConversationId ? 'hidden md:flex' : 'flex'} w-full md:w-[300px] lg:w-[340px] xl:w-[360px] shrink-0 flex-col border-r border-gray-200 dark:border-white/5 bg-gray-50 dark:bg-[#0B141A]`}
+      >
         <ConversationList
           ref={conversationListRef}
           selectedId={selectedConversationId}
           onSelect={setSelectedConversationId}
         />
       </div>
-      <div className="flex-1">
+
+      {/* Chat — full-width on mobile, shown only when a chat is selected */}
+      <div className={`${selectedConversationId ? 'flex' : 'hidden md:flex'} min-w-0 flex-1`}>
         <ChatWindow
           conversationId={selectedConversationId}
           recipientContacts={contacts}
           onContactSaved={handleContactSaved}
+          onBack={() => setSelectedConversationId(null)}
           onConversationNotFound={() => {
             setSelectedConversationId(null);
             conversationListRef.current?.refetch?.();
@@ -79,8 +99,9 @@ function ConversationsPageContent() {
 }
 
 export default function ConversationsPage() {
+  const { t } = useTranslation('common');
   return (
-    <Suspense fallback={<div className="rounded-2xl border border-white/10 bg-[#111B21]/50 p-6 text-[#8696A0]">Loading conversations...</div>}>
+    <Suspense fallback={<div className="rounded-2xl border border-white/10 bg-[#111B21]/50 p-6 text-[#8696A0]">{t('loading')}</div>}>
       <ConversationsPageContent />
     </Suspense>
   );

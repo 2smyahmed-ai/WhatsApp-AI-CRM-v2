@@ -1,17 +1,46 @@
 import { Router } from 'express';
 import { ContactsService } from '../../contacts/contacts.service';
+import { enrichContactAvatar } from '../../conversations/conversations.service';
 import multer from 'multer';
 import csv from 'csv-parser';
 import { Readable } from 'stream';
+import { z } from 'zod';
 import { authMiddleware, checkPermission } from '../../auth/auth.middleware';
 import { prisma } from '../../lib/prisma';
+import { HttpError, type AuthActor } from '../../auth/authorize';
+import { validateBody } from '../validate';
 
 const router = Router();
 const upload = multer();
 
 router.use(authMiddleware);
 
+const createContactSchema = z.object({
+  phone: z.string().min(1).max(32),
+  name: z.string().max(200).optional(),
+  notes: z.string().max(5000).optional(),
+  tagIds: z.array(z.string()).optional(),
+});
+
+const updateContactSchema = z.object({
+  name: z.string().max(200).optional(),
+  notes: z.string().max(5000).optional(),
+});
+
+function actorOf(req: any): AuthActor {
+  return { id: req.user?.id, role: req.user?.role, teamId: req.user?.teamId ?? null };
+}
+
+function sendError(res: any, error: unknown) {
+  if (error instanceof HttpError) {
+    return res.status(error.status).json({ error: error.message });
+  }
+  return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+}
+
 async function ensurePhase2Tables() {
+  // Postgres rejects multiple statements in one prepared statement, so each
+  // CREATE TABLE must be issued as its own query.
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "Deal" (
       id TEXT PRIMARY KEY,
@@ -26,6 +55,8 @@ async function ensurePhase2Tables() {
       "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+  `);
+  await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "Task" (
       id TEXT PRIMARY KEY,
       "teamId" TEXT NULL,
@@ -54,7 +85,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.post('/', checkPermission('create', 'contacts'), async (req, res) => {
+router.post('/', checkPermission('create', 'contacts'), validateBody(createContactSchema), async (req, res) => {
   try {
     const contact = await ContactsService.createContact({
       ...req.body,
@@ -66,34 +97,51 @@ router.post('/', checkPermission('create', 'contacts'), async (req, res) => {
   }
 });
 
-router.put('/:id', checkPermission('update', 'contacts'), async (req, res) => {
+router.put('/:id', checkPermission('update', 'contacts'), validateBody(updateContactSchema), async (req, res) => {
   try {
-    const contact = await ContactsService.updateContact(req.params.id, req.body);
+    const contact = await ContactsService.updateContact(req.params.id, req.body, actorOf(req));
     res.json(contact);
   } catch (error) {
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+    sendError(res, error);
+  }
+});
+
+// Clear a stale/expired avatar URL — called by the frontend when an avatar image 404s
+router.delete('/:id/avatar', async (req, res) => {
+  try {
+    const contact = await prisma.contact.findUnique({ where: { id: req.params.id }, select: { customFields: true } });
+    if (!contact) return res.status(404).json({ error: 'Contact not found' });
+    const cf = (contact.customFields as Record<string, unknown> | null) ?? {};
+    const { avatarUrl: _removed, avatarUrlAt: _removedAt, ...rest } = cf as any;
+    await prisma.contact.update({ where: { id: req.params.id }, data: { customFields: rest } });
+    res.json({ success: true });
+  } catch (error) {
+    sendError(res, error);
   }
 });
 
 router.delete('/:id', checkPermission('delete', 'contacts'), async (req, res) => {
   try {
-    await ContactsService.deleteContact(req.params.id);
+    await ContactsService.deleteContact(req.params.id, actorOf(req));
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+    sendError(res, error);
   }
 });
 
 router.get('/:id/details', async (req, res) => {
   try {
     await ensurePhase2Tables();
-    const contact = await prisma.contact.findFirst({
+    const contactRow = await prisma.contact.findFirst({
       where: { id: req.params.id },
     });
 
-    if (!contact) {
+    if (!contactRow) {
       return res.status(404).json({ error: 'Contact not found' });
     }
+
+    // Fetch/refresh the WhatsApp profile picture (cached with a TTL).
+    const contact = await enrichContactAvatar(contactRow);
 
     const deals = await prisma.$queryRawUnsafe<any[]>(
       `
@@ -193,7 +241,7 @@ router.post('/import', checkPermission('create', 'contacts'), upload.single('fil
     if (!file) return res.status(400).json({ error: 'No file uploaded' });
 
     const teamId = (req as any).user?.teamId;
-    const contacts: Array<{ phone: string; name?: string; tag?: string }> = [];
+    const contacts: Array<{ phone: string; name?: string }> = [];
 
     const stream = Readable.from(file.buffer);
     stream
@@ -203,7 +251,6 @@ router.post('/import', checkPermission('create', 'contacts'), upload.single('fil
           contacts.push({
             phone: String(row.phone).trim(),
             name: row.name ? String(row.name).trim() : undefined,
-            tag: row.tag ? String(row.tag).trim() : undefined,
           });
         }
       })

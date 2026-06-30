@@ -1,9 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import { downloadMediaMessage } from '@whiskeysockets/baileys';
-import { MessageDirection, MsgStatus, MessageType } from '@prisma/client';
+import { MsgStatus, MessageType } from '@prisma/client';
 import { prisma } from '../lib/prisma';
-import { normalizePhone, parseWhatsAppJid } from '../lib/phone';
+import { normalizePhone, parseWhatsAppJid, isGroupJid } from '../lib/phone';
 import { logger } from '../lib/logger';
 import { sock } from '../whatsapp/client';
 import { emitRealtime } from '../realtime/socket';
@@ -11,10 +11,12 @@ import { getOrCreateConversationByPhone } from '../conversations/conversation-re
 import { checkAutomationRules } from '../automations/engine';
 import { autoAssignConversation } from '../conversations/auto-assign.service';
 import { stopFlowExecutionsOnReply, triggerFlows } from '../automations/flow-executor';
-import { buildNormalizedFromFlat } from '../messaging/normalizers/baileys.normalizer';
+import { buildNormalizedFromFlat, buildBaileysOutbound } from '../messaging/normalizers/baileys.normalizer';
 import { compileRenderable } from '../messaging/compile-renderable';
 import { getCapabilities } from '../messaging/capabilities';
 import { persistNormalizedMessage } from '../messaging/persist';
+import { aiBotService } from '../services/ai-bot.service';
+import { scheduleQualification } from '../lead-qualification/debounce';
 import type { ProviderName } from '@crm/messaging-schema';
 
 export type InboundResultStatus = 'processed' | 'duplicate' | 'ignored' | 'failed';
@@ -32,6 +34,8 @@ type NormalizedInboundMessage = {
   mediaCaption: string | null;
   mediaDuration: number | null;
   rawMessage: any;
+  /** key.id of the message being replied to, extracted from contextInfo.stanzaId. */
+  replyToExternalId: string | null;
 };
 
 function logStep(step: string, context: Record<string, unknown> = {}) {
@@ -67,7 +71,25 @@ function getMessageContent(message: any) {
     normalizedMessage?.videoMessage?.caption ||
     normalizedMessage?.documentMessage?.caption ||
     normalizedMessage?.stickerMessage?.caption ||
+    // Button / list / interactive flow responses (customer tapping a button)
+    normalizedMessage?.buttonsResponseMessage?.selectedDisplayText ||
+    normalizedMessage?.listResponseMessage?.title ||
+    normalizedMessage?.interactiveResponseMessage?.body?.text ||
     ''
+  );
+}
+
+function extractContextInfo(normalizedMessage: any) {
+  return (
+    normalizedMessage?.extendedTextMessage?.contextInfo ||
+    normalizedMessage?.imageMessage?.contextInfo ||
+    normalizedMessage?.videoMessage?.contextInfo ||
+    normalizedMessage?.audioMessage?.contextInfo ||
+    normalizedMessage?.documentMessage?.contextInfo ||
+    normalizedMessage?.buttonsResponseMessage?.contextInfo ||
+    normalizedMessage?.listResponseMessage?.contextInfo ||
+    normalizedMessage?.interactiveResponseMessage?.contextInfo ||
+    null
   );
 }
 
@@ -107,8 +129,8 @@ function normalizeTimestamp(value: unknown) {
   return new Date();
 }
 
-function isBroadcastOrGroup(remoteJid: string) {
-  return remoteJid.endsWith('@broadcast') || remoteJid === 'status@broadcast' || remoteJid.includes('@g.us');
+function isBroadcast(remoteJid: string) {
+  return remoteJid.endsWith('@broadcast') || remoteJid === 'status@broadcast';
 }
 
 async function ensureUploadsDir() {
@@ -181,28 +203,27 @@ async function downloadMediaToUrl(message: any) {
 
 function normalizeSocketMessage(rawMessage: any): NormalizedInboundMessage | null {
   const socketMessage = extractSocketMessage(rawMessage) || rawMessage;
-  const remoteJidCandidate =
+  const rawRemoteJidCandidate =
     rawMessage?.key?.remoteJid ||
     rawMessage?.key?.remoteJidAlt ||
-    rawMessage?.key?.participant ||
-    rawMessage?.key?.participantAlt ||
     rawMessage?.remoteJid ||
-    rawMessage?.participant ||
     rawMessage?.sender ||
     rawMessage?.from ||
-    rawMessage?.pushName ||
     '';
 
-  if (!remoteJidCandidate) return null;
-  const remoteJid = String(remoteJidCandidate).split(':')[0];
-  if (isBroadcastOrGroup(remoteJid)) return null;
+  if (!rawRemoteJidCandidate) return null;
+  const rawRemoteJid = String(rawRemoteJidCandidate).split(':')[0];
+
+  // Drop status broadcasts, broadcast lists, and group chats — 1-to-1 only
+  if (isBroadcast(rawRemoteJid)) return null;
+  if (isGroupJid(rawRemoteJid)) return null;
 
   const phoneDigits =
-    parseWhatsAppJid(remoteJid) ||
+    parseWhatsAppJid(rawRemoteJid) ||
     parseWhatsAppJid(rawMessage?.key?.remoteJidAlt || '') ||
     parseWhatsAppJid(rawMessage?.key?.participantAlt || '') ||
-    normalizePhone(remoteJid);
-  const phone = phoneDigits ? normalizePhone(phoneDigits) : null;
+    normalizePhone(rawRemoteJid);
+  const phone: string | null = phoneDigits ? normalizePhone(phoneDigits) : null;
   if (!phone) return null;
 
   const normalizedMessage = unwrapMessageContainer(socketMessage);
@@ -211,7 +232,10 @@ function normalizeSocketMessage(rawMessage: any): NormalizedInboundMessage | nul
   const timestamp = normalizeTimestamp(rawMessage.messageTimestamp ?? rawMessage.message?.messageTimestamp ?? Date.now());
   const externalId =
     String(rawMessage?.key?.id || rawMessage?.id || rawMessage?.messageId || rawMessage?.message?.key?.id || '').trim() ||
-    `${remoteJid}-${timestamp.getTime()}-${content || rawType}`;
+    `${rawRemoteJid}-${timestamp.getTime()}-${content || rawType}`;
+
+  const contextInfo = extractContextInfo(normalizedMessage);
+  const replyToExternalId: string | null = contextInfo?.stanzaId ? String(contextInfo.stanzaId) : null;
 
   return {
     externalId,
@@ -243,6 +267,7 @@ function normalizeSocketMessage(rawMessage: any): NormalizedInboundMessage | nul
       null,
     mediaDuration: normalizedMessage.audioMessage?.seconds || null,
     rawMessage,
+    replyToExternalId,
   };
 }
 
@@ -331,6 +356,7 @@ function normalizeWebhookMessage(rawMessage: any): NormalizedInboundMessage | nu
     mediaCaption: rawMessage.mediaCaption || null,
     mediaDuration: rawMessage.mediaDuration || null,
     rawMessage,
+    replyToExternalId: null,
   };
 }
 
@@ -351,27 +377,16 @@ function buildPreview(message: NormalizedInboundMessage) {
 
 async function saveOutboundEcho(normalized: NormalizedInboundMessage, rawMessage: any, sessionId: string) {
   const systemPhone = resolveSystemPhone(sessionId);
-  const { conversation } = await getOrCreateConversationByPhone(normalized.phone, undefined, prisma);
-  let next = normalized;
+  const { conversation } = await getOrCreateConversationByPhone(normalized.phone, undefined, prisma) as any;
 
+  let next = normalized;
   if (!next.mediaUrl && next.type !== MessageType.TEXT) {
     const downloadedMediaUrl = await downloadInboundMedia(rawMessage);
-    if (downloadedMediaUrl) {
-      next = {
-        ...next,
-        mediaUrl: downloadedMediaUrl,
-      };
-    }
+    if (downloadedMediaUrl) next = { ...next, mediaUrl: downloadedMediaUrl };
   }
-
   if (!next.mediaUrl && next.type === MessageType.IMAGE) {
-    next = {
-      ...next,
-      mediaCaption: next.mediaCaption || next.content || 'image',
-    };
+    next = { ...next, mediaCaption: next.mediaCaption || next.content || 'image' };
   }
-
-  const body = buildPreview(next);
 
   const existing = await prisma.message.findFirst({
     where: { externalId: normalized.externalId, sessionId },
@@ -381,72 +396,32 @@ async function saveOutboundEcho(normalized: NormalizedInboundMessage, rawMessage
     return { status: 'duplicate' as const, messageId: existing.id, conversationId: conversation.id };
   }
 
-  const saved = await prisma.message.create({
-    data: {
-      externalId: next.externalId,
-      sessionId,
-      direction: MessageDirection.OUTBOUND,
-      from: systemPhone,
-      to: next.phone,
-      phone: next.phone,
-      conversationId: conversation.id,
-      fromMe: true,
-      body,
-      type: next.type,
+  const teamId = (conversation as any).teamId ?? null;
+  const provider: ProviderName = 'baileys';
+
+  const nMsg = buildBaileysOutbound({
+    phone: next.phone,
+    sentMessageId: next.externalId,
+    sessionId,
+    systemPhone,
+    timestamp: next.timestamp,
+    conversationId: conversation.id,
+    teamId,
+    text: next.content || next.mediaCaption || '',
+    media: next.mediaUrl ? {
       mediaUrl: next.mediaUrl,
-      mediaMimeType: next.mediaMimeType,
-      mediaFileName: next.mediaFileName,
-      mediaCaption: next.mediaCaption,
-      mediaDuration: next.mediaDuration,
-      timestamp: next.timestamp,
-      status: MsgStatus.SENT,
-    } as any,
+      mediaMimeType: next.mediaMimeType ?? undefined,
+      mediaFileName: next.mediaFileName ?? undefined,
+      mediaCaption: next.mediaCaption ?? undefined,
+      mediaDuration: next.mediaDuration ?? undefined,
+    } : undefined,
   });
 
-  await prisma.conversation.update({
-    where: { id: conversation.id },
-    data: {
-      lastMessage: body,
-      lastMessagePreview: body,
-      lastMessageAt: normalized.timestamp,
-    },
-  });
+  const caps = getCapabilities(provider);
+  const renderable = compileRenderable(nMsg, caps.defaultMode);
+  const { messageId: persistedId } = await persistNormalizedMessage(nMsg, renderable);
 
-  const echoTeamId = (conversation as any).teamId ?? null;
-
-  emitRealtime('message:new', {
-    conversationId: conversation.id,
-    message: {
-      id: saved.id,
-      externalId: next.externalId,
-      sessionId,
-      direction: 'OUTBOUND',
-      from: systemPhone,
-      to: next.phone,
-      phone: next.phone,
-      conversationId: conversation.id,
-      fromMe: true,
-      body: saved.body,
-      type: saved.type,
-      mediaUrl: saved.mediaUrl,
-      mediaMimeType: saved.mediaMimeType,
-      mediaFileName: saved.mediaFileName,
-      mediaCaption: saved.mediaCaption,
-      mediaDuration: saved.mediaDuration,
-      timestamp: saved.timestamp,
-      status: 'SENT',
-    },
-  }, echoTeamId);
-
-  emitRealtime('conversation:updated', {
-    conversationId: conversation.id,
-    lastMessageAt: next.timestamp.toISOString(),
-    lastMessagePreview: body,
-    unreadCount: conversation.unreadCount,
-    fromMe: true,
-  }, echoTeamId);
-
-  return { status: 'processed' as const, messageId: saved.id, conversationId: conversation.id };
+  return { status: 'processed' as const, messageId: persistedId, conversationId: conversation.id };
 }
 
 async function finalizeFailedMessage(messageId: string, externalId: string, sessionId: string, error: string) {
@@ -551,12 +526,6 @@ export async function processIncomingMessage(rawMessage: any, context: { session
       };
     }
 
-    const rawJid = rawMessage?.key?.remoteJid ? String(rawMessage.key.remoteJid) : '';
-    if (rawJid && isBroadcastOrGroup(rawJid)) {
-      logStep('ignored', { sessionId, externalId: normalized.externalId, reason: 'broadcast_or_group' });
-      return { status: 'ignored' as const };
-    }
-
     logStep('validated', { sessionId, externalId: normalized.externalId, phone: normalized.phone });
 
     const duplicate = await prisma.message.findFirst({
@@ -585,16 +554,31 @@ export async function processIncomingMessage(rawMessage: any, context: { session
     const teamId = (conversation as any).teamId ?? null;
 
     try {
+      // Resolve reply context — look up the DB message that was quoted
+      let replyToId: string | null = null;
+      let replyToBody: string | null = null;
+      if (normalized.replyToExternalId) {
+        try {
+          const quoted = await prisma.message.findFirst({
+            where: { externalId: normalized.replyToExternalId, sessionId },
+            select: { id: true, body: true },
+          });
+          if (quoted) { replyToId = quoted.id; replyToBody = quoted.body ?? null; }
+        } catch { /* non-critical — reply context is best-effort */ }
+      }
+
       // Build NormalizedMessage + dual-write (legacy + normalized columns in one row)
-      const provider: ProviderName = context.provider ?? (rawMessage?.key ? 'baileys' : 'meta');
+      const provider: ProviderName = context.provider ?? 'baileys';
       const nMsg = buildNormalizedFromFlat(
         normalized,
-        { sessionId, systemPhone, conversationId: conversation.id, teamId, provider },
+        { sessionId, systemPhone, conversationId: conversation.id, teamId, provider, replyToId, replyToBody },
         rawMessage,
       );
       const caps = getCapabilities(provider);
       const renderable = compileRenderable(nMsg, caps.defaultMode);
-      const { messageId: persistedId } = await persistNormalizedMessage(nMsg, renderable);
+      const { messageId: persistedId } = await persistNormalizedMessage(nMsg, renderable, {
+        contactName: contact.name ?? null,
+      });
       createdMessageId = persistedId;
       logger.info('inbound.saved', { sessionId, externalId: normalized.externalId, messageId: persistedId, conversationId: conversation.id });
 
@@ -621,6 +605,18 @@ export async function processIncomingMessage(rawMessage: any, context: { session
         void triggerFlows(normalized.phone, normalized.content, 'KEYWORD', teamId2).catch(() => {});
       }
       logStep('automations_triggered', { sessionId, conversationId: conversation.id, messageId: persistedId });
+
+      // ── Sprint 5: AI Bot hook ──────────────────────────────────────────────
+      // Debounced: a burst of rapid messages → one reply, after the customer pauses.
+      aiBotService.scheduleInboundReply(
+        conversation.id,
+        normalized.content || body,
+        { phone: normalized.phone, sessionId, teamId },
+      );
+
+      // ── AI Lead Qualification hook ────────────────────────────────────────────
+      // Debounced so a burst of messages triggers a single LLM pass after a quiet period.
+      scheduleQualification(contact.id);
 
       await prisma.message.update({
         where: { id: persistedId },

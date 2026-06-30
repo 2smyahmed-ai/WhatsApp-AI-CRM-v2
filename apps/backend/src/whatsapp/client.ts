@@ -1,10 +1,10 @@
 import {
   makeWASocket,
   DisconnectReason,
-  useMultiFileAuthState,
   fetchLatestBaileysVersion,
   Browsers,
 } from '@whiskeysockets/baileys';
+import { useDbAuthState } from './db-auth-state';
 import { Boom } from '@hapi/boom';
 import { MessageDirection, MessageType } from '@prisma/client';
 import { prisma } from '../lib/prisma';
@@ -20,6 +20,7 @@ let waStatus: 'connected' | 'disconnected' | 'connecting' = 'disconnected';
 let connectInFlight: Promise<any> | null = null;
 let reconnectTimer: NodeJS.Timeout | null = null;
 let lastConnectionError: { statusCode?: number; reason?: string; message?: string } | null = null;
+let connectedAt: Date | null = null;
 
 function getSessionId() {
   return String(sock?.user?.id || process.env.WHATSAPP_SESSION_ID || 'default').trim();
@@ -121,7 +122,10 @@ export async function connectToWhatsApp() {
   }
   if (connectInFlight) return connectInFlight;
 
-  const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+  // Auth state is stored in PostgreSQL (WhatsAppSession.data) so the session
+  // survives container restarts and ephemeral filesystem deployments.
+  const authSessionId = process.env.WHATSAPP_SESSION_ID || 'default';
+  const { state, saveCreds } = await useDbAuthState(authSessionId);
   const { version } = await fetchLatestBaileysVersion();
 
   connectInFlight = (async () => {
@@ -171,6 +175,7 @@ export async function connectToWhatsApp() {
 
         sock = null;
         connectInFlight = null;
+        connectedAt = null;
 
         if (loggedOut) {
           return;
@@ -185,8 +190,11 @@ export async function connectToWhatsApp() {
         currentQR = null;
         waStatus = 'connected';
         lastConnectionError = null;
+        connectedAt = new Date();
         emitRealtime('wa:status', { status: 'connected' });
         connectInFlight = null;
+        // Note: the WhatsAppSession row is created/updated by useDbAuthState
+        // on every saveCreds call — no separate upsert needed here.
       } else if (connection === 'connecting') {
         waStatus = 'connecting';
         emitRealtime('wa:status', { status: 'connecting' });
@@ -275,7 +283,7 @@ export async function disconnectWhatsApp() {
   emitRealtime('wa:status', { status: 'disconnected' });
 }
 
-export { sock, currentQR, waStatus };
+export { sock, currentQR, waStatus, connectedAt };
 export { lastConnectionError };
 export { getSessionId };
 

@@ -1,8 +1,12 @@
+import { useTranslation } from 'react-i18next';
+
 interface ConnectionStatusProps {
   status: 'connected' | 'disconnected' | 'connecting';
 }
 
 export default function ConnectionStatus({ status }: ConnectionStatusProps) {
+  const { t } = useTranslation('common');
+
   const getStatusColor = () => {
     switch (status) {
       case 'connected':
@@ -19,13 +23,13 @@ export default function ConnectionStatus({ status }: ConnectionStatusProps) {
   const getStatusText = () => {
     switch (status) {
       case 'connected':
-        return 'Connected';
+        return t('status.connected');
       case 'connecting':
-        return 'Connecting...';
+        return t('status.connecting');
       case 'disconnected':
-        return 'Disconnected';
+        return t('status.disconnected');
       default:
-        return 'Unknown';
+        return t('status.inactive');
     }
   };
 

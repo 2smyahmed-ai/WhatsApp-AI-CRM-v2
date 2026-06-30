@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../../lib/prisma';
 import { authMiddleware, requireAdmin } from '../../auth/auth.middleware';
+import { excludeDevSuperuser, isDevSuperuserEmail } from '../../auth/authorize';
 
 const router = Router();
 
@@ -30,8 +31,8 @@ router.get('/agents', async (req, res) => {
 
     const agents = await prisma.user.findMany({
       where: isAdmin
-        ? { role: { in: ['SUPER_ADMIN', 'ADMIN', 'TEAM_LEAD', 'AGENT'] } }
-        : { teamId: user?.teamId, role: { in: ['SUPER_ADMIN', 'ADMIN', 'TEAM_LEAD', 'AGENT'] } },
+        ? { role: { in: ['SUPER_ADMIN', 'ADMIN', 'TEAM_LEAD', 'AGENT'] }, ...excludeDevSuperuser() }
+        : { teamId: user?.teamId, role: { in: ['SUPER_ADMIN', 'ADMIN', 'TEAM_LEAD', 'AGENT'] }, ...excludeDevSuperuser() },
       select: { id: true, name: true, email: true, role: true, teamId: true },
       orderBy: { name: 'asc' },
     });
@@ -118,6 +119,11 @@ router.post('/:id/members', requireAdmin, async (req, res) => {
   try {
     const { userId } = req.body;
     if (!userId) return res.status(400).json({ error: 'userId is required' });
+
+    const target = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+    if (isDevSuperuserEmail(target?.email)) {
+      return res.status(403).json({ error: 'The developer super-account cannot be added to a team.' });
+    }
 
     const user = await prisma.user.update({
       where: { id: userId },

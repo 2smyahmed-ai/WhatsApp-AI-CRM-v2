@@ -8,26 +8,27 @@ datasource db {
 }
 
 model User {
-  id              String    @id @default(cuid())
-  name            String
-  email           String    @unique
-  password        String
-  role            Role      @default(AGENT)
-  teamId          String?
-  team            Team?     @relation("TeamMembers", fields: [teamId], references: [id])
-  ownedTeam       Team?     @relation("TeamOwner")
-  emailVerifiedAt DateTime?
-  resetToken      String?
+  id               String            @id @default(cuid())
+  name             String
+  email            String            @unique
+  password         String
+  role             Role              @default(AGENT)
+  teamId           String?
+  team             Team?             @relation("TeamMembers", fields: [teamId], references: [id])
+  ownedTeam        Team?             @relation("TeamOwner")
+  emailVerifiedAt  DateTime?
+  resetToken       String?
   resetTokenExpiry DateTime?
-  refreshTokenId  String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @default(now()) @updatedAt
-  conversations   Conversation[] @relation("AssignedConversations")
-  ownedDeals      Deal[]        @relation("OwnedDeals")
-  assignedTasks   Task[]        @relation("AssignedTasks")
-  internalNotes   InternalNote[] @relation("InternalNotes")
-  auditLogs       AuditLog[]
-  reactions       MessageReaction[] @relation("UserReactions")
+  refreshTokenId   String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @default(now()) @updatedAt
+  conversations    Conversation[]    @relation("AssignedConversations")
+  ownedDeals       Deal[]            @relation("OwnedDeals")
+  assignedTasks    Task[]            @relation("AssignedTasks")
+  internalNotes    InternalNote[]    @relation("InternalNotes")
+  auditLogs        AuditLog[]
+  reactions        MessageReaction[] @relation("UserReactions")
+  notifications    Notification[]    @relation("UserNotifications")
 }
 
 enum Role {
@@ -40,43 +41,46 @@ enum Role {
 }
 
 model Team {
-  id          String   @id @default(cuid())
-  name        String
-  ownerId     String   @unique
-  owner       User     @relation("TeamOwner", fields: [ownerId], references: [id])
-  members     User[]   @relation("TeamMembers")
+  id            String         @id @default(cuid())
+  name          String
+  ownerId       String         @unique
+  owner         User           @relation("TeamOwner", fields: [ownerId], references: [id])
+  members       User[]         @relation("TeamMembers")
   conversations Conversation[]
-  autoAssign  Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @default(now()) @updatedAt
+  autoAssign    Boolean        @default(false)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @default(now()) @updatedAt
 }
 
 model WhatsAppSession {
-  id        String   @id @default(cuid())
-  sessionId String   @unique
-  data      Json
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
+  id             String   @id @default(cuid())
+  sessionId      String   @unique
+  data           Json
+  warmupEnabled  Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now()) @updatedAt
 }
 
 model Contact {
-  id             String         @id @default(cuid())
+  id             String             @id @default(cuid())
   teamId         String?
-  phone          String         @unique
+  phone          String             @unique
   name           String?
   email          String?
-  tag            String?        // legacy CSV field — kept for migration compatibility
   notes          String?
-  status         String         @default("ACTIVE")
-  lifecycleStage String         @default("LEAD")
+  status         String             @default("ACTIVE")
+  lifecycleStage String             @default("LEAD")
   source         String?
   customFields   Json?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @default(now()) @updatedAt
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @default(now()) @updatedAt
   conversations  Conversation[]
   deals          Deal[]
   tasks          Task[]
   contactTags    ContactTag[]
+  // ── AI Lead Qualification & Sales Intelligence ──────────────────────────────
+  qualification  LeadQualification?
+  notifications  Notification[]
 
   @@index([teamId])
   @@index([phone])
@@ -98,24 +102,24 @@ model Tag {
 model ContactTag {
   contactId String
   tagId     String
-  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag       Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
 
   @@id([contactId, tagId])
 }
 
 model Conversation {
-  id                 String     @id @default(cuid())
+  id                 String         @id @default(cuid())
   teamId             String?
   contactId          String
-  contact            Contact    @relation(fields: [contactId], references: [id])
-  status             ConvStatus @default(OPEN)
-  priority           Priority   @default(NORMAL)
+  contact            Contact        @relation(fields: [contactId], references: [id])
+  status             ConvStatus     @default(OPEN)
+  priority           Priority       @default(NORMAL)
   assignedTo         String?
-  assignedUser       User?      @relation("AssignedConversations", fields: [assignedTo], references: [id])
+  assignedUser       User?          @relation("AssignedConversations", fields: [assignedTo], references: [id])
   assignedTeamId     String?
-  assignedTeam       Team?      @relation(fields: [assignedTeamId], references: [id])
+  assignedTeam       Team?          @relation(fields: [assignedTeamId], references: [id])
   pipeline           String?
   lastMessage        String?
   lastMessagePreview String?
@@ -130,19 +134,39 @@ model Conversation {
   /// (CompatibilityMode): 'cloud_api' | 'web_compatible' | 'mobile_safe' | 'fallback_text'.
   compatibilityMode  String?
   notes              String?
-  unreadCount        Int        @default(0)
-  isPinned           Boolean    @default(false)
+  unreadCount        Int            @default(0)
+  isPinned           Boolean        @default(false)
   snoozedUntil       DateTime?
-  createdAt          DateTime   @default(now())
-  updatedAt          DateTime   @default(now()) @updatedAt
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @default(now()) @updatedAt
   messages           Message[]
   internalNotes      InternalNote[]
   tasks              Task[]         @relation("ConversationTasks")
+
+  // ── Sprint 3: Group chat support ─────────────────────────────────────────────
+  /// True when this conversation maps to a WhatsApp group (key.remoteJid ends @g.us).
+  isGroup          Boolean @default(false)
+  /// Full group JID, e.g. "120363...@g.us". Null for 1-to-1 conversations.
+  groupJid         String?
+  /// WhatsApp group subject (display name).
+  groupName        String?
+  /// Last known participant count for the group.
+  participantCount Int?
+
+  // ── Sprint 5: AI Chatbot ──────────────────────────────────────────────────────
+  /// Legacy per-conversation flag (kept for backward-compat; superseded by botOverride).
+  botEnabled     Boolean   @default(false)
+  /// Per-conversation override of the global bot scope:
+  /// null = follow the global setting, true = always reply, false = never reply.
+  botOverride    Boolean?
+  /// When set, the bot is paused until this timestamp (human agent took over).
+  botPausedUntil DateTime?
 
   @@index([teamId, status, lastMessageAt(sort: Desc)])
   @@index([contactId, status])
   @@index([assignedTo])
   @@index([snoozedUntil])
+  @@index([groupJid])
 }
 
 enum ConvStatus {
@@ -162,7 +186,7 @@ enum Priority {
 }
 
 model Message {
-  id             String       @id @default(cuid())
+  id             String            @id @default(cuid())
   externalId     String
   sessionId      String
   direction      MessageDirection
@@ -170,21 +194,21 @@ model Message {
   to             String
   phone          String
   conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  conversation   Conversation      @relation(fields: [conversationId], references: [id])
   fromMe         Boolean
   body           String
-  type           MessageType  @default(TEXT)
+  type           MessageType       @default(TEXT)
   mediaUrl       String?
   mediaMimeType  String?
   mediaFileName  String?
   mediaCaption   String?
   mediaDuration  Int?
   timestamp      DateTime
-  status         MsgStatus    @default(SENT)
+  status         MsgStatus         @default(SENT)
   errorReason    String?
   deliveredAt    DateTime?
   readAt         DateTime?
-  retryCount     Int          @default(0)
+  retryCount     Int               @default(0)
   replyToId      String?
   replyToBody    String?
   reactions      MessageReaction[]
@@ -195,7 +219,7 @@ model Message {
   // and the renderer reads them via `renderable`. See ENGINEERING.md
   // and NORMALIZED_MESSAGE_DESIGN.md.
   /// 0 = legacy row, 1 = normalized (new pipeline).
-  schemaVersion  Int          @default(0)
+  schemaVersion  Int     @default(0)
   /// Caller-issued idempotency key. (clientId, conversationId) is unique.
   /// Required for new outbound flows; backend generates one if absent.
   clientId       String?
@@ -213,7 +237,7 @@ model Message {
   /// guarantee preview = chat parity and avoid recompiling on every read.
   renderable     Json?
   /// Global monotonic counter for ordering + gap detection in the realtime store.
-  sequenceNumber BigInt       @default(autoincrement())
+  sequenceNumber BigInt  @default(autoincrement())
 
   /// Legacy interactive-message payload added directly via raw SQL before the
   /// Phase A refactor. Holds 18 rows of structured interactive data (buttons,
@@ -221,6 +245,12 @@ model Message {
   /// Phase D migration will fold this data into `content` / `renderable` and
   /// then drop this column.
   interactivePayload Json?
+
+  // ── Sprint 3: Group chat sender attribution ──────────────────────────────────
+  /// For group messages: the E.164 phone of the individual participant who sent this.
+  senderPhone String?
+  /// For group messages: the WhatsApp display name (pushName) of the sender.
+  senderName  String?
 
   @@unique([externalId, sessionId])
   @@unique([clientId, conversationId])
@@ -277,14 +307,14 @@ enum MsgStatus {
 }
 
 model InternalNote {
-  id              String   @id @default(cuid())
-  conversationId  String
-  conversation    Conversation @relation(fields: [conversationId], references: [id])
-  authorId        String
-  author          User     @relation("InternalNotes", fields: [authorId], references: [id])
-  body            String
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @default(now()) @updatedAt
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  authorId       String
+  author         User         @relation("InternalNotes", fields: [authorId], references: [id])
+  body           String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @default(now()) @updatedAt
 }
 
 model AutomationRule {
@@ -302,29 +332,29 @@ model AutomationRule {
 // ── Multi-step automation flows ───────────────────────────────────────────────
 
 model AutomationFlow {
-  id            String               @id @default(cuid())
-  teamId        String?
-  name          String
-  trigger       TriggerType
-  keyword       String?
-  isActive      Boolean              @default(true)
-  stopOnReply   Boolean              @default(true)
-  steps         AutomationFlowStep[]
-  executions    AutomationFlowExecution[]
-  createdAt     DateTime             @default(now())
-  updatedAt     DateTime             @default(now()) @updatedAt
+  id          String                    @id @default(cuid())
+  teamId      String?
+  name        String
+  trigger     TriggerType
+  keyword     String?
+  isActive    Boolean                   @default(true)
+  stopOnReply Boolean                   @default(true)
+  steps       AutomationFlowStep[]
+  executions  AutomationFlowExecution[]
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @default(now()) @updatedAt
 
   @@index([teamId, isActive])
 }
 
 model AutomationFlowStep {
-  id       String         @id @default(cuid())
-  flowId   String
-  flow     AutomationFlow @relation(fields: [flowId], references: [id], onDelete: Cascade)
-  order    Int
-  type     FlowStepType
-  message  String?
-  delayMs  Int?           // milliseconds to wait before this step (for WAIT steps)
+  id      String         @id @default(cuid())
+  flowId  String
+  flow    AutomationFlow @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  order   Int
+  type    FlowStepType
+  message String?
+  delayMs Int? // milliseconds to wait before this step (for WAIT steps)
 
   @@index([flowId, order])
 }
@@ -368,22 +398,23 @@ enum TriggerType {
 }
 
 model Broadcast {
-  id          String          @id @default(cuid())
-  teamId      String?
-  name        String
-  description String?
-  message     String
-  status      BroadcastStatus @default(DRAFT)
-  type        BroadcastType   @default(IMMEDIATE)
-  scheduledAt DateTime?
-  recurringCron String?
-  timezone    String          @default("UTC")
-  sentAt      DateTime?
-  totalSent   Int             @default(0)
-  totalFailed Int             @default(0)
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @default(now()) @updatedAt
-  recipients  BroadcastRecipient[]
+  id                 String               @id @default(cuid())
+  teamId             String?
+  name               String
+  description        String?
+  message            String
+  interactiveContent Json?
+  status             BroadcastStatus      @default(DRAFT)
+  type               BroadcastType        @default(IMMEDIATE)
+  scheduledAt        DateTime?
+  recurringCron      String?
+  timezone           String               @default("UTC")
+  sentAt             DateTime?
+  totalSent          Int                  @default(0)
+  totalFailed        Int                  @default(0)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @default(now()) @updatedAt
+  recipients         BroadcastRecipient[]
 }
 
 enum BroadcastStatus {
@@ -445,26 +476,28 @@ model AuditLog {
 model SavedReply {
   id        String   @id @default(cuid())
   teamId    String?
-  shortcut  String   @unique
+  shortcut  String
   message   String
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
+
+  @@unique([teamId, shortcut])
 }
 
 model Deal {
-  id          String   @id @default(cuid())
-  teamId      String?
-  contactId   String
-  contact     Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  title       String
-  stage       DealStage @default(NEW)
-  value       Float     @default(0)
-  ownerId     String?
-  owner       User?     @relation("OwnedDeals", fields: [ownerId], references: [id])
-  notes       String?
-  closedAt    DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @default(now()) @updatedAt
+  id        String    @id @default(cuid())
+  teamId    String?
+  contactId String
+  contact   Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  title     String
+  stage     DealStage @default(NEW)
+  value     Float     @default(0)
+  ownerId   String?
+  owner     User?     @relation("OwnedDeals", fields: [ownerId], references: [id])
+  notes     String?
+  closedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @default(now()) @updatedAt
 
   @@index([teamId, stage])
 }
@@ -477,24 +510,24 @@ enum DealStage {
 }
 
 model MessageTemplate {
-  id        String   @id @default(cuid())
-  teamId    String?
-  name      String
-  content   String
-  mediaUrl  String?
-  type      TemplateType @default(TEXT)
-  status    TemplateStatus @default(DRAFT)
+  id             String         @id @default(cuid())
+  teamId         String?
+  name           String
+  content        String
+  mediaUrl       String?
+  type           TemplateType   @default(TEXT)
+  status         TemplateStatus @default(DRAFT)
   // Meta Cloud API fields
-  language       String  @default("en_US")
+  language       String         @default("en_US")
   category       String? // MARKETING | UTILITY | AUTHENTICATION
   metaStatus     String? // PENDING | APPROVED | REJECTED | PAUSED | DELETED
   metaTemplateId String? // numeric ID returned by Meta after submission
   // Structured JSON payload — components array for Meta templates (header/body/footer/buttons)
-  payload   Json?
+  payload        Json?
   // Ordered variable names e.g. ["name","order_id"] matching {{1}},{{2}} in body
-  variables Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
+  variables      Json?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @default(now()) @updatedAt
 
   @@index([teamId])
 }
@@ -529,4 +562,117 @@ enum TaskPriority {
   LOW
   MEDIUM
   HIGH
+}
+
+// ── AI Lead Qualification & Sales Intelligence ────────────────────────────────
+// All AI-derived data lives here. It is advisory-only: it never mutates
+// Conversation.priority/status or Contact.lifecycleStage. Scope is per-Contact,
+// 1-to-1 only (WhatsApp groups are excluded from analysis).
+
+/// Canonical AI status set (reconciled from the product spec). The Lead
+/// Management sidebar sections are filtered views built on top of these.
+enum LeadStatus {
+  NEW_LEAD
+  QUALIFIED
+  HOT
+  WARM
+  COLD
+  CUSTOMER
+  LOST
+  NOT_INTERESTED
+  SPAM
+}
+
+/// One row per qualified Contact — the current AI evaluation. Continuously
+/// upserted as new inbound messages arrive (debounced per contact).
+model LeadQualification {
+  id                     String            @id @default(cuid())
+  contactId              String            @unique
+  contact                Contact           @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  teamId                 String?
+  status                 LeadStatus        @default(NEW_LEAD)
+  /// 0–100 overall qualification/opportunity score.
+  score                  Int               @default(0)
+  /// Reuses the global Priority enum (LOW | NORMAL | HIGH | URGENT).
+  priority               Priority          @default(NORMAL)
+  /// AI self-reported confidence in this evaluation, 0–1.
+  confidence             Float             @default(0)
+  /// True when the customer needs immediate human attention.
+  needsAttention         Boolean           @default(false)
+  /// True when strong buying intent / purchase readiness is detected.
+  buyingIntent           Boolean           @default(false)
+  /// Structured signal flags: { pricingRequest, meetingRequest, callRequest, urgency, readyToBuy }.
+  signals                Json?
+  /// Bilingual AI free-text — rendered per the viewing agent's UI language.
+  summaryEn              String?
+  summaryAr              String?
+  recommendationEn       String?
+  recommendationAr       String?
+  /// Inbound message count at the time of the last analysis (debounce/dedup aid).
+  messageCountAtAnalysis Int               @default(0)
+  lastAnalyzedAt         DateTime?
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @default(now()) @updatedAt
+  events                 LeadStatusEvent[]
+
+  @@index([teamId, status])
+  @@index([teamId, priority])
+  @@index([teamId, needsAttention])
+  @@index([teamId, score(sort: Desc)])
+}
+
+/// Append-only status history — one row per status change (goal: track changes
+/// in customer status over time as conversations evolve).
+model LeadStatusEvent {
+  id              String            @id @default(cuid())
+  qualificationId String
+  qualification   LeadQualification @relation(fields: [qualificationId], references: [id], onDelete: Cascade)
+  contactId       String
+  teamId          String?
+  fromStatus      LeadStatus?
+  toStatus        LeadStatus
+  score           Int               @default(0)
+  /// Short bilingual-agnostic reason snapshot (English summary line).
+  reason          String?
+  createdAt       DateTime          @default(now())
+
+  @@index([contactId, createdAt(sort: Desc)])
+  @@index([qualificationId, createdAt(sort: Desc)])
+}
+
+enum NotificationType {
+  BUYING_INTENT
+  NEEDS_ATTENTION
+  STATUS_UPGRADE
+}
+
+/// Persistent per-recipient notifications. Targeting: assigned agent if the
+/// conversation is assigned, otherwise the whole team.
+model Notification {
+  id             String           @id @default(cuid())
+  recipientId    String
+  recipient      User             @relation("UserNotifications", fields: [recipientId], references: [id], onDelete: Cascade)
+  teamId         String?
+  type           NotificationType
+  priority       Priority         @default(NORMAL)
+  title          String
+  body           String?
+  contactId      String?
+  contact        Contact?         @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  /// Target conversation for the "open conversation" action (plain id, no FK).
+  conversationId String?
+  isRead         Boolean          @default(false)
+  readAt         DateTime?
+  createdAt      DateTime         @default(now())
+
+  @@index([recipientId, isRead, createdAt(sort: Desc)])
+  @@index([recipientId, createdAt(sort: Desc)])
+}
+
+/// Generic key-value settings store. Used for chatbot config and future
+/// system-wide settings. Keyed by a stable string slug (e.g. "chatbot").
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @default(now()) @updatedAt
 }

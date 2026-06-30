@@ -2,22 +2,52 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { useTranslation } from 'react-i18next';
+import { MessageSquare, ArrowRight } from 'lucide-react';
 import { api } from '../../lib/api';
 import { formatPhone } from '../../lib/phone';
 import { useSocket } from '../../hooks/useSocket';
 
 interface Conversation {
   id: string;
-  contact: {
-    name: string | null;
-    phone: string;
-  };
+  contact: { name: string | null; phone: string };
   lastMessage: string | null;
   lastMessageAt: string | null;
 }
 
+// Circular avatar background/text colors — one per slot
+const AVATAR_COLORS = [
+  'bg-[#16A34A]/15 text-[#15803D] dark:bg-[#25D366]/15 dark:text-[#25D366]',
+  'bg-blue-500/15 text-blue-600 dark:bg-blue-400/15 dark:text-blue-400',
+  'bg-pink-500/15 text-pink-600 dark:bg-pink-400/15 dark:text-pink-400',
+  'bg-orange-500/15 text-orange-600 dark:bg-orange-400/15 dark:text-orange-400',
+  'bg-violet-500/15 text-violet-600 dark:bg-violet-400/15 dark:text-violet-400',
+] as const;
+
+function formatTime(dateStr: string, locale: string): string {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffDays = Math.floor(diffMs / 86_400_000);
+
+  if (diffDays === 0) {
+    return d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+  }
+  if (diffDays === 1) {
+    return locale.startsWith('ar') ? 'أمس' : 'Yesterday';
+  }
+  if (diffDays < 7) {
+    return d.toLocaleDateString(locale, { weekday: 'short' });
+  }
+  return d.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
+}
+
 export default function RecentConversations() {
+  const { t } = useTranslation('dashboard');
+  const { i18n } = useTranslation();
+  const locale = i18n.language === 'ar' ? 'ar-EG' : 'en-US';
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const fetchConversations = useCallback(async () => {
     try {
@@ -27,12 +57,12 @@ export default function RecentConversations() {
     } catch (error) {
       console.error('Failed to fetch conversations:', error);
       setConversations([]);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    fetchConversations();
-  }, [fetchConversations]);
+  useEffect(() => { fetchConversations(); }, [fetchConversations]);
 
   const onMessageNew = useCallback(
     ({ conversationId, message }: { conversationId: string; message: { body?: string; createdAt: string } }) => {
@@ -42,7 +72,6 @@ export default function RecentConversations() {
           const updated = { ...exists, lastMessage: message.body ?? exists.lastMessage, lastMessageAt: message.createdAt };
           return [updated, ...prev.filter((c) => c.id !== conversationId)].slice(0, 5);
         }
-        // New conversation not in list — fetch to get it
         fetchConversations();
         return prev;
       });
@@ -52,9 +81,7 @@ export default function RecentConversations() {
 
   const onConversationUpdated = useCallback(
     ({ conversationId, ...fields }: { conversationId: string; [key: string]: any }) => {
-      setConversations((prev) =>
-        prev.map((c) => c.id === conversationId ? { ...c, ...fields } : c),
-      );
+      setConversations((prev) => prev.map((c) => (c.id === conversationId ? { ...c, ...fields } : c)));
     },
     [],
   );
@@ -63,43 +90,81 @@ export default function RecentConversations() {
   useSocket('conversation:updated', onConversationUpdated);
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-[#111B21] p-6 shadow-[0_8px_20px_rgba(0,0,0,0.2)]">
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-lg font-medium text-white">Recent Conversations</h3>
+    <section className="flex h-full flex-col rounded-[20px] bg-white/80 backdrop-blur-xl border border-gray-100 shadow-[0_2px_20px_rgba(0,0,0,0.05)] p-5 dark:bg-[#182229] dark:border-transparent dark:shadow-[0_4px_24px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.05)]">
+      {/* Header */}
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h2 className="text-[15px] font-bold text-gray-900 dark:text-white">{t('recentConversations.title')}</h2>
         <Link
           href="/conversations"
-          className="text-sm text-[#25D366] transition hover:text-[#25D366]/80"
+          className="inline-flex items-center gap-1 rounded-full border border-gray-200 px-3 py-1.5 text-[11px] font-semibold text-gray-600 transition-colors hover:border-[#16A34A]/40 hover:bg-[#16A34A]/5 hover:text-[#16A34A] dark:border-white/10 dark:text-[#8696A0] dark:hover:border-[#25D366]/40 dark:hover:bg-[#25D366]/10 dark:hover:text-[#25D366]"
         >
-          View all
+          {t('recentConversations.viewAll')}
+          <ArrowRight className="h-3.5 w-3.5 icon-mirror" aria-hidden="true" />
         </Link>
       </div>
-      <div className="space-y-4">
-        {conversations.map((conv) => (
-          <div key={conv.id} className="flex items-center space-x-3 rounded-xl px-3 py-3 transition hover:bg-white/5">
-            <div className="flex-shrink-0">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[#25D366]/20 to-[#128C7E]/20 text-white">
-                <span className="text-sm font-medium">
-                  {(conv.contact.name || formatPhone(conv.contact.phone)).charAt(0).toUpperCase()}
-                </span>
+
+      {/* List */}
+      <div className="flex-1 space-y-0.5">
+        {loading ? (
+          [...Array(5)].map((_, i) => (
+            <div key={i} className="flex items-center gap-3 px-2 py-3">
+              <div className="h-11 w-11 shrink-0 animate-pulse rounded-full bg-gray-200 dark:bg-white/5" />
+              <div className="flex-1 space-y-2">
+                <div className="flex justify-between gap-2">
+                  <div className="h-3 w-1/3 animate-pulse rounded bg-gray-200 dark:bg-white/5" />
+                  <div className="h-3 w-10 animate-pulse rounded bg-gray-200 dark:bg-white/5" />
+                </div>
+                <div className="h-2.5 w-3/4 animate-pulse rounded bg-gray-200 dark:bg-white/5" />
               </div>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="truncate text-sm font-medium text-white">
-                {conv.contact.name || formatPhone(conv.contact.phone)}
-              </p>
-              <p className="truncate text-sm text-[#8696A0]">
-                {conv.lastMessage || 'No messages yet'}
-              </p>
-            </div>
-            <div className="text-xs text-[#8696A0]">
-              {conv.lastMessageAt && new Date(conv.lastMessageAt).toLocaleTimeString()}
-            </div>
+          ))
+        ) : conversations.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 dark:bg-white/5">
+              <MessageSquare className="h-5 w-5 text-gray-400 dark:text-[#8696A0]" aria-hidden="true" />
+            </span>
+            <p className="text-sm text-gray-500 dark:text-[#8696A0]">{t('recentConversations.noConversations')}</p>
           </div>
-        ))}
-        {conversations.length === 0 && (
-          <p className="text-sm text-[#8696A0]">No conversations yet</p>
+        ) : (
+          conversations.map((conv, i) => {
+            const display = conv.contact.name || formatPhone(conv.contact.phone);
+            const initial = display.charAt(0).toUpperCase();
+            const time = conv.lastMessageAt ? formatTime(conv.lastMessageAt, locale) : '';
+            return (
+              <Link
+                key={conv.id}
+                href={`/conversations?phone=${encodeURIComponent(conv.contact.phone)}`}
+                className="flex items-center gap-3 rounded-xl px-2 py-2.5 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16A34A]/40 dark:hover:bg-white/5"
+              >
+                {/* Avatar — circular with initial, no icon */}
+                <span
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[15px] font-bold ${AVATAR_COLORS[i % AVATAR_COLORS.length]}`}
+                  aria-hidden="true"
+                >
+                  {initial}
+                </span>
+
+                {/* Text block */}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="truncate text-[13px] font-semibold text-gray-900 dark:text-[#E9EDEF]">
+                      {display.startsWith('+')
+                        ? <span dir="ltr">{'‎'}{display}</span>
+                        : <bdi>{display}</bdi>}
+                    </p>
+                    {time && (
+                      <span className="shrink-0 text-[11px] text-gray-400 dark:text-[#8696A0]">{time}</span>
+                    )}
+                  </div>
+                  <p className="truncate text-[12px] text-gray-500 dark:text-[#8696A0]">
+                    {conv.lastMessage || t('recentConversations.noMessages')}
+                  </p>
+                </div>
+              </Link>
+            );
+          })
         )}
       </div>
-    </div>
+    </section>
   );
 }

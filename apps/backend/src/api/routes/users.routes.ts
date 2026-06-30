@@ -2,19 +2,31 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../../lib/prisma';
 import { authMiddleware, requireAdmin } from '../../auth/auth.middleware';
+import { excludeDevSuperuser, isDevSuperuserEmail, isManager } from '../../auth/authorize';
 
 const router = Router();
 
 router.use(authMiddleware);
 
+/**
+ * The env-provisioned developer super-account is protected: no admin may delete
+ * it, demote it below SUPER_ADMIN, change its email, or move it into a team
+ * (which would also reveal it in member lists). It is additionally hidden from
+ * every user listing — see `excludeDevSuperuser`.
+ */
+function isProtectedDevSuperuser(user: { email?: string | null } | null | undefined): boolean {
+  return isDevSuperuserEmail(user?.email);
+}
+
 // List users — admin sees all, others see only their team
 router.get('/', async (req, res) => {
   try {
     const user = (req as any).user;
-    const isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(user?.role);
+    const canSeeAll = isManager(user?.role);
 
     const users = await prisma.user.findMany({
-      where: isAdmin ? {} : { teamId: user?.teamId },
+      // Hide the developer super-account from everyone.
+      where: canSeeAll ? excludeDevSuperuser() : { teamId: user?.teamId, ...excludeDevSuperuser() },
       select: {
         id: true,
         name: true,
@@ -84,6 +96,19 @@ router.put('/:id', requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'Invalid role' });
     }
 
+    const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { email: true } });
+    if (isProtectedDevSuperuser(target)) {
+      if (role && role !== 'SUPER_ADMIN') {
+        return res.status(403).json({ error: 'The developer super-account cannot be demoted.' });
+      }
+      if (email && email.toLowerCase() !== target!.email!.toLowerCase()) {
+        return res.status(403).json({ error: "The developer super-account's email cannot be changed." });
+      }
+      if (teamId) {
+        return res.status(403).json({ error: 'The developer super-account cannot be added to a team.' });
+      }
+    }
+
     const updateData: any = {};
     if (name) updateData.name = name;
     if (email) updateData.email = email;
@@ -111,6 +136,11 @@ router.delete('/:id', requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'You cannot delete your own account' });
     }
 
+    const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { email: true } });
+    if (isProtectedDevSuperuser(target)) {
+      return res.status(403).json({ error: 'The developer super-account cannot be deleted.' });
+    }
+
     await prisma.user.delete({ where: { id: req.params.id } });
     res.json({ success: true });
   } catch (error) {
@@ -125,6 +155,13 @@ router.put('/:id/role', requireAdmin, async (req, res) => {
     const validRoles = ['SUPER_ADMIN', 'ADMIN', 'TEAM_LEAD', 'AGENT', 'ANALYST', 'VIEWER'];
     if (!validRoles.includes(role)) {
       return res.status(400).json({ error: 'Invalid role' });
+    }
+
+    if (role !== 'SUPER_ADMIN') {
+      const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { email: true } });
+      if (isProtectedDevSuperuser(target)) {
+        return res.status(403).json({ error: 'The developer super-account cannot be demoted.' });
+      }
     }
 
     const updated = await prisma.user.update({
@@ -142,6 +179,12 @@ router.put('/:id/role', requireAdmin, async (req, res) => {
 router.put('/:id/team', requireAdmin, async (req, res) => {
   try {
     const { teamId } = req.body;
+    if (teamId) {
+      const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { email: true } });
+      if (isProtectedDevSuperuser(target)) {
+        return res.status(403).json({ error: 'The developer super-account cannot be added to a team.' });
+      }
+    }
     const updated = await prisma.user.update({
       where: { id: req.params.id },
       data: { teamId: teamId || null },

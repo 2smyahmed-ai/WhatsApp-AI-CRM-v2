@@ -1,0 +1,67 @@
+{
+  "title": "الأتمتة",
+  "subtitle": "إعداد قواعد الرد التلقائي المُشغَّلة بالكلمات المفتاحية أو الرسائل الأولى أو ساعات العمل.",
+  "badge": "أتمتة ذكية",
+  "addRule": "إضافة قاعدة",
+  "noRules": "لا توجد قواعد أتمتة بعد",
+  "noRulesSubtitle": "أنشئ أول قاعدة لبدء أتمتة الردود",
+  "triggers": {
+    "KEYWORD": "كلمة مفتاحية",
+    "FIRST_MESSAGE": "الرسالة الأولى",
+    "ANY_MESSAGE": "أي رسالة",
+    "OUTSIDE_HOURS": "خارج ساعات العمل"
+  },
+  "card": {
+    "trigger": "المُشغِّل",
+    "keyword": "الكلمة المفتاحية",
+    "response": "الرد",
+    "active": "مفعَّل",
+    "inactive": "غير مفعَّل"
+  },
+  "form": {
+    "editTitle": "تعديل القاعدة",
+    "createTitle": "إضافة قاعدة",
+    "name": "اسم القاعدة",
+    "trigger": "المُشغِّل",
+    "keyword": "الكلمة المفتاحية",
+    "response": "رسالة الرد",
+    "save": "حفظ",
+    "cancel": "إلغاء"
+  },
+  "deleteConfirm": {
+    "title": "حذف القاعدة",
+    "message": "هل أنت متأكد من رغبتك في حذف قاعدة الأتمتة هذه؟",
+    "confirm": "حذف",
+    "cancel": "إلغاء"
+  },
+  "toast": {
+    "created": "تم إنشاء القاعدة",
+    "updated": "تم تحديث القاعدة",
+    "deleted": "تم حذف القاعدة",
+    "toggled": "القاعدة {{status}}"
+  },
+  "flow": {
+    "editTitle": "تعديل التدفق",
+    "createTitle": "تدفق أتمتة جديد",
+    "name": "اسم التدفق",
+    "namePlaceholder": "مثال: تسلسل الترحيب",
+    "trigger": "المُشغِّل",
+    "keyword": "الكلمة المفتاحية",
+    "keywordPlaceholder": "مثال: مرحبا",
+    "stopOnReply": "إيقاف التدفق عند رد جهة الاتصال",
+    "steps": "الخطوات",
+    "stepWait": "انتظار",
+    "stepSendMessage": "إرسال رسالة",
+    "messagePlaceholder": "نص الرسالة...",
+    "sec": "ث",
+    "addMessage": "إضافة رسالة",
+    "addDelay": "إضافة تأخير",
+    "cancel": "إلغاء",
+    "save": "حفظ التدفق",
+    "saving": "جارٍ الحفظ...",
+    "delay1Min": "١ د",
+    "delay5Min": "٥ د",
+    "delay1Hr": "١ س",
+    "delay24Hr": "٢٤ س"
+  }
+}

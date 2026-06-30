@@ -7,6 +7,10 @@ import path from 'path';
 import { authMiddleware, checkPermission } from '../../auth/auth.middleware';
 import { processIncomingMessage } from '../../workflow/inbound-workflow';
 import { logger } from '../../lib/logger';
+import { prisma } from '../../lib/prisma';
+import { getSessionId } from '../../whatsapp/client';
+import { getWarmupPhase, startOfToday } from '../../whatsapp/warmup';
+import { getFromCache, setInCache, invalidateCache } from '../../lib/status-cache';
 
 const router = Router();
 
@@ -39,14 +43,129 @@ router.post('/reset-auth', checkPermission('update', 'whatsapp'), async (req, re
   }
 });
 
-router.get('/status', checkPermission('read', 'whatsapp'), (req, res) => {
-  const { status, connectedPhone, error } = providerManager.getStatus();
-  res.json({
-    status,
-    connectedPhone,
-    error,
-    queueDepth: 0,
-  });
+router.get('/status', checkPermission('read', 'whatsapp'), async (req, res) => {
+  try {
+    // Get connection status immediately (from memory, no DB queries)
+    const { status, connectedPhone, error } = providerManager.getStatus();
+
+    // Check in-memory cache first (30-second TTL)
+    const sessionId = getSessionId();
+    const cacheKey = `whatsapp_session_${sessionId}`;
+    const cachedSession = getFromCache(cacheKey);
+
+    if (cachedSession !== null) {
+      return res.json({
+        status,
+        connectedPhone,
+        error,
+        queueDepth: 0,
+        session: cachedSession,
+      });
+    }
+
+    // Fetch session data (parallel queries for speed)
+    let session: any = null;
+
+    if (sessionId && sessionId !== 'default') {
+      try {
+        // Fetch both session creation date and daily count in parallel
+        const [whatsappSession, dailySent] = await Promise.all([
+          prisma.whatsAppSession.findUnique({
+            where: { sessionId },
+            select: { createdAt: true, warmupEnabled: true },
+          }).catch(() => null),
+          // Fast path: Analytics table has pre-aggregated daily counts
+          (async () => {
+            try {
+              const today = startOfToday();
+              const analytics = await prisma.analytics.findUnique({
+                where: { date: today },
+                select: { outgoingMessages: true },
+              });
+              return analytics?.outgoingMessages ?? 0;
+            } catch {
+              // If Analytics unavailable, return 0 (don't block response)
+              return 0;
+            }
+          })(),
+        ]);
+
+        // Self-heal: if the number is connected but has no session row yet
+        // (e.g. it connected before this feature existed), create it now so the
+        // dashboard's warm-up card populates without requiring a reconnect.
+        let sessionRow = whatsappSession;
+        if (!sessionRow && status === 'connected') {
+          sessionRow = await prisma.whatsAppSession
+            .upsert({ where: { sessionId }, create: { sessionId, data: {}, warmupEnabled: false }, update: {}, select: { createdAt: true, warmupEnabled: true } })
+            .catch(() => null);
+        }
+
+        if (sessionRow) {
+          const warmup = getWarmupPhase(sessionRow.createdAt);
+          const dailyRemaining = warmup.dailyLimit ? Math.max(0, warmup.dailyLimit - dailySent) : null;
+
+          session = {
+            createdAt: sessionRow.createdAt.toISOString(),
+            dayNumber: warmup.dayNumber,
+            warmupEnabled: sessionRow.warmupEnabled,
+            warmup: {
+              active: warmup.active,
+              phaseName: warmup.phaseName,
+              dailyLimit: warmup.dailyLimit,
+              dailySent,
+              dailyRemaining,
+              fullyUnlockedAt: warmup.fullyUnlockedAt?.toISOString() || null,
+              perMinuteCap: warmup.perMinuteCap,
+            },
+          };
+
+          // Cache for 30 seconds to avoid repeated queries
+          setInCache(cacheKey, session);
+        }
+      } catch (err) {
+        logger.warn('whatsapp_status_session_fetch_failed', { error: err instanceof Error ? err.message : String(err) });
+        // Session stays null, that's ok
+      }
+    }
+
+    // Always respond immediately (no timeouts)
+    res.json({
+      status,
+      connectedPhone,
+      error,
+      queueDepth: 0,
+      session,
+    });
+  } catch (err) {
+    logger.error('whatsapp_status_error', { error: err instanceof Error ? err.message : String(err) });
+    const { status, connectedPhone, error } = providerManager.getStatus();
+    res.json({
+      status,
+      connectedPhone,
+      error,
+      queueDepth: 0,
+      session: null,
+    });
+  }
+});
+
+router.patch('/session-settings', checkPermission('update', 'whatsapp'), async (req, res) => {
+  try {
+    const { warmupEnabled } = req.body;
+    if (typeof warmupEnabled !== 'boolean') {
+      return res.status(400).json({ error: 'warmupEnabled must be a boolean' });
+    }
+    const sessionId = getSessionId();
+    await prisma.whatsAppSession.upsert({
+      where: { sessionId },
+      create: { sessionId, data: {}, warmupEnabled },
+      update: { warmupEnabled },
+    });
+    invalidateCache(`whatsapp_session_${sessionId}`);
+    res.json({ success: true, warmupEnabled });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+  }
 });
 
 router.get('/qr', checkPermission('read', 'whatsapp'), (req, res) => {

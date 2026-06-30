@@ -1,0 +1,130 @@
+{
+  "title": "Settings",
+  "subtitle": "Connect WhatsApp, manage your team, and configure your workspace.",
+  "badge": "Workspace settings",
+  "tabs": {
+    "whatsapp": "WhatsApp",
+    "team": "Team",
+    "savedReplies": "Saved Replies",
+    "account": "Account",
+    "language": "Language"
+  },
+  "whatsapp": {
+    "title": "WhatsApp Connection",
+    "description": "Manage your WhatsApp Web connection",
+    "status": {
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "connecting": "Connecting..."
+    },
+    "connectedPhone": "Connected WhatsApp number: {{phone}}",
+    "scanQR": "Scan this QR code with your WhatsApp",
+    "noQR": "Click Connect to generate a QR code.",
+    "connect": "Connect WhatsApp",
+    "disconnect": "Disconnect WhatsApp",
+    "resetSession": "Reset Session",
+    "disconnectConfirm": {
+      "title": "Disconnect WhatsApp",
+      "message": "Are you sure you want to disconnect your WhatsApp account?",
+      "confirm": "Disconnect",
+      "cancel": "Cancel"
+    },
+    "warmup": {
+      "label": "Enable warm-up protection",
+      "description": "Gradually ramp up daily message limits to protect a new number from being banned. Turn this OFF for established numbers that have been active for months.",
+      "on": "On — new number",
+      "off": "Off — established number",
+      "saving": "Saving…"
+    }
+  },
+  "team": {
+    "title": "Team Members",
+    "description": "Manage team access to this workspace",
+    "teamName": "Team: {{name}}",
+    "emailPlaceholder": "Enter email address",
+    "selectRole": "Select role",
+    "inviteMember": "Invite Member",
+    "noMembers": "No team members yet",
+    "roles": {
+      "SYSTEM_MANAGER": "System Manager",
+      "EMPLOYEE": "Employee",
+      "ADMIN": "System Manager",
+      "TEAM_LEAD": "System Manager",
+      "AGENT": "Employee",
+      "ANALYST": "Employee",
+      "VIEWER": "Employee"
+    },
+    "removeMember": "Remove",
+    "removeConfirm": {
+      "title": "Remove Member",
+      "message": "Are you sure you want to remove {{name}} from the team?",
+      "confirm": "Remove",
+      "cancel": "Cancel"
+    }
+  },
+  "savedReplies": {
+    "title": "Saved Replies",
+    "description": "Use shortcuts like /thanks in the message box",
+    "shortcutPlaceholder": "/thanks",
+    "messagePlaceholder": "Thanks for reaching out. We'll get back to you shortly.",
+    "saveReply": "Save Reply",
+    "noReplies": "No saved replies yet",
+    "deleteConfirm": {
+      "title": "Delete Reply",
+      "message": "Are you sure you want to delete this saved reply?",
+      "confirm": "Delete",
+      "cancel": "Cancel"
+    }
+  },
+  "account": {
+    "title": "Account",
+    "description": "Manage your account settings",
+    "email": "Email",
+    "name": "Name",
+    "signOut": "Sign Out",
+    "signOutConfirm": {
+      "title": "Sign Out",
+      "message": "Are you sure you want to sign out?",
+      "confirm": "Sign Out",
+      "cancel": "Cancel"
+    }
+  },
+  "password": {
+    "title": "Change Password",
+    "description": "Update your password to keep your account secure",
+    "currentPassword": "Current Password",
+    "currentPasswordPlaceholder": "Enter your current password",
+    "newPassword": "New Password",
+    "newPasswordPlaceholder": "Enter new password (minimum 8 characters)",
+    "confirmPassword": "Confirm New Password",
+    "confirmPasswordPlaceholder": "Confirm your new password",
+    "changeButton": "Change Password",
+    "changing": "Changing Password...",
+    "securityNotice": "For security reasons, you will need to log in again after changing your password.",
+    "successMessage": "Password changed successfully",
+    "errorMessages": {
+      "allFieldsRequired": "All fields are required",
+      "passwordMismatch": "New passwords do not match",
+      "passwordTooShort": "New password must be at least 8 characters",
+      "passwordSame": "New password must be different from current password",
+      "invalidCurrent": "Current password is incorrect",
+      "generic": "Failed to change password"
+    }
+  },
+  "language": {
+    "title": "Language & Region",
+    "description": "Choose your preferred language. The interface will update immediately.",
+    "selectLanguage": "Interface Language",
+    "languages": {
+      "en": "English",
+      "ar": "العربية (Arabic)"
+    },
+    "direction": {
+      "ltr": "Left to Right (LTR)",
+      "rtl": "Right to Left (RTL)"
+    },
+    "currentLanguage": "Current language: {{lang}}",
+    "restartNotice": "Language changes apply instantly without reloading.",
+    "saved": "Language preference saved"
+  }
+}

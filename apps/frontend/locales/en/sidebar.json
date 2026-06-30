@@ -1,0 +1,36 @@
+{
+  "appName": "WhatsApp CRM",
+  "appSubtitle": "Business Suite",
+  "menu": "Menu",
+  "admin": "Admin",
+  "salesIntelligence": "Sales Intelligence",
+  "connected": "WhatsApp connected",
+  "openSidebar": "Open sidebar",
+  "closeSidebar": "Close sidebar",
+  "promo": {
+    "title": "Go mobile",
+    "subtitle": "Manage chats on the move and never miss a lead.",
+    "action": "Get the app"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "conversations": "Conversations",
+    "contacts": "Contacts",
+    "tags": "Tags",
+    "savedReplies": "Saved Replies",
+    "templates": "Templates",
+    "interactive": "Interactive",
+    "deals": "Deals",
+    "leads": "Lead Management",
+    "tasks": "Tasks",
+    "broadcasts": "Broadcasts",
+    "settings": "Settings",
+    "users": "Users",
+    "teams": "Teams",
+    "automations": "Automations",
+    "chatbot": "AI Tools",
+    "aiConfig": "AI Configuration",
+    "customerAi": "Customer AI Bot",
+    "more": "More"
+  }
+}

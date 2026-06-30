@@ -1,10 +1,19 @@
 export function formatPhone(phone?: string | null): string {
   if (!phone) return 'Unknown number';
 
+  // Group/broadcast JIDs should never reach here after backend filtering
+  if (phone.includes('@g.us')) return 'Group Chat';
+  if (phone.includes('@broadcast')) return 'Broadcast';
+
   const digits = phone.replace(/[^\d]/g, '');
   if (!digits) return phone;
 
   if (digits.length <= 4) return digits;
+
+  // E.164 max is 15 digits. Anything longer is corrupted data — show truncated
+  if (digits.length > 15) {
+    return `+${digits.slice(0, 15)}…`;
+  }
 
   const intl = `+${digits}`;
 

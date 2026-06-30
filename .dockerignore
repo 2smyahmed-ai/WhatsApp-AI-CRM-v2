@@ -1,0 +1,14 @@
+# Keep build context small and never ship local state / secrets into images.
+**/node_modules
+**/dist
+**/.next
+**/tsconfig.tsbuildinfo
+.git
+logs
+*.log
+auth_info_baileys
+tenants
+**/.env
+**/.env.local
+apps/backend/uploads
+*.xlsx

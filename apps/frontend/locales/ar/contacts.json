@@ -1,0 +1,133 @@
+{
+  "title": "جهات الاتصال",
+  "subtitle": "إدارة جهات الاتصال مع البحث واستيراد CSV والإجراءات الجماعية والفلاتر المتقدمة والمزامنة الفورية.",
+  "badge": "استوديو جهات الاتصال",
+  "searchPlaceholder": "البحث بالاسم أو الهاتف أو البريد الإلكتروني...",
+  "addContact": "إضافة جهة اتصال",
+  "importContacts": "استيراد CSV",
+  "importing": "جارٍ الاستيراد...",
+  "exportContacts": "تصدير CSV",
+  "totalContacts": "{{count}} جهة اتصال",
+  "noContacts": "لا توجد جهات اتصال بعد",
+  "noContactsSubtitle": "أضف أول جهة اتصال أو استورد من ملف CSV",
+  "noResults": "لا توجد جهات اتصال تطابق بحثك",
+  "clearFilters": "مسح الفلاتر",
+  "createdFrom": "تاريخ الإنشاء من",
+  "createdTo": "تاريخ الإنشاء إلى",
+  "clearSelection": "مسح التحديد",
+  "segments": {
+    "all": "الكل",
+    "saved": "المحفوظة",
+    "unsaved": "أرقام غير محفوظة",
+    "savedHint": "جهات الاتصال التي لها اسم",
+    "unsavedHint": "أرقام بدون اسم محفوظ"
+  },
+  "filters": {
+    "title": "فلاتر متقدمة",
+    "moreFilters": "فلاتر إضافية",
+    "hasTags": "لها وسوم",
+    "hasNotes": "لها ملاحظات",
+    "withTagsOnly": "ذات وسوم فقط",
+    "withNotesOnly": "ذات ملاحظات",
+    "dateRange": "تاريخ الإنشاء"
+  },
+  "emptyFiltered": "لا توجد جهات اتصال تطابق هذه الفلاتر",
+  "emptyFilteredSubtitle": "حاول تعديل الفلاتر أو مسحها.",
+  "loadingDetails": "جارٍ تحميل التفاصيل...",
+  "contactDetails": "تفاصيل جهة الاتصال",
+  "tabs": {
+    "overview": "نظرة عامة",
+    "timeline": "السجل",
+    "tags": "الوسوم"
+  },
+  "dealsSection": "الصفقات",
+  "tasksSection": "المهام",
+  "conversationsSection": "المحادثات",
+  "profile": {
+    "dealValue": "قيمة الصفقات",
+    "openTasks": "المهام المفتوحة",
+    "viewProfile": "عرض الملف الكامل"
+  },
+  "newDeal": "صفقة جديدة",
+  "newTask": "مهمة جديدة",
+  "openConversation": "فتح المحادثة",
+  "noDeals": "لا توجد صفقات مرتبطة بعد.",
+  "noTasks": "لا توجد مهام مرتبطة بعد.",
+  "noLinkedConversations": "لا توجد محادثات مرتبطة بعد.",
+  "deleteBulk": "حذف {{count}}؟",
+  "yesDelete": "نعم، احذف",
+  "table": {
+    "name": "الاسم",
+    "phone": "رقم الهاتف",
+    "email": "البريد الإلكتروني",
+    "tags": "الوسوم",
+    "assignedTo": "مُعيَّن إلى",
+    "lastContacted": "آخر تواصل",
+    "createdAt": "تاريخ الإضافة",
+    "actions": "الإجراءات"
+  },
+  "form": {
+    "createTitle": "جهة اتصال جديدة",
+    "editTitle": "تعديل جهة الاتصال",
+    "name": "الاسم الكامل",
+    "namePlaceholder": "مثال: أحمد الراشدي",
+    "phone": "رقم الهاتف",
+    "phonePlaceholder": "+966 5X XXX XXXX",
+    "email": "البريد الإلكتروني",
+    "emailPlaceholder": "ahmed@company.com",
+    "company": "الشركة",
+    "companyPlaceholder": "اسم الشركة",
+    "notes": "ملاحظات",
+    "notesPlaceholder": "أضف أي ملاحظات ذات صلة...",
+    "tags": "الوسوم",
+    "save": "حفظ جهة الاتصال",
+    "cancel": "إلغاء",
+    "createSuccess": "تم إنشاء جهة الاتصال بنجاح",
+    "updateSuccess": "تم تحديث جهة الاتصال بنجاح"
+  },
+  "timeline": {
+    "title": "سجل النشاط",
+    "noActivity": "لا يوجد نشاط بعد",
+    "noActivityContact": "لا يوجد نشاط لجهة الاتصال هذه بعد.",
+    "conversation": "محادثة",
+    "message": "رسالة",
+    "note": "ملاحظة",
+    "deal": "صفقة",
+    "task": "مهمة",
+    "tagAdded": "تمت إضافة وسم",
+    "tagRemoved": "تمت إزالة وسم",
+    "assigned": "تم التعيين",
+    "resolved": "تم الحل",
+    "noMessages": "لا توجد رسائل",
+    "justNow": "الآن",
+    "minsAgo": "منذ {{count}} د",
+    "hrsAgo": "منذ {{count}} س"
+  },
+  "tags": {
+    "addTag": "إضافة وسم",
+    "newNamePlaceholder": "اسم الوسم الجديد...",
+    "create": "إنشاء",
+    "allAssigned": "تمت إضافة جميع الوسوم"
+  },
+  "deleteConfirm": {
+    "title": "حذف جهة الاتصال",
+    "message": "هل أنت متأكد من رغبتك في حذف {{name}}؟ ستبقى المحادثات المرتبطة لكن معلومات جهة الاتصال ستُزال.",
+    "confirm": "حذف",
+    "cancel": "إلغاء"
+  },
+  "bulkActions": {
+    "selected": "{{count}} محدد",
+    "delete": "حذف المحدد",
+    "export": "تصدير المحدد",
+    "addTag": "إضافة وسم",
+    "assign": "تعيين"
+  },
+  "messages": {
+    "importSuccess": "تم استيراد {{imported}} من أصل {{total}} جهة اتصال",
+    "importFailed": "فشل الاستيراد",
+    "deleteFailed": "فشل حذف جهة الاتصال",
+    "hasConversations": "تحتوي جهة الاتصال هذه على محادثات ولا يمكن حذفها.",
+    "bulkDeletePartialFail": "تعذّر حذف {{count}} من جهات الاتصال — قد تحتوي على محادثات نشطة.",
+    "loadDetailsFailed": "فشل تحميل تفاصيل جهة الاتصال"
+  }
+}

@@ -1,16 +1,17 @@
 'use client';
 
-import { Suspense, useState, useCallback, useEffect, useRef } from 'react';
+import { Suspense, useState, useCallback, useEffect, useRef, type RefObject } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useTranslation } from 'react-i18next';
 import {
   ArrowLeft, Save, Loader2, Check, Plus, Trash2, X,
-  Globe, Smartphone, AlertTriangle, Info, CheckCircle2,
+  Smartphone, AlertTriangle, Info, CheckCircle2,
   ChevronDown, ChevronUp, Upload, Type, ImageIcon,
 } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { api, apiForm } from '../../../../lib/api';
-import type { CanonicalTemplate, CanonicalButton, MetaCategory, CanonicalHeader } from '../../../../lib/template-engine/schema';
-import { META_CATEGORIES, TEMPLATE_LANGUAGES, isCanonicalPayload, isLegacyPayload } from '../../../../lib/template-engine/schema';
+import type { CanonicalTemplate, CanonicalButton, TemplateCategory, CanonicalHeader } from '../../../../lib/template-engine/schema';
+import { TEMPLATE_CATEGORIES, TEMPLATE_LANGUAGES, isCanonicalPayload, isLegacyPayload } from '../../../../lib/template-engine/schema';
 import { validateTemplate } from '../../../../lib/template-engine/validator';
 import { toRenderable, extractVariableNames, legacyBlocksToCanonical, deriveTemplateType } from '../../../../lib/template-engine/compiler';
 
@@ -20,7 +21,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
 const DEFAULT_TEMPLATE: CanonicalTemplate = {
   name: 'Untitled Template',
-  category: 'MARKETING',
+  category: 'GENERAL',
   language: 'en_US',
   body: { text: '' },
   _meta: { variableNames: [], previewValues: {} },
@@ -61,12 +62,14 @@ function Input({ value, onChange, placeholder, maxLength, className = '' }: {
   );
 }
 
-function Textarea({ value, onChange, placeholder, maxLength, rows = 4 }: {
+function Textarea({ value, onChange, placeholder, maxLength, rows = 4, textareaRef }: {
   value: string; onChange: (v: string) => void; placeholder?: string; maxLength?: number; rows?: number;
+  textareaRef?: RefObject<HTMLTextAreaElement>;
 }) {
   return (
     <div className="relative">
       <textarea
+        ref={textareaRef}
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
@@ -75,7 +78,7 @@ function Textarea({ value, onChange, placeholder, maxLength, rows = 4 }: {
         className="w-full rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#111B21] px-3 py-2 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:border-[#25D366] resize-none"
       />
       {maxLength && (
-        <span className="absolute right-2 bottom-2 text-[10px] text-gray-300 dark:text-white/20 pointer-events-none">
+        <span className="absolute end-2 bottom-2 text-[10px] text-gray-300 dark:text-white/20 pointer-events-none">
           {value.length}/{maxLength}
         </span>
       )}
@@ -125,12 +128,12 @@ function Section({ title, badge, onRemove, children, hasError, hasWarning }: {
 // ── Header editor ─────────────────────────────────────────────────────────────
 
 function HeaderEditor({
-  header, onChange, onRemove,
-  hasError, hasWarning,
+  header, onChange, onRemove, hasError, hasWarning,
 }: {
   header: CanonicalHeader; onChange: (h: CanonicalHeader) => void; onRemove: () => void;
   hasError?: boolean; hasWarning?: boolean;
 }) {
+  const { t } = useTranslation('templates');
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -163,8 +166,7 @@ function HeaderEditor({
   };
 
   return (
-    <Section title="Header" badge="optional" onRemove={onRemove} hasError={hasError} hasWarning={hasWarning}>
-      {/* Type selector */}
+    <Section title={t('builder.header')} badge={t('builder.optional')} onRemove={onRemove} hasError={hasError} hasWarning={hasWarning}>
       <div className="flex gap-1.5 flex-wrap">
         {headerTypes.map(({ type, label }) => (
           <button
@@ -185,9 +187,8 @@ function HeaderEditor({
         ))}
       </div>
 
-      {/* TEXT header */}
       {header.type === 'TEXT' && (
-        <Field label="Header text" hint="max 60 chars · 1 variable allowed">
+        <Field label={t('builder.headerText')} hint={t('builder.headerTextHint')}>
           <Input
             value={header.text}
             onChange={v => onChange({ ...header, text: v })}
@@ -197,10 +198,9 @@ function HeaderEditor({
         </Field>
       )}
 
-      {/* Media header */}
       {(header.type === 'IMAGE' || header.type === 'VIDEO' || header.type === 'DOCUMENT') && (
         <>
-          <Field label="Upload file">
+          <Field label={t('builder.uploadFile')}>
             <input
               ref={fileRef}
               type="file"
@@ -215,11 +215,11 @@ function HeaderEditor({
               className="w-full flex items-center justify-center gap-2 rounded-xl border border-dashed border-gray-300 dark:border-white/20 py-2.5 text-sm text-gray-600 dark:text-[#8696A0] hover:border-[#25D366]/50 hover:text-[#25D366] disabled:opacity-50 transition-colors"
             >
               {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-              {uploading ? 'Uploading…' : 'Pick from device'}
+              {uploading ? t('builder.uploading') : t('builder.pickFromDevice')}
             </button>
             {uploadError && <p className="text-xs text-rose-500 mt-1">{uploadError}</p>}
           </Field>
-          <Field label="Or enter URL">
+          <Field label={t('builder.orEnterUrl')}>
             <Input
               value={(header as any).url ?? ''}
               onChange={v => onChange({ ...header, url: v } as CanonicalHeader)}
@@ -227,7 +227,7 @@ function HeaderEditor({
             />
           </Field>
           {header.type === 'DOCUMENT' && (
-            <Field label="Filename (optional)">
+            <Field label={t('builder.filenameOptional')}>
               <Input
                 value={(header as any).filename ?? ''}
                 onChange={v => onChange({ ...header, filename: v } as CanonicalHeader)}
@@ -252,14 +252,14 @@ function HeaderEditor({
 // ── Buttons editor ────────────────────────────────────────────────────────────
 
 function ButtonsEditor({
-  buttons, onChange, onRemove,
-  hasError, hasWarning,
+  buttons, onChange, onRemove, hasError, hasWarning,
 }: {
   buttons: CanonicalButton[]; onChange: (b: CanonicalButton[]) => void; onRemove: () => void;
   hasError?: boolean; hasWarning?: boolean;
 }) {
-  const qr   = buttons.filter(b => b.type === 'QUICK_REPLY');
-  const cta  = buttons.filter(b => b.type !== 'QUICK_REPLY');
+  const { t } = useTranslation('templates');
+  const qr  = buttons.filter(b => b.type === 'QUICK_REPLY');
+  const cta = buttons.filter(b => b.type !== 'QUICK_REPLY');
   const mode = cta.length > 0 ? 'CTA' : 'QR';
 
   const switchMode = (next: 'QR' | 'CTA') => {
@@ -273,7 +273,7 @@ function ButtonsEditor({
   const removeBtn = (i: number) => onChange(buttons.filter((_, idx) => idx !== i));
 
   const addQR = () => {
-    if (buttons.length < 3) onChange([...buttons, { type: 'QUICK_REPLY', text: `Option ${buttons.length + 1}` }]);
+    if (buttons.length < 10) onChange([...buttons, { type: 'QUICK_REPLY', text: `Option ${buttons.length + 1}` }]);
   };
   const addCTA = () => {
     const hasUrl   = buttons.some(b => b.type === 'URL');
@@ -283,9 +283,8 @@ function ButtonsEditor({
   };
 
   return (
-    <Section title="Buttons" badge="optional" onRemove={onRemove} hasError={hasError} hasWarning={hasWarning}>
-      {/* Mode selector */}
-      <Field label="Button type">
+    <Section title={t('builder.buttons')} badge={t('builder.optional')} onRemove={onRemove} hasError={hasError} hasWarning={hasWarning}>
+      <Field label={t('builder.buttonType')}>
         <div className="flex gap-1.5">
           {(['QR', 'CTA'] as const).map(m => (
             <button
@@ -298,19 +297,24 @@ function ButtonsEditor({
                   : 'border-gray-200 dark:border-white/10 text-gray-600 dark:text-[#8696A0] hover:border-[#25D366]/50'
               }`}
             >
-              {m === 'QR' ? '↩ Quick Reply (max 3)' : '🔗 Call to Action (URL / Phone)'}
+              {m === 'QR' ? t('builder.quickReplyBtn') : t('builder.ctaBtn')}
             </button>
           ))}
         </div>
       </Field>
 
-      {/* Button list */}
+      {mode === 'QR' && (
+        <p className="text-[11px] text-gray-400 dark:text-[#8696A0]">
+          Quick replies are sent as numbered options in WhatsApp — up to 10 options.
+        </p>
+      )}
+
       <div className="space-y-2.5">
         {buttons.map((btn, i) => (
           <div key={i} className="rounded-xl border border-gray-200 dark:border-white/10 p-3 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-[#8696A0]">
-                {btn.type === 'QUICK_REPLY' ? 'Quick Reply' : btn.type === 'URL' ? 'URL Button' : 'Phone Button'}
+                {btn.type === 'QUICK_REPLY' ? t('builder.buttonTypes.QUICK_REPLY') : btn.type === 'URL' ? t('builder.buttonTypes.URL') : t('builder.buttonTypes.PHONE_NUMBER')}
               </span>
               {buttons.length > 1 && (
                 <button type="button" onClick={() => removeBtn(i)} className="text-rose-400 hover:text-rose-500">
@@ -318,16 +322,16 @@ function ButtonsEditor({
                 </button>
               )}
             </div>
-            <Field label="Button label" hint="max 25 chars">
+            <Field label={t('builder.buttonLabel')} hint={t('builder.buttonLabelHint')}>
               <Input
                 value={btn.text}
                 onChange={v => updateBtn(i, { text: v })}
                 placeholder={btn.type === 'QUICK_REPLY' ? 'Confirm' : btn.type === 'URL' ? 'Visit Website' : 'Call Us'}
-                maxLength={25}
+                maxLength={60}
               />
             </Field>
             {btn.type === 'URL' && (
-              <Field label="URL" hint="supports {{variable}} for dynamic suffix">
+              <Field label={t('builder.buttonUrl')} hint={t('builder.buttonUrlHint')}>
                 <Input
                   value={btn.url}
                   onChange={v => updateBtn(i, { url: v } as any)}
@@ -336,7 +340,7 @@ function ButtonsEditor({
               </Field>
             )}
             {btn.type === 'PHONE_NUMBER' && (
-              <Field label="Phone number">
+              <Field label={t('builder.buttonPhone')}>
                 <Input
                   value={btn.phone_number}
                   onChange={v => updateBtn(i, { phone_number: v } as any)}
@@ -348,14 +352,13 @@ function ButtonsEditor({
         ))}
       </div>
 
-      {/* Add button */}
-      {mode === 'QR' && buttons.length < 3 && (
+      {mode === 'QR' && buttons.length < 10 && (
         <button
           type="button"
           onClick={addQR}
           className="w-full rounded-xl border border-dashed border-gray-200 dark:border-white/10 py-2 text-xs text-gray-500 hover:border-[#25D366]/50 hover:text-[#25D366] transition-colors flex items-center justify-center gap-1"
         >
-          <Plus className="h-3.5 w-3.5" /> Add quick reply
+          <Plus className="h-3.5 w-3.5" /> {t('builder.addQuickReply')}
         </button>
       )}
       {mode === 'CTA' && buttons.length < 2 && (
@@ -364,7 +367,7 @@ function ButtonsEditor({
           onClick={addCTA}
           className="w-full rounded-xl border border-dashed border-gray-200 dark:border-white/10 py-2 text-xs text-gray-500 hover:border-[#25D366]/50 hover:text-[#25D366] transition-colors flex items-center justify-center gap-1"
         >
-          <Plus className="h-3.5 w-3.5" /> Add {!buttons.some(b => b.type === 'URL') ? 'URL' : 'phone'} button
+          <Plus className="h-3.5 w-3.5" /> {t('builder.addButton')} {!buttons.some(b => b.type === 'URL') ? 'URL' : t('builder.buttonTypes.PHONE_NUMBER')}
         </button>
       )}
     </Section>
@@ -382,29 +385,27 @@ function WaText({ text }: { text: string }) {
   return <span dangerouslySetInnerHTML={{ __html: html }} className="whitespace-pre-wrap break-words" />;
 }
 
-function WhatsAppPreview({ template, vars, provider }: {
-  template: CanonicalTemplate; vars: Record<string, string>; provider: 'meta' | 'baileys';
+function WhatsAppPreview({ template, vars, onVarChange }: {
+  template: CanonicalTemplate; vars: Record<string, string>;
+  onVarChange?: (name: string, value: string) => void;
 }) {
+  const { t } = useTranslation('templates');
   const renderable = toRenderable(template, vars);
   const isEmpty = !renderable.body.trim() && !renderable.header;
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header bar */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-200 dark:border-white/10 bg-[#202C33]">
         <div className="h-7 w-7 rounded-full bg-[#25D366]/20 flex items-center justify-center text-xs">💬</div>
         <div className="flex-1 min-w-0">
           <p className="text-xs font-semibold text-white">WhatsApp Preview</p>
-          <p className="text-[10px] text-white/40">Renders the exact compiled payload</p>
+          <p className="text-[10px] text-white/40">Exact rendering via Baileys</p>
         </div>
-        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-          provider === 'meta' ? 'bg-blue-500/20 text-blue-300' : 'bg-green-500/20 text-green-300'
-        }`}>
-          {provider === 'meta' ? '🌐 Meta' : '📱 Baileys'}
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-green-500/20 text-green-300">
+          📱 Baileys
         </span>
       </div>
 
-      {/* Bubble */}
       <div
         className="flex-1 overflow-y-auto p-4 bg-[#0B141A]"
         style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.025) 1px, transparent 0)', backgroundSize: '18px 18px' }}
@@ -412,12 +413,11 @@ function WhatsAppPreview({ template, vars, provider }: {
         {isEmpty ? (
           <div className="flex flex-col items-center justify-center h-full text-white/20 text-sm text-center gap-2">
             <Type className="h-8 w-8" />
-            <p>Start typing in the Body section to see a live preview</p>
+            <p>{t('builder.previewVariablesHint')}</p>
           </div>
         ) : (
           <div className="flex flex-col items-end">
             <div className="max-w-[90%] min-w-[160px] rounded-2xl rounded-tr-sm bg-[#005C4B] text-white shadow-lg overflow-hidden">
-              {/* Header */}
               {renderable.header && (
                 <div className="border-b border-white/10">
                   {renderable.header.type === 'TEXT' && (
@@ -449,25 +449,21 @@ function WhatsAppPreview({ template, vars, provider }: {
                 </div>
               )}
 
-              {/* Body */}
               <div className="px-3 pt-2.5 pb-1 text-sm">
                 <WaText text={renderable.body} />
               </div>
 
-              {/* Footer */}
               {renderable.footer && (
                 <div className="px-3 pb-1 text-[11px] text-white/50">
                   {renderable.footer}
                 </div>
               )}
 
-              {/* Timestamp */}
               <div className="flex items-center justify-end gap-1 px-3 pb-1.5">
                 <span className="text-[10px] text-white/40">now</span>
                 <span className="text-[10px] text-[#53BDEB]">✓✓</span>
               </div>
 
-              {/* Buttons */}
               {renderable.buttons && renderable.buttons.length > 0 && (
                 <div className="border-t border-white/20">
                   {renderable.buttons.map((btn, i) => (
@@ -480,25 +476,30 @@ function WhatsAppPreview({ template, vars, provider }: {
                 </div>
               )}
             </div>
+
+            {/* Auto-downgrade note for buttons */}
+            {renderable.buttons && renderable.buttons.length > 0 && (
+              <div className="mt-2 max-w-[90%] rounded-xl bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 text-[10px] text-amber-400">
+                ↳ Sent as numbered text options in WhatsApp
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      {/* Variable inputs */}
       <div className="border-t border-white/10 bg-[#111B21] px-4 py-3 space-y-2 max-h-52 overflow-y-auto">
-        <p className="text-[10px] text-white/30 uppercase tracking-wider">Preview variables</p>
+        <p className="text-[10px] text-white/30 uppercase tracking-wider">{t('builder.previewVariables')}</p>
         {(template._meta?.variableNames ?? []).length === 0 ? (
-          <p className="text-[11px] text-white/20">No variables detected — use {'{{name}}'} in your template.</p>
+          <p className="text-[11px] text-white/20">{t('builder.noVariables')}</p>
         ) : (
           (template._meta?.variableNames ?? []).map(v => (
             <div key={v} className="flex items-center gap-2">
               <span className="text-[10px] font-mono text-[#25D366] w-24 flex-shrink-0">{`{{${v}}}`}</span>
               <input
                 value={vars[v] ?? ''}
-                onChange={() => {}} // handled by parent
-                placeholder={`Sample ${v}`}
-                readOnly
-                className="flex-1 bg-white/5 rounded-lg px-2 py-1 text-[11px] text-white/60 border border-white/10 focus:outline-none"
+                onChange={e => onVarChange?.(v, e.target.value)}
+                placeholder={`e.g. ${v}`}
+                className="flex-1 bg-white/5 rounded-lg px-2 py-1 text-[11px] text-white/70 border border-white/10 focus:outline-none focus:border-[#25D366]/50 placeholder:text-white/20"
               />
             </div>
           ))
@@ -510,28 +511,27 @@ function WhatsAppPreview({ template, vars, provider }: {
 
 // ── Validation panel ──────────────────────────────────────────────────────────
 
-function ValidationPanel({ template, provider }: { template: CanonicalTemplate; provider: 'meta' | 'baileys' }) {
-  const result = validateTemplate(template, provider);
+function ValidationPanel({ template }: { template: CanonicalTemplate }) {
+  const { t } = useTranslation('templates');
+  const result = validateTemplate(template);
   return (
     <div className="space-y-2 px-3 py-3">
-      {/* Status badge */}
       <div className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold ${
-        result.metaReady
+        result.sendable
           ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
           : result.errors > 0
           ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
           : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
       }`}>
-        {result.metaReady ? (
-          <><CheckCircle2 className="h-3.5 w-3.5" /> Ready for Meta submission</>
+        {result.sendable ? (
+          <><CheckCircle2 className="h-3.5 w-3.5" /> Ready to send</>
         ) : result.errors > 0 ? (
-          <><AlertTriangle className="h-3.5 w-3.5" /> {result.errors} error{result.errors > 1 ? 's' : ''} to fix</>
+          <><AlertTriangle className="h-3.5 w-3.5" /> {result.errors} issue{result.errors !== 1 ? 's' : ''} to fix</>
         ) : (
-          <><Info className="h-3.5 w-3.5" /> {result.warnings} warning{result.warnings > 1 ? 's' : ''}</>
+          <><Info className="h-3.5 w-3.5" /> {result.warnings} warning{result.warnings !== 1 ? 's' : ''}</>
         )}
       </div>
 
-      {/* Issue list */}
       {result.issues.map((issue, i) => (
         <div key={i} className={`flex items-start gap-1.5 text-[11px] rounded-lg px-2.5 py-1.5 ${
           issue.level === 'error'   ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400' :
@@ -546,22 +546,28 @@ function ValidationPanel({ template, provider }: { template: CanonicalTemplate; 
       ))}
 
       {result.issues.length === 0 && (
-        <p className="text-[11px] text-gray-400 dark:text-[#8696A0] text-center py-2">No issues found.</p>
+        <p className="text-[11px] text-gray-400 dark:text-[#8696A0] text-center py-2">{t('builder.noIssues')}</p>
       )}
     </div>
   );
 }
 
+// ── Common template variables ─────────────────────────────────────────────────
+
+const COMMON_VARS = ['name', 'first_name', 'phone', 'company', 'order_id', 'date', 'amount', 'link'];
+
 // ── Main builder ──────────────────────────────────────────────────────────────
 
 function BuilderContent() {
+  const { t } = useTranslation('templates');
   const router = useRouter();
   const params = useSearchParams();
   const templateId = params.get('id');
   const { status } = useSession();
 
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+
   const [template, setTemplate] = useState<CanonicalTemplate>(DEFAULT_TEMPLATE);
-  const [provider, setProvider] = useState<'meta' | 'baileys'>('meta');
   const [previewVars, setPreviewVars] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -570,29 +576,29 @@ function BuilderContent() {
   const [testPhone, setTestPhone] = useState('');
   const [testSending, setTestSending] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [mobileTab, setMobileTab] = useState<'build' | 'preview'>('build');
 
   // ── Load existing template ────────────────────────────────────────────────
   useEffect(() => {
     if (!templateId || status !== 'authenticated') return;
     api.get('/api/templates').then((templates: any[]) => {
-      const t = templates.find((x: any) => x.id === templateId);
-      if (!t) return;
+      const found = templates.find((x: any) => x.id === templateId);
+      if (!found) return;
       let canonical: CanonicalTemplate;
-      if (isCanonicalPayload(t.payload)) {
-        canonical = t.payload;
-      } else if (isLegacyPayload(t.payload)) {
+      if (isCanonicalPayload(found.payload)) {
+        canonical = found.payload;
+      } else if (isLegacyPayload(found.payload)) {
         canonical = legacyBlocksToCanonical(
-          t.payload.blocks, t.name, t.payload.category ?? t.category, t.language,
+          found.payload.blocks, found.name, found.payload.category ?? found.category, found.language,
         );
       } else {
         canonical = {
-          name: t.name,
-          category: (t.category as MetaCategory) ?? 'MARKETING',
-          language: t.language ?? 'en_US',
-          body: { text: t.content ?? '' },
+          name: found.name,
+          category: (found.category as TemplateCategory) ?? 'GENERAL',
+          language: found.language ?? 'en_US',
+          body: { text: found.content ?? '' },
         };
       }
-      // Ensure _meta is present
       const varNames = extractVariableNames(canonical);
       canonical._meta = {
         ...canonical._meta,
@@ -604,15 +610,6 @@ function BuilderContent() {
     }).catch(() => {});
   }, [templateId, status]);
 
-  // ── Sync variable names whenever template changes ─────────────────────────
-  const syncVarNames = useCallback((t: CanonicalTemplate) => {
-    const varNames = extractVariableNames(t);
-    setTemplate(prev => ({
-      ...prev,
-      _meta: { ...prev._meta, variableNames: varNames },
-    }));
-  }, []);
-
   const update = useCallback((patch: Partial<CanonicalTemplate>) => {
     setTemplate(prev => {
       const next = { ...prev, ...patch };
@@ -621,9 +618,26 @@ function BuilderContent() {
     });
   }, []);
 
+  const insertVariable = useCallback((varName: string) => {
+    const ta = bodyRef.current;
+    const token = `{{${varName}}}`;
+    if (!ta) {
+      update({ body: { text: template.body.text + token } });
+      return;
+    }
+    const start = ta.selectionStart ?? ta.value.length;
+    const end = ta.selectionEnd ?? ta.value.length;
+    const newText = ta.value.substring(0, start) + token + ta.value.substring(end);
+    update({ body: { text: newText } });
+    requestAnimationFrame(() => {
+      ta.focus();
+      const pos = start + token.length;
+      ta.setSelectionRange(pos, pos);
+    });
+  }, [template.body.text, update]);
+
   // ── Save ──────────────────────────────────────────────────────────────────
   const handleSave = async () => {
-    const validation = validateTemplate(template, 'meta');
     if (!template.name.trim()) { setSaveError('Template name is required'); return; }
     if (!template.body.text.trim()) { setSaveError('Body text is required'); return; }
 
@@ -644,7 +658,7 @@ function BuilderContent() {
         status: 'DRAFT',
         category: template.category,
         language: template.language,
-        payload: canonical,  // canonical IS the payload
+        payload: canonical,
         variables: varNames,
       };
       if (templateId) {
@@ -677,7 +691,7 @@ function BuilderContent() {
         phone: testPhone.trim(),
         variables: previewVars,
       });
-      setTestResult({ ok: true, message: `Sent! Message ID: ${res.messageId ?? '—'}` });
+      setTestResult({ ok: true, message: `Sent via Baileys! Message ID: ${res.messageId ?? '—'}` });
     } catch (err) {
       setTestResult({ ok: false, message: err instanceof Error ? err.message : 'Failed to send test' });
     } finally {
@@ -686,26 +700,216 @@ function BuilderContent() {
   };
 
   const varNames = template._meta?.variableNames ?? [];
-  const validation = validateTemplate(template, provider);
+  const validation = validateTemplate(template);
 
   return (
-    <div className="flex overflow-hidden -mx-4 sm:-mx-6 lg:-mx-8 -my-6" style={{ height: 'calc(100vh - 56px)' }}>
+    <>
+    {/* ── Mobile layout (below lg) ─────────────────────────────────────────── */}
+    <div className="flex flex-col lg:hidden -mx-4 sm:-mx-6 -my-6 bg-gray-50 dark:bg-[#0B141A]">
+
+      {/* Mobile action bar — green gradient header */}
+      <div className="sticky top-0 z-20 flex items-center gap-2 px-3 py-2.5 bg-gradient-to-r from-[#16A34A] to-[#15803D] dark:from-[#0d4a21] dark:to-[#0b3d1c] shadow-[0_2px_12px_rgba(22,163,74,0.35)]">
+        <button
+          type="button"
+          onClick={() => router.push('/templates')}
+          className="flex items-center gap-1 shrink-0 text-white/80 hover:text-white transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <input
+          value={template.name}
+          onChange={e => update({ name: e.target.value })}
+          className="flex-1 min-w-0 bg-transparent text-[13px] font-semibold text-white focus:outline-none placeholder:text-white/50"
+          placeholder={t('builder.templateNamePlaceholder')}
+        />
+        {saveError && <AlertTriangle className="h-4 w-4 text-rose-300 shrink-0" />}
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          className="shrink-0 flex items-center gap-1.5 rounded-xl bg-white/20 backdrop-blur-sm border border-white/30 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60 transition-colors active:bg-white/30"
+        >
+          {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : saved ? <Check className="h-3 w-3" /> : <Save className="h-3 w-3" />}
+          {saving ? t('builder.saving') : saved ? t('builder.saved') : t('builder.save')}
+        </button>
+      </div>
+
+      {/* Mobile tabs */}
+      <div className="bg-white dark:bg-[#182229] border-b border-gray-100 dark:border-white/[0.04]">
+        <div className="flex">
+          {(['build', 'preview'] as const).map(tab => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setMobileTab(tab)}
+              className={`flex-1 py-2.5 text-xs font-semibold border-b-2 transition-colors ${
+                mobileTab === tab
+                  ? 'border-[#16A34A] dark:border-[#25D366] text-[#16A34A] dark:text-[#25D366]'
+                  : 'border-transparent text-gray-400 dark:text-[#8696A0]'
+              }`}
+            >
+              {tab === 'build' ? t('builder.buildTab', { defaultValue: 'Build' }) : t('builder.previewTab', { defaultValue: 'Preview' })}
+            </button>
+          ))}
+        </div>
+
+        {/* Section add chips + category/language — only visible in build tab */}
+        {mobileTab === 'build' && (
+          <div className="flex items-center gap-1.5 px-3 py-2 overflow-x-auto">
+            <button
+              type="button"
+              onClick={() => { if (!template.header) update({ header: { type: 'TEXT', text: '' } }); }}
+              className={`shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+                template.header
+                  ? 'bg-[#25D366]/10 border-[#25D366]/30 text-[#25D366]'
+                  : 'border-gray-200 dark:border-white/[0.08] text-gray-500 dark:text-[#8696A0]'
+              }`}
+            >
+              {template.header ? <Check className="h-2.5 w-2.5" /> : <Plus className="h-2.5 w-2.5" />}
+              {t('builder.addHeader')}
+            </button>
+            <button
+              type="button"
+              onClick={() => { if (!template.footer) update({ footer: { text: '' } }); }}
+              className={`shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+                template.footer
+                  ? 'bg-[#25D366]/10 border-[#25D366]/30 text-[#25D366]'
+                  : 'border-gray-200 dark:border-white/[0.08] text-gray-500 dark:text-[#8696A0]'
+              }`}
+            >
+              {template.footer ? <Check className="h-2.5 w-2.5" /> : <Plus className="h-2.5 w-2.5" />}
+              {t('builder.addFooter')}
+            </button>
+            <button
+              type="button"
+              onClick={() => { if (!template.buttons) update({ buttons: [{ type: 'QUICK_REPLY', text: 'Option 1' }] }); }}
+              className={`shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+                template.buttons
+                  ? 'bg-[#25D366]/10 border-[#25D366]/30 text-[#25D366]'
+                  : 'border-gray-200 dark:border-white/[0.08] text-gray-500 dark:text-[#8696A0]'
+              }`}
+            >
+              {template.buttons ? <Check className="h-2.5 w-2.5" /> : <Plus className="h-2.5 w-2.5" />}
+              {t('builder.addButtons')}
+            </button>
+            <div className="h-4 w-px bg-gray-200 dark:bg-white/[0.06] shrink-0" />
+            <select
+              value={template.category}
+              onChange={e => update({ category: e.target.value as TemplateCategory })}
+              className="shrink-0 rounded-xl border border-gray-200 dark:border-white/[0.08] bg-gray-50 dark:bg-[#1C2B34] px-2 py-1 text-[11px] text-gray-700 dark:text-white focus:outline-none focus:border-[#25D366]"
+            >
+              {TEMPLATE_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+            <select
+              value={template.language}
+              onChange={e => update({ language: e.target.value })}
+              className="shrink-0 rounded-xl border border-gray-200 dark:border-white/[0.08] bg-gray-50 dark:bg-[#1C2B34] px-2 py-1 text-[11px] text-gray-700 dark:text-white focus:outline-none focus:border-[#25D366]"
+            >
+              {TEMPLATE_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
+            </select>
+          </div>
+        )}
+      </div>
+
+      {/* Build tab content */}
+      {mobileTab === 'build' && (
+        <div className="p-4 space-y-3 pb-6">
+          {template.header && (
+            <HeaderEditor
+              header={template.header}
+              onChange={h => update({ header: h })}
+              onRemove={() => update({ header: undefined })}
+              hasError={validation.issues.some(i => i.field === 'header' && i.level === 'error')}
+              hasWarning={validation.issues.some(i => i.field === 'header' && i.level === 'warning')}
+            />
+          )}
+          <Section
+            title={t('builder.body')}
+            badge={t('builder.required')}
+            hasError={validation.issues.some(i => i.field === 'body' && i.level === 'error')}
+          >
+            <Textarea
+              value={template.body.text}
+              onChange={v => update({ body: { text: v } })}
+              placeholder={t('builder.bodyPlaceholder')}
+              maxLength={4096}
+              rows={5}
+              textareaRef={bodyRef}
+            />
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              <span className="text-[10px] text-gray-400 dark:text-[#8696A0] shrink-0">Insert:</span>
+              {COMMON_VARS.map(v => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => insertVariable(v)}
+                  className="rounded-full bg-[#25D366]/10 border border-[#25D366]/20 px-2 py-0.5 text-[10px] font-mono text-[#25D366] hover:bg-[#25D366]/20 transition-colors"
+                >
+                  {`{{${v}}}`}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-gray-400">{t('builder.bodyHint')}</p>
+          </Section>
+          {template.footer && (
+            <Section
+              title={t('builder.footer')}
+              badge={t('builder.optional')}
+              onRemove={() => update({ footer: undefined })}
+              hasError={validation.issues.some(i => i.field === 'footer' && i.level === 'error')}
+              hasWarning={validation.issues.some(i => i.field === 'footer' && i.level === 'warning')}
+            >
+              <Input
+                value={template.footer.text}
+                onChange={v => update({ footer: { text: v } })}
+                placeholder={t('builder.footerPlaceholder')}
+                maxLength={60}
+              />
+              <p className="text-[11px] text-gray-400">{t('builder.footerHint')}</p>
+            </Section>
+          )}
+          {template.buttons && (
+            <ButtonsEditor
+              buttons={template.buttons}
+              onChange={b => update({ buttons: b.length > 0 ? b : undefined })}
+              onRemove={() => update({ buttons: undefined })}
+              hasError={validation.issues.some(i => i.field === 'buttons' && i.level === 'error')}
+              hasWarning={validation.issues.some(i => i.field === 'buttons' && i.level === 'warning')}
+            />
+          )}
+          <ValidationPanel template={template} />
+        </div>
+      )}
+
+      {/* Preview tab content */}
+      {mobileTab === 'preview' && (
+        <div className="h-[520px]">
+          <WhatsAppPreview
+            template={template}
+            vars={previewVars}
+            onVarChange={(name, value) => setPreviewVars(prev => ({ ...prev, [name]: value }))}
+          />
+        </div>
+      )}
+    </div>
+
+    {/* ── Desktop layout (lg+) ──────────────────────────────────────────────── */}
+    <div className="hidden lg:flex overflow-hidden -mx-4 sm:-mx-6 lg:-mx-8 -my-6" style={{ height: 'calc(100vh - 56px)' }}>
 
       {/* ── Left sidebar ── */}
       <aside className="w-56 flex-shrink-0 border-r border-gray-200 dark:border-white/10 bg-white dark:bg-[#111B21] flex flex-col overflow-hidden">
-        {/* Back */}
         <div className="px-3 py-3 border-b border-gray-200 dark:border-white/10">
           <button
+            type="button"
             onClick={() => router.push('/templates')}
             className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-[#8696A0] hover:text-gray-900 dark:hover:text-white transition-colors"
           >
-            <ArrowLeft className="h-4 w-4" /> Templates
+            <ArrowLeft className="h-4 w-4" /> {t('title')}
           </button>
         </div>
 
-        {/* Add sections */}
         <div className="px-3 pt-3 pb-2">
-          <p className="text-[10px] uppercase tracking-widest font-semibold text-gray-400 dark:text-[#8696A0] mb-2">Sections</p>
+          <p className="text-[10px] uppercase tracking-widest font-semibold text-gray-400 dark:text-[#8696A0] mb-2">{t('builder.sections')}</p>
           <div className="space-y-1.5">
             <button
               type="button"
@@ -717,7 +921,7 @@ function BuilderContent() {
               }`}
             >
               <Type className="h-3.5 w-3.5" />
-              {template.header ? '✓ Header added' : '+ Add Header'}
+              {template.header ? t('builder.headerAdded') : t('builder.addHeader')}
             </button>
             <button
               type="button"
@@ -729,7 +933,7 @@ function BuilderContent() {
               }`}
             >
               <Type className="h-3.5 w-3.5" />
-              {template.footer ? '✓ Footer added' : '+ Add Footer'}
+              {template.footer ? t('builder.footerAdded') : t('builder.addFooter')}
             </button>
             <button
               type="button"
@@ -741,15 +945,14 @@ function BuilderContent() {
               }`}
             >
               <Type className="h-3.5 w-3.5" />
-              {template.buttons ? '✓ Buttons added' : '+ Add Buttons'}
+              {template.buttons ? t('builder.buttonsAdded') : t('builder.addButtons')}
             </button>
           </div>
         </div>
 
-        {/* Detected variables */}
         {varNames.length > 0 && (
           <div className="border-t border-gray-200 dark:border-white/10 px-3 py-3">
-            <p className="text-[10px] uppercase tracking-widest text-gray-400 dark:text-[#8696A0] mb-1.5">Variables</p>
+            <p className="text-[10px] uppercase tracking-widest text-gray-400 dark:text-[#8696A0] mb-1.5">{t('builder.variables')}</p>
             <div className="flex flex-wrap gap-1">
               {varNames.map(v => (
                 <span key={v} className="rounded-full bg-[#25D366]/10 border border-[#25D366]/20 px-2 py-0.5 text-[10px] font-mono text-[#25D366]">
@@ -760,9 +963,8 @@ function BuilderContent() {
           </div>
         )}
 
-        {/* Validation summary */}
         <div className="border-t border-gray-200 dark:border-white/10 mt-auto">
-          <ValidationPanel template={template} provider={provider} />
+          <ValidationPanel template={template} />
         </div>
       </aside>
 
@@ -774,16 +976,16 @@ function BuilderContent() {
             value={template.name}
             onChange={e => update({ name: e.target.value })}
             className="flex-1 bg-transparent text-base font-semibold text-gray-900 dark:text-white focus:outline-none placeholder:text-gray-400 min-w-0"
-            placeholder="Template name…"
+            placeholder={t('builder.templateNamePlaceholder')}
           />
 
           {/* Category */}
           <select
             value={template.category}
-            onChange={e => update({ category: e.target.value as MetaCategory })}
+            onChange={e => update({ category: e.target.value as TemplateCategory })}
             className="rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#202C33] px-2.5 py-1.5 text-xs text-gray-700 dark:text-white focus:outline-none focus:border-[#25D366]"
           >
-            {META_CATEGORIES.map(c => (
+            {TEMPLATE_CATEGORIES.map(c => (
               <option key={c.value} value={c.value}>{c.label}</option>
             ))}
           </select>
@@ -799,24 +1001,6 @@ function BuilderContent() {
             ))}
           </select>
 
-          {/* Provider toggle */}
-          <div className="flex items-center rounded-xl border border-gray-200 dark:border-white/10 overflow-hidden text-xs flex-shrink-0">
-            <button
-              type="button"
-              onClick={() => setProvider('meta')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 font-medium transition-colors ${provider === 'meta' ? 'bg-[#25D366] text-white' : 'bg-gray-50 dark:bg-[#202C33] text-gray-600 dark:text-[#8696A0] hover:text-gray-900 dark:hover:text-white'}`}
-            >
-              <Globe className="h-3 w-3" /> Meta
-            </button>
-            <button
-              type="button"
-              onClick={() => setProvider('baileys')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 font-medium transition-colors ${provider === 'baileys' ? 'bg-[#25D366] text-white' : 'bg-gray-50 dark:bg-[#202C33] text-gray-600 dark:text-[#8696A0] hover:text-gray-900 dark:hover:text-white'}`}
-            >
-              <Smartphone className="h-3 w-3" /> Baileys
-            </button>
-          </div>
-
           {saveError && <span className="text-xs text-rose-500 max-w-[160px] truncate">{saveError}</span>}
 
           {/* Test Send */}
@@ -829,10 +1013,9 @@ function BuilderContent() {
                   ? 'border-[#25D366]/60 bg-[#25D366]/10 text-[#25D366]'
                   : 'border-gray-200 dark:border-white/10 text-gray-600 dark:text-[#8696A0] hover:border-[#25D366]/40 hover:bg-[#25D366]/5'
               }`}
-              title="Send a test message to a phone number"
             >
               <Smartphone className="h-3.5 w-3.5" />
-              Test Send
+              {t('builder.testSend')}
             </button>
           )}
 
@@ -842,7 +1025,7 @@ function BuilderContent() {
             className="inline-flex items-center gap-1.5 rounded-xl bg-[#25D366] px-4 py-2 text-sm font-semibold text-white hover:bg-[#25D366]/90 disabled:opacity-60 transition-colors flex-shrink-0"
           >
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : saved ? <Check className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
-            {saving ? 'Saving…' : saved ? 'Saved!' : 'Save'}
+            {saving ? t('builder.saving') : saved ? t('builder.saved') : t('builder.save')}
           </button>
         </div>
 
@@ -851,7 +1034,7 @@ function BuilderContent() {
           <div className="border-b border-gray-200 dark:border-white/10 bg-white dark:bg-[#111B21] px-4 py-3 flex items-start gap-3 flex-shrink-0">
             <div className="flex-1 min-w-0 space-y-2">
               <p className="text-[11px] font-semibold text-gray-500 dark:text-[#8696A0] uppercase tracking-widest">
-                Send test · Meta Cloud API · Uses template vars from preview
+                Send test via Baileys
               </p>
               <div className="flex items-center gap-2">
                 <input
@@ -897,7 +1080,6 @@ function BuilderContent() {
         {/* Sections */}
         <div className="flex-1 overflow-y-auto p-5">
           <div className="max-w-2xl mx-auto space-y-3">
-            {/* Header */}
             {template.header && (
               <HeaderEditor
                 header={template.header}
@@ -908,32 +1090,42 @@ function BuilderContent() {
               />
             )}
 
-            {/* Body — always visible */}
             <Section
-              title="Body"
-              badge="required"
+              title={t('builder.body')}
+              badge={t('builder.required')}
               hasError={validation.issues.some(i => i.field === 'body' && i.level === 'error')}
             >
               <Textarea
                 value={template.body.text}
                 onChange={v => update({ body: { text: v } })}
-                placeholder="Hello {{name}}, your order #{{order_id}} is confirmed!"
-                maxLength={1024}
+                placeholder={t('builder.bodyPlaceholder')}
+                maxLength={4096}
                 rows={6}
+                textareaRef={bodyRef}
               />
+              {/* Variable insertion chips */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <span className="text-[10px] text-gray-400 dark:text-[#8696A0] shrink-0">Insert:</span>
+                {COMMON_VARS.map(v => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => insertVariable(v)}
+                    className="rounded-full bg-[#25D366]/10 border border-[#25D366]/20 px-2 py-0.5 text-[10px] font-mono text-[#25D366] hover:bg-[#25D366]/20 hover:border-[#25D366]/40 transition-colors"
+                  >
+                    {`{{${v}}}`}
+                  </button>
+                ))}
+              </div>
               <p className="text-[11px] text-gray-400">
-                Use <code className="bg-gray-100 dark:bg-white/10 px-1 rounded">{'{{name}}'}</code>,{' '}
-                <code className="bg-gray-100 dark:bg-white/10 px-1 rounded">{'{{order_id}}'}</code> for personalization.
-                WhatsApp formatting: <code className="bg-gray-100 dark:bg-white/10 px-1 rounded">*bold*</code>{' '}
-                <code className="bg-gray-100 dark:bg-white/10 px-1 rounded">_italic_</code>
+                {t('builder.bodyHint')}
               </p>
             </Section>
 
-            {/* Footer */}
             {template.footer && (
               <Section
-                title="Footer"
-                badge="optional"
+                title={t('builder.footer')}
+                badge={t('builder.optional')}
                 onRemove={() => update({ footer: undefined })}
                 hasError={validation.issues.some(i => i.field === 'footer' && i.level === 'error')}
                 hasWarning={validation.issues.some(i => i.field === 'footer' && i.level === 'warning')}
@@ -941,14 +1133,13 @@ function BuilderContent() {
                 <Input
                   value={template.footer.text}
                   onChange={v => update({ footer: { text: v } })}
-                  placeholder="Reply STOP to unsubscribe."
+                  placeholder={t('builder.footerPlaceholder')}
                   maxLength={60}
                 />
-                <p className="text-[11px] text-gray-400">No variables allowed in footer. Max 60 characters.</p>
+                <p className="text-[11px] text-gray-400">{t('builder.footerHint')}</p>
               </Section>
             )}
 
-            {/* Buttons */}
             {template.buttons && (
               <ButtonsEditor
                 buttons={template.buttons}
@@ -964,9 +1155,14 @@ function BuilderContent() {
 
       {/* ── Right: preview ── */}
       <aside className="w-72 flex-shrink-0 border-l border-gray-200 dark:border-white/10 flex flex-col overflow-hidden">
-        <WhatsAppPreview template={template} vars={previewVars} provider={provider} />
+        <WhatsAppPreview
+          template={template}
+          vars={previewVars}
+          onVarChange={(name, value) => setPreviewVars(prev => ({ ...prev, [name]: value }))}
+        />
       </aside>
     </div>
+    </>
   );
 }
 

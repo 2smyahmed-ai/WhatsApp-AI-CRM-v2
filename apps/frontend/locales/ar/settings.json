@@ -1,0 +1,130 @@
+{
+  "title": "الإعدادات",
+  "subtitle": "ربط واتساب وإدارة فريقك وتهيئة مساحة العمل.",
+  "badge": "إعدادات مساحة العمل",
+  "tabs": {
+    "whatsapp": "واتساب",
+    "team": "الفريق",
+    "savedReplies": "الردود المحفوظة",
+    "account": "الحساب",
+    "language": "اللغة"
+  },
+  "whatsapp": {
+    "title": "اتصال واتساب",
+    "description": "إدارة اتصال واتساب ويب",
+    "status": {
+      "connected": "متصل",
+      "disconnected": "غير متصل",
+      "connecting": "جارٍ الاتصال..."
+    },
+    "connectedPhone": "رقم واتساب المتصل: {{phone}}",
+    "scanQR": "امسح رمز QR هذا بواتساب الخاص بك",
+    "noQR": "انقر على اتصال لإنشاء رمز QR.",
+    "connect": "ربط واتساب",
+    "disconnect": "قطع الاتصال",
+    "resetSession": "إعادة تعيين الجلسة",
+    "disconnectConfirm": {
+      "title": "قطع اتصال واتساب",
+      "message": "هل أنت متأكد من رغبتك في قطع اتصال حساب واتساب؟",
+      "confirm": "قطع الاتصال",
+      "cancel": "إلغاء"
+    },
+    "warmup": {
+      "label": "تفعيل حماية التهيئة التدريجية",
+      "description": "يرفع الحدود اليومية تدريجيًا لحماية الرقم الجديد من الحظر. أوقِف هذا الخيار للأرقام النشطة منذ أشهر.",
+      "on": "مفعّل — رقم جديد",
+      "off": "موقوف — رقم راسخ",
+      "saving": "جاري الحفظ…"
+    }
+  },
+  "team": {
+    "title": "أعضاء الفريق",
+    "description": "إدارة صلاحيات الوصول لمساحة العمل",
+    "teamName": "الفريق: {{name}}",
+    "emailPlaceholder": "أدخل البريد الإلكتروني",
+    "selectRole": "اختر الدور",
+    "inviteMember": "دعوة عضو",
+    "noMembers": "لا يوجد أعضاء في الفريق بعد",
+    "roles": {
+      "SYSTEM_MANAGER": "مدير النظام",
+      "EMPLOYEE": "موظف",
+      "ADMIN": "مدير النظام",
+      "TEAM_LEAD": "مدير النظام",
+      "AGENT": "موظف",
+      "ANALYST": "موظف",
+      "VIEWER": "موظف"
+    },
+    "removeMember": "إزالة",
+    "removeConfirm": {
+      "title": "إزالة العضو",
+      "message": "هل أنت متأكد من رغبتك في إزالة {{name}} من الفريق؟",
+      "confirm": "إزالة",
+      "cancel": "إلغاء"
+    }
+  },
+  "savedReplies": {
+    "title": "الردود المحفوظة",
+    "description": "استخدم الاختصارات مثل /شكراً في مربع الرسائل",
+    "shortcutPlaceholder": "/شكراً",
+    "messagePlaceholder": "شكراً لتواصلك معنا. سنرد عليك في أقرب وقت.",
+    "saveReply": "حفظ الرد",
+    "noReplies": "لا توجد ردود محفوظة بعد",
+    "deleteConfirm": {
+      "title": "حذف الرد",
+      "message": "هل أنت متأكد من رغبتك في حذف هذا الرد المحفوظ؟",
+      "confirm": "حذف",
+      "cancel": "إلغاء"
+    }
+  },
+  "account": {
+    "title": "الحساب",
+    "description": "إدارة إعدادات حسابك",
+    "email": "البريد الإلكتروني",
+    "name": "الاسم",
+    "signOut": "تسجيل الخروج",
+    "signOutConfirm": {
+      "title": "تسجيل الخروج",
+      "message": "هل أنت متأكد من رغبتك في تسجيل الخروج؟",
+      "confirm": "تسجيل الخروج",
+      "cancel": "إلغاء"
+    }
+  },
+  "password": {
+    "title": "تغيير كلمة المرور",
+    "description": "حدّث كلمة المرور لتحافظ على حسابك آمناً",
+    "currentPassword": "كلمة المرور الحالية",
+    "currentPasswordPlaceholder": "أدخل كلمة المرور الحالية",
+    "newPassword": "كلمة المرور الجديدة",
+    "newPasswordPlaceholder": "أدخل كلمة المرور الجديدة (بحد أدنى 8 أحرف)",
+    "confirmPassword": "تأكيد كلمة المرور الجديدة",
+    "confirmPasswordPlaceholder": "أكّد كلمة المرور الجديدة",
+    "changeButton": "تغيير كلمة المرور",
+    "changing": "جارٍ تغيير كلمة المرور...",
+    "securityNotice": "لأسباب أمنية، ستحتاج إلى تسجيل الدخول مرة أخرى بعد تغيير كلمة المرور.",
+    "successMessage": "تم تغيير كلمة المرور بنجاح",
+    "errorMessages": {
+      "allFieldsRequired": "جميع الحقول مطلوبة",
+      "passwordMismatch": "كلمات المرور الجديدة غير متطابقة",
+      "passwordTooShort": "يجب أن تكون كلمة المرور الجديدة 8 أحرف على الأقل",
+      "passwordSame": "يجب أن تختلف كلمة المرور الجديدة عن الحالية",
+      "invalidCurrent": "كلمة المرور الحالية غير صحيحة",
+      "generic": "فشل تغيير كلمة المرور"
+    }
+  },
+  "language": {
+    "title": "اللغة والمنطقة",
+    "description": "اختر لغتك المفضلة. ستُحدَّث الواجهة فوراً.",
+    "selectLanguage": "لغة الواجهة",
+    "languages": {
+      "en": "English (الإنجليزية)",
+      "ar": "العربية"
+    },
+    "direction": {
+      "ltr": "من اليسار إلى اليمين",
+      "rtl": "من اليمين إلى اليسار"
+    },
+    "currentLanguage": "اللغة الحالية: {{lang}}",
+    "restartNotice": "تُطبَّق تغييرات اللغة فوراً دون إعادة تحميل.",
+    "saved": "تم حفظ تفضيل اللغة"
+  }
+}

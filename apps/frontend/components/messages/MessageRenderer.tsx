@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Copy, Forward, Reply, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type {
   MessageDTO,
   RenderableBlock,
@@ -22,7 +23,7 @@ export interface LegacyMessage {
   senderType?: 'agent' | 'user' | string;
   direction?: 'INBOUND' | 'OUTBOUND';
   body: string;
-  type?: 'TEXT' | 'IMAGE' | 'DOCUMENT' | 'AUDIO' | 'VIDEO';
+  type?: 'TEXT' | 'IMAGE' | 'DOCUMENT' | 'AUDIO' | 'VIDEO' | 'INTERACTIVE';
   mediaUrl?: string | null;
   mediaMimeType?: string | null;
   mediaFileName?: string | null;
@@ -65,51 +66,62 @@ export function legacyToDto(msg: LegacyMessage): MessageDTO & { _reactions?: Leg
     ? { messageId: msg.replyToId ?? null, externalId: null, preview: msg.replyToBody, kind: 'text' }
     : null;
 
-  // schemaVersion=1 messages already carry renderable from the server
+  // schemaVersion=1 messages carry a pre-computed renderable.
+  // Only use it when it was built with a rich mode — fallback_text renderables
+  // downgrade all media to plain text and must be rebuilt from the raw columns.
   if (msg.schemaVersion === 1 && msg.renderable) {
-    return {
-      schemaVersion: 1,
-      id: msg.id,
-      clientId: msg.clientId ?? msg.id,
-      externalId: null,
-      provider: 'baileys',
-      sessionId: '',
-      conversationId: '',
-      contactPhone: '',
-      teamId: null,
-      direction,
-      content: { kind: 'text', body: msg.body ?? '', previewUrl: false },
-      status,
-      reply,
-      timestamp: msg.timestamp,
-      renderable: msg.renderable,
-      meta: {
-        sequenceNumber: 0,
-        origin: null,
-        errorReason: null,
-        errorCode: null,
-        compatibilityMode: 'fallback_text',
-        timestamps: {},
-      },
-      _reactions: msg.reactions,
-    } as any;
+    const compat = (msg.renderable as RenderablePayload).compatibility;
+    if (!compat || compat.mode !== 'fallback_text') {
+      return {
+        schemaVersion: 1,
+        id: msg.id,
+        clientId: msg.clientId ?? msg.id,
+        externalId: null,
+        provider: 'baileys',
+        sessionId: '',
+        conversationId: '',
+        contactPhone: '',
+        teamId: null,
+        direction,
+        content: { kind: 'text', body: msg.body ?? '', previewUrl: false },
+        status,
+        reply,
+        timestamp: msg.timestamp,
+        renderable: msg.renderable,
+        meta: {
+          sequenceNumber: 0,
+          origin: null,
+          errorReason: null,
+          errorCode: null,
+          compatibilityMode: 'baileys_native',
+          timestamps: {},
+        },
+        _reactions: msg.reactions,
+      } as any;
+    }
+    // fallback_text renderable is stale — fall through to rebuild from raw columns
   }
 
-  // Synthesize RenderablePayload from legacy flat fields
+  // Build RenderablePayload from the raw legacy columns.
+  // For media-type messages we ALWAYS push a media block regardless of whether
+  // mediaUrl is set — MediaBlockView shows a graceful "unavailable" state when
+  // url is null rather than showing a raw "IMAGE" / "AUDIO" text label.
   const blocks: RenderableBlock[] = [];
   const mime = msg.mediaMimeType ?? '';
-  const hasMedia = Boolean(msg.mediaUrl && msg.type !== 'TEXT');
+  const isMediaType = Boolean(msg.type && msg.type !== 'TEXT' && msg.type !== 'INTERACTIVE');
   const isGenericBody = GENERIC_LABELS.has((msg.body ?? '').toUpperCase().trim());
+  // Use mediaCaption as caption; fall back to body only when it's not a generic label
+  const caption = msg.mediaCaption || (!isGenericBody && msg.body ? msg.body : undefined) || undefined;
 
   if (msg.replyToBody) {
     blocks.push({ type: 'reply_quote', preview: msg.replyToBody, kind: 'text' });
   }
 
-  if (hasMedia && msg.mediaUrl) {
+  if (isMediaType) {
     const media: Media = {
       mediaType: deriveMediaType(msg.type, mime),
       mime: mime || 'application/octet-stream',
-      url: msg.mediaUrl,
+      url: msg.mediaUrl ?? null,
       providerMediaId: null,
       fileName: msg.mediaFileName ?? null,
       sizeBytes: null,
@@ -118,20 +130,22 @@ export function legacyToDto(msg: LegacyMessage): MessageDTO & { _reactions?: Leg
       height: null,
       thumbnailUrl: null,
     };
-    blocks.push({ type: 'media', media, caption: msg.mediaCaption ?? undefined });
-  }
-
-  if (msg.body && !(hasMedia && isGenericBody)) {
-    blocks.push({ type: 'body_text', text: msg.body });
+    blocks.push({ type: 'media', media, caption });
+    // Also show non-generic body text as additional text (e.g. caption sent separately)
+    if (msg.body && !isGenericBody && !msg.mediaCaption) {
+      // body IS the caption — already passed above; skip to avoid duplication
+    }
+  } else {
+    if (msg.body) blocks.push({ type: 'body_text', text: msg.body });
   }
 
   if (!blocks.length) blocks.push({ type: 'body_text', text: '' });
 
-  const kind: MessageKind = hasMedia ? 'media' : 'text';
+  const kind: MessageKind = isMediaType ? 'media' : 'text';
   const renderable: RenderablePayload = {
     kind,
     blocks,
-    compatibility: { mode: 'fallback_text', originalKind: kind, effectiveKind: kind, downgraded: false, downgradeReason: null, warnings: [] },
+    compatibility: { mode: 'baileys_native', originalKind: kind, effectiveKind: kind, downgraded: false, downgradeReason: null, warnings: [] },
   };
 
   return {
@@ -155,7 +169,7 @@ export function legacyToDto(msg: LegacyMessage): MessageDTO & { _reactions?: Leg
       origin: null,
       errorReason: null,
       errorCode: null,
-      compatibilityMode: 'fallback_text',
+      compatibilityMode: 'baileys_native',
       timestamps: {},
     },
     _reactions: msg.reactions,
@@ -170,8 +184,34 @@ const API_BASE = typeof window !== 'undefined'
 
 function resolveUrl(url?: string | null): string | null {
   if (!url) return null;
-  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:')) return url;
   return `${API_BASE}${url}`;
+}
+
+// Parse text and return array of text nodes and link elements
+function parseTextWithLinks(text: string): (string | { type: 'link'; url: string; text: string })[] {
+  const urlPattern = /https?:\/\/[^\s<>[\]{}|\\^`]+|www\.[^\s<>[\]{}|\\^`]+/g;
+  const parts: (string | { type: 'link'; url: string; text: string })[] = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = urlPattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    let url = match[0];
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'https://' + url;
+    }
+    parts.push({ type: 'link', url, text: match[0] });
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+
+  return parts.length === 0 ? [text] : parts;
 }
 
 function formatTime(ts: string) {
@@ -224,6 +264,7 @@ function StatusTick({ status }: { status: MessageStatus }) {
 // ── Voice note player ─────────────────────────────────────────────────────────
 
 function VoiceNotePlayer({ src, duration, isFromMe }: { src: string; duration?: number | null; isFromMe: boolean }) {
+  const { t } = useTranslation('chat');
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
@@ -260,12 +301,12 @@ function VoiceNotePlayer({ src, duration, isFromMe }: { src: string; duration?: 
   };
 
   return (
-    <div className={`w-full rounded-2xl border px-3 py-3 ${isFromMe ? 'border-[#25D366]/25 bg-[#DCF8C6]' : 'border-white/10 bg-[#202C33]'}`}>
+    <div className={`w-full rounded-2xl border px-3 py-3 ${isFromMe ? 'border-[#25D366]/25 bg-[#DCF8C6] dark:bg-[#005C4B]/60' : 'border-gray-200 bg-white dark:border-white/10 dark:bg-[#202C33]'}`}>
       <audio ref={audioRef} preload="metadata" className="hidden"><source src={src} /></audio>
       <div className="flex items-start gap-3">
         <button type="button" onClick={toggle}
           className="mt-0.5 flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#25D366] text-white transition hover:bg-[#25D366]/90"
-          aria-label={playing ? 'Pause' : 'Play'}>
+          aria-label={playing ? t('message.pauseAudio') : t('message.playAudio')}>
           {playing
             ? <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current"><path d="M6 5h4v14H6zM14 5h4v14h-4z" /></svg>
             : <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current"><path d="M8 5v14l11-7z" /></svg>}
@@ -273,10 +314,10 @@ function VoiceNotePlayer({ src, duration, isFromMe }: { src: string; duration?: 
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className={`truncate text-sm font-medium ${isFromMe ? 'text-gray-900' : 'text-white'}`}>Voice note</p>
-              <p className={`truncate text-xs ${isFromMe ? 'text-gray-700' : 'text-[#8696A0]'}`}>Audio message</p>
+              <p className="truncate text-sm font-medium text-gray-900 dark:text-[#E9EDEF]">{t('message.voiceNote')}</p>
+              <p className="truncate text-xs text-gray-500 dark:text-[#8696A0]">{t('message.audioSubtitle')}</p>
             </div>
-            <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${isFromMe ? 'bg-white/70 text-gray-800' : 'bg-white/10 text-white'}`}>
+            <span dir="ltr" className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${isFromMe ? 'bg-black/10 text-gray-800 dark:bg-white/15 dark:text-[#E9EDEF]' : 'bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-white'}`}>
               {formatClock(total || 0)}
             </span>
           </div>
@@ -292,10 +333,10 @@ function VoiceNotePlayer({ src, duration, isFromMe }: { src: string; duration?: 
             <input type="range" min={0} max={Math.max(0, total || 0)} step="0.1" value={current}
               onChange={(e) => seek(Number(e.target.value))}
               className={`vn-range ${isFromMe ? 'vn-light' : 'vn-dark'}`}
-              aria-label="Seek" />
-            <div className={`flex items-center justify-between text-xs font-medium ${isFromMe ? 'text-gray-700' : 'text-[#8696A0]'}`}>
-              <span>{formatClock(current)}</span>
-              <span>{formatClock(remaining)}</span>
+              aria-label={t('message.seekAudio')} />
+            <div className="flex items-center justify-between text-xs font-medium text-gray-500 dark:text-[#8696A0]">
+              <span dir="ltr">{formatClock(current)}</span>
+              <span dir="ltr">{formatClock(remaining)}</span>
             </div>
           </div>
         </div>
@@ -314,26 +355,157 @@ function ReplyQuoteView({ block, isFromMe }: { block: { preview: string; kind: M
   );
 }
 
+function formatFileSize(bytes: number | null | undefined): string {
+  if (!bytes) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1048576).toFixed(1)} MB`;
+}
+
+function fileExtension(fileName: string | null | undefined, mime: string | null | undefined): string {
+  if (fileName) {
+    const dot = fileName.lastIndexOf('.');
+    if (dot !== -1) return fileName.slice(dot + 1).toUpperCase();
+  }
+  const mimeMap: Record<string, string> = {
+    'application/pdf': 'PDF',
+    'application/msword': 'DOC',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'DOCX',
+    'application/vnd.ms-excel': 'XLS',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'XLSX',
+    'application/vnd.ms-powerpoint': 'PPT',
+    'application/zip': 'ZIP',
+    'text/plain': 'TXT',
+  };
+  return (mime && mimeMap[mime]) ? mimeMap[mime] : 'FILE';
+}
+
+function FileTypeIcon({ ext, isFromMe }: { ext: string; isFromMe: boolean }) {
+  const colorMap: Record<string, string> = {
+    PDF: 'text-red-400', DOC: 'text-blue-400', DOCX: 'text-blue-400',
+    XLS: 'text-green-400', XLSX: 'text-green-400', PPT: 'text-orange-400',
+    ZIP: 'text-yellow-400', TXT: 'text-gray-400',
+  };
+  const color = colorMap[ext] ?? 'text-gray-500 dark:text-[#8696A0]';
+  return (
+    <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${isFromMe ? 'bg-black/10 dark:bg-white/10' : 'bg-gray-100 dark:bg-white/10'}`}>
+      <svg viewBox="0 0 24 24" className={`h-6 w-6 fill-current ${color}`} aria-hidden>
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM6 20V4h5v7h7v9H6z"/>
+      </svg>
+    </div>
+  );
+}
+
+function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+  const { t } = useTranslation('chat');
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
+        aria-label={t('message.closeImage')}
+      >
+        <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
+      <img
+        src={src}
+        alt={alt}
+        className="max-h-[90vh] max-w-[92vw] rounded-xl object-contain shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      />
+      <a
+        href={src}
+        download
+        onClick={(e) => e.stopPropagation()}
+        className="absolute bottom-4 right-4 flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm text-white hover:bg-white/20 transition-colors"
+      >
+        <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+        {t('message.downloadFile')}
+      </a>
+    </div>
+  );
+}
+
 function MediaBlockView({ media, caption, isFromMe }: { media: Media; caption?: string; isFromMe: boolean }) {
+  const { t } = useTranslation('chat');
   const src = resolveUrl(media.url) ?? undefined;
   const type = media.mediaType;
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [imgError, setImgError] = useState(false);
+  const [imageLoading, setImageLoading] = useState(true);
 
-  if (type === 'image' || type === 'sticker') {
+  if (type === 'sticker') {
+    if (!src || imgError) {
+      return (
+        <div className={`flex h-40 w-40 items-center justify-center rounded-xl ${isFromMe ? 'bg-black/10' : 'bg-white/10'}`}>
+          <svg viewBox="0 0 24 24" className="h-8 w-8 opacity-40 fill-current"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+        </div>
+      );
+    }
     return (
-      <div className={type === 'sticker' ? 'flex justify-center' : undefined}>
-        <img src={src} alt={caption ?? ''} className={type === 'sticker' ? 'max-w-[180px] rounded-xl bg-white/70 p-2' : 'max-h-[360px] w-full rounded-xl object-cover'} />
-        {caption && <p className="mt-1 text-sm leading-5 break-words">{caption}</p>}
+      <div className="flex justify-center py-1">
+        <img src={src} alt={t('message.stickerMessage')} onError={() => setImgError(true)} className="max-w-[180px] rounded-xl bg-white/10 p-2 object-contain" loading="lazy" />
+      </div>
+    );
+  }
+
+  if (type === 'image') {
+    if (!src || imgError) {
+      return (
+        <div className={`flex h-48 w-full items-center justify-center rounded-xl overflow-hidden ${isFromMe ? 'bg-gradient-to-br from-black/20 to-black/10' : 'bg-gradient-to-br from-gray-100 to-gray-50 dark:from-white/20 dark:to-white/10'}`}>
+          <div className="flex flex-col items-center gap-2.5 text-center px-4">
+            <div className={`flex h-12 w-12 items-center justify-center rounded-lg ${isFromMe ? 'bg-black/10' : 'bg-gray-200 dark:bg-white/15'}`}>
+              <svg viewBox="0 0 24 24" className="h-6 w-6 text-gray-500 dark:text-[#8696A0]" fill="currentColor" opacity="0.6"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+            </div>
+            <p className="text-xs font-medium text-gray-600 dark:text-[#AEBAC1]">{t('message.imageUnavailable')}</p>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="overflow-hidden rounded-xl">
+        {lightboxOpen && <ImageLightbox src={src} alt={caption ?? ''} onClose={() => setLightboxOpen(false)} />}
+        <div className="relative">
+          {imageLoading && (
+            <div className="absolute inset-0 bg-gradient-to-br from-gray-200 to-gray-300 dark:from-white/10 dark:to-white/5 animate-pulse rounded-xl" />
+          )}
+          <button type="button" onClick={() => setLightboxOpen(true)} className="block w-full focus:outline-none" aria-label={t('message.viewFullImage')}>
+            <img
+              src={src}
+              alt={caption ?? ''}
+              onError={() => { setImgError(true); setImageLoading(false); }}
+              onLoad={() => setImageLoading(false)}
+              className="max-h-[360px] w-full rounded-xl object-cover transition-opacity hover:opacity-95 cursor-zoom-in"
+              loading="lazy"
+            />
+          </button>
+        </div>
+        {caption && <p className="mt-1.5 text-sm leading-5 break-words">{caption}</p>}
       </div>
     );
   }
 
   if (type === 'video') {
     return (
-      <div>
-        <video controls className="w-full rounded-xl bg-black max-h-[360px]">
-          <source src={src} type={media.mime || 'video/mp4'} />
+      <div className="overflow-hidden rounded-xl">
+        <video
+          controls
+          preload="metadata"
+          className="w-full rounded-xl bg-black max-h-[360px] aspect-video"
+        >
+          {src && <source src={src} type={media.mime || 'video/mp4'} />}
         </video>
-        {caption && <p className="mt-1 text-sm leading-5 break-words">{caption}</p>}
+        {caption && <p className="mt-1.5 text-sm leading-5 break-words">{caption}</p>}
       </div>
     );
   }
@@ -341,24 +513,76 @@ function MediaBlockView({ media, caption, isFromMe }: { media: Media; caption?: 
   if (type === 'audio' || type === 'voice') {
     return src
       ? <VoiceNotePlayer src={src} duration={media.durationSec} isFromMe={isFromMe} />
-      : <p className={`text-xs ${isFromMe ? 'text-cyan-100' : 'text-slate-400'}`}>Audio unavailable</p>;
+      : (
+        <div className={`flex items-center gap-2 rounded-2xl px-3 py-2 ${isFromMe ? 'bg-black/10' : 'bg-gray-100 dark:bg-white/10'}`}>
+          <svg viewBox="0 0 24 24" className="h-5 w-5 opacity-50 fill-current"><path d="M12 3a9 9 0 0 0-9 9h2a7 7 0 0 1 7-7V3z"/></svg>
+          <p className="text-xs text-gray-500 dark:text-[#8696A0]">{t('message.audioUnavailable')}</p>
+        </div>
+      );
   }
 
-  // document
-  if (!src) return <p className={`text-xs ${isFromMe ? 'text-cyan-100' : 'text-slate-400'}`}>Attachment unavailable</p>;
+  // ── Document card ──
+  if (!src) {
+    return (
+      <div className={`flex items-center gap-3 rounded-xl px-3 py-3 ${isFromMe ? 'bg-black/10' : 'bg-gray-50 dark:bg-white/10'}`}>
+        <FileTypeIcon ext={fileExtension(media.fileName, media.mime)} isFromMe={isFromMe} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-gray-900 dark:text-[#E9EDEF]">
+            {media.fileName ?? t('message.attachmentUnavailable')}
+          </p>
+          <p className="text-xs text-gray-500 dark:text-[#8696A0]">{t('message.fileUnavailable')}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const ext = fileExtension(media.fileName, media.mime);
+  const sizeLabel = formatFileSize(media.sizeBytes);
+
   return (
-    <a href={src} target="_blank" rel="noreferrer"
-      className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium ${isFromMe ? 'bg-black/10 text-slate-900' : 'bg-white/10 text-slate-100'}`}>
-      <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 fill-current" aria-hidden>
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/>
-      </svg>
-      {media.fileName ?? 'Download attachment'}
-      {caption && <span className="text-xs opacity-70 ml-1">{caption}</span>}
-    </a>
+    <div className={`rounded-xl overflow-hidden ${isFromMe ? 'bg-black/10' : 'bg-gray-50 dark:bg-white/10'}`}>
+      <div className="flex items-center gap-3 px-3 py-3">
+        <FileTypeIcon ext={ext} isFromMe={isFromMe} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-gray-900 dark:text-[#E9EDEF]">
+            {media.fileName ?? `Attachment.${ext.toLowerCase()}`}
+          </p>
+          <p className="text-xs text-gray-500 dark:text-[#8696A0]">
+            {[ext, sizeLabel].filter(Boolean).join(' · ')}
+          </p>
+        </div>
+      </div>
+      <div className={`flex items-center gap-1 border-t px-3 py-1.5 ${isFromMe ? 'border-black/10' : 'border-gray-200 dark:border-white/10'}`}>
+        <a
+          href={src}
+          download={media.fileName ?? true}
+          className="flex flex-1 items-center justify-center gap-1.5 py-1 text-xs font-medium transition-colors text-[#1D9BF0] hover:text-[#1a91e0]"
+        >
+          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+          {t('message.downloadFile')}
+        </a>
+        <div className={`h-4 w-px ${isFromMe ? 'bg-black/10' : 'bg-gray-200 dark:bg-white/10'}`} />
+        <a
+          href={src}
+          target="_blank"
+          rel="noreferrer"
+          className="flex flex-1 items-center justify-center gap-1.5 py-1 text-xs font-medium transition-colors text-[#1D9BF0] hover:text-[#1a91e0]"
+        >
+          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current"><path d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
+          {t('message.openFile')}
+        </a>
+      </div>
+      {caption && (
+        <div className={`px-3 pb-2 pt-0 border-t ${isFromMe ? 'border-black/10' : 'border-gray-200 dark:border-white/10'}`}>
+          <p className="text-xs text-gray-600 dark:text-[#AEBAC1] break-words">{caption}</p>
+        </div>
+      )}
+    </div>
   );
 }
 
 function BodyTextView({ text, isFromMe }: { text: string; isFromMe: boolean }) {
+  const { t } = useTranslation('chat');
   const ref = useRef<HTMLDivElement | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [clamped, setClamped] = useState(false);
@@ -372,17 +596,31 @@ function BodyTextView({ text, isFromMe }: { text: string; isFromMe: boolean }) {
     });
   }, [text]);
 
+  const parts = parseTextWithLinks(text);
+
   return (
     <div>
-      <div ref={ref} className="text-sm leading-6 break-words"
-        style={expanded
-          ? { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }
-          : { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word', display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 5, overflow: 'hidden' } as any}>
-        {text}
+      <div ref={ref} className={`text-sm leading-6 break-words whitespace-pre-wrap [overflow-wrap:anywhere] [word-break:break-word] ${expanded ? '' : 'line-clamp-5'}`}>
+        {parts.map((part, i) => {
+          if (typeof part === 'string') {
+            return <span key={i}>{part}</span>;
+          }
+          return (
+            <a
+              key={i}
+              href={part.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`font-semibold underline transition-colors ${isFromMe ? 'text-[#1D9BF0] hover:text-[#1a91e0]' : 'text-[#53BDEB] hover:text-[#7ec8ef]'}`}
+            >
+              {part.text}
+            </a>
+          );
+        })}
       </div>
       {clamped && (
         <button type="button" onClick={() => setExpanded((v) => !v)} className="mt-1 text-xs font-semibold text-[#25D366]">
-          {expanded ? 'Show less' : 'Read more'}
+          {expanded ? t('message.showLess') : t('message.readMore')}
         </button>
       )}
     </div>
@@ -391,9 +629,9 @@ function BodyTextView({ text, isFromMe }: { text: string; isFromMe: boolean }) {
 
 function ButtonsView({ blocks, isFromMe }: { blocks: Array<{ type: 'reply_button' | 'url_button' | 'phone_button'; id?: string; title: string; url?: string; phoneNumber?: string; disabled?: boolean }>; isFromMe: boolean }) {
   return (
-    <div className={`mt-2 divide-y border-t ${isFromMe ? 'divide-black/10 border-black/10' : 'divide-white/10 border-white/10'}`}>
+    <div className={`mt-2 divide-y border-t ${isFromMe ? 'divide-black/10 border-black/10' : 'divide-gray-200 border-gray-200 dark:divide-white/10 dark:border-white/10'}`}>
       {blocks.map((b, i) => {
-        const base = `w-full py-2 px-1 text-sm font-medium text-center transition ${isFromMe ? 'text-[#1D9BF0] hover:bg-black/5' : 'text-[#53BDEB] hover:bg-white/5'}`;
+        const base = `w-full py-2 px-1 text-sm font-medium text-center transition text-[#1D9BF0] hover:bg-black/5 dark:text-[#53BDEB] dark:hover:bg-white/5`;
         if (b.type === 'url_button' && b.url) {
           return (
             <a key={i} href={b.url} target="_blank" rel="noreferrer" className={`${base} flex items-center justify-center gap-1`}>
@@ -422,12 +660,13 @@ function ButtonsView({ blocks, isFromMe }: { blocks: Array<{ type: 'reply_button
 }
 
 function ListButtonView({ block, isFromMe }: { block: { buttonText: string; sections: any[] }; isFromMe: boolean }) {
+  const { t } = useTranslation('chat');
   const [open, setOpen] = useState(false);
   return (
     <>
-      <div className={`mt-2 border-t ${isFromMe ? 'border-black/10' : 'border-white/10'}`}>
+      <div className={`mt-2 border-t ${isFromMe ? 'border-black/10' : 'border-gray-200 dark:border-white/10'}`}>
         <button type="button" onClick={() => setOpen(true)}
-          className={`w-full py-2 text-sm font-medium text-center flex items-center justify-center gap-1.5 transition ${isFromMe ? 'text-[#1D9BF0] hover:bg-black/5' : 'text-[#53BDEB] hover:bg-white/5'}`}>
+          className="w-full py-2 text-sm font-medium text-center flex items-center justify-center gap-1.5 transition text-[#1D9BF0] hover:bg-black/5 dark:text-[#53BDEB] dark:hover:bg-white/5">
           <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current" aria-hidden><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
           {block.buttonText}
         </button>
@@ -436,7 +675,7 @@ function ListButtonView({ block, isFromMe }: { block: { buttonText: string; sect
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setOpen(false)}>
           <div className="w-full max-w-md rounded-t-2xl bg-white dark:bg-[#202C33] max-h-[70vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="sticky top-0 flex items-center justify-between border-b border-gray-200 dark:border-white/10 bg-white dark:bg-[#202C33] px-4 py-3">
-              <span className="font-semibold text-gray-900 dark:text-white">Select an option</span>
+              <span className="font-semibold text-gray-900 dark:text-white">{t('message.selectOption')}</span>
               <button type="button" onClick={() => setOpen(false)} className="text-gray-500 dark:text-gray-400 hover:text-gray-700">✕</button>
             </div>
             {block.sections.map((sec: any, si: number) => (
@@ -459,8 +698,9 @@ function ListButtonView({ block, isFromMe }: { block: { buttonText: string; sect
 }
 
 function NumberedOptionsView({ block, isFromMe }: { block: { intro?: string; options: Array<{ number: number; label: string }> }; isFromMe: boolean }) {
-  const textColor = isFromMe ? 'text-gray-900' : 'text-[#E9EDEF]';
-  const mutedColor = isFromMe ? 'text-gray-500' : 'text-[#8696A0]';
+  const { t } = useTranslation('chat');
+  const textColor = 'text-gray-900 dark:text-[#E9EDEF]';
+  const mutedColor = 'text-gray-500 dark:text-[#8696A0]';
   return (
     <div className="space-y-1.5">
       {block.intro && <p className={`text-sm ${textColor}`}>{block.intro}</p>}
@@ -471,7 +711,7 @@ function NumberedOptionsView({ block, isFromMe }: { block: { intro?: string; opt
           </p>
         ))}
       </div>
-      <p className={`text-xs italic ${mutedColor}`}>Reply with the number of your choice.</p>
+      <p className={`text-xs italic ${mutedColor}`}>{t('message.replyWithNumber')}</p>
     </div>
   );
 }
@@ -492,10 +732,11 @@ function LocationView({ block }: { block: { latitude: number; longitude: number;
 }
 
 function TemplateMarkerView({ block, isFromMe }: { block: { templateName: string; language: string }; isFromMe: boolean }) {
+  const { t } = useTranslation('chat');
   return (
-    <div className={`mb-1 flex items-center gap-1 text-xs ${isFromMe ? 'text-gray-500' : 'text-[#8696A0]'}`}>
+    <div className="mb-1 flex items-center gap-1 text-xs text-gray-500 dark:text-[#8696A0]">
       <svg viewBox="0 0 24 24" className="h-3 w-3 fill-current shrink-0" aria-hidden><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
-      <span className="truncate">Template: {block.templateName} ({block.language})</span>
+      <span className="truncate">{t('message.templateLabel', { name: block.templateName, lang: block.language })}</span>
     </div>
   );
 }
@@ -508,12 +749,13 @@ function BlockRenderer({ block, isFromMe, buttonBuffer, onFlush }: {
   buttonBuffer: RenderableBlock[];
   onFlush: (blocks: RenderableBlock[]) => void;
 }) {
+  const { t } = useTranslation('chat');
   switch (block.type) {
     case 'reply_quote':
       return <ReplyQuoteView block={block} isFromMe={isFromMe} />;
 
     case 'header_text':
-      return <p className={`text-sm font-bold leading-snug ${isFromMe ? 'text-gray-900' : 'text-white'}`}>{block.text}</p>;
+      return <p className="text-sm font-bold leading-snug text-gray-900 dark:text-[#E9EDEF]">{block.text}</p>;
 
     case 'header_media':
       return <MediaBlockView media={block.media} isFromMe={isFromMe} />;
@@ -525,7 +767,7 @@ function BlockRenderer({ block, isFromMe, buttonBuffer, onFlush }: {
       return <MediaBlockView media={block.media} caption={block.caption} isFromMe={isFromMe} />;
 
     case 'footer':
-      return <p className={`text-xs ${isFromMe ? 'text-gray-500' : 'text-[#8696A0]'}`}>{block.text}</p>;
+      return <p className="text-xs text-gray-500 dark:text-[#8696A0]">{block.text}</p>;
 
     case 'reply_button':
     case 'url_button':
@@ -538,9 +780,9 @@ function BlockRenderer({ block, isFromMe, buttonBuffer, onFlush }: {
 
     case 'cta_card':
       return (
-        <div className={`mt-2 border-t ${isFromMe ? 'border-black/10' : 'border-white/10'}`}>
+        <div className={`mt-2 border-t ${isFromMe ? 'border-black/10' : 'border-gray-200 dark:border-white/10'}`}>
           <a href={block.url} target="_blank" rel="noreferrer"
-            className={`w-full py-2 text-sm font-medium text-center flex items-center justify-center gap-1.5 transition ${isFromMe ? 'text-[#1D9BF0] hover:bg-black/5' : 'text-[#53BDEB] hover:bg-white/5'}`}>
+            className="w-full py-2 text-sm font-medium text-center flex items-center justify-center gap-1.5 transition text-[#1D9BF0] hover:bg-black/5 dark:text-[#53BDEB] dark:hover:bg-white/5">
             {block.displayText}
             <svg viewBox="0 0 24 24" className="h-3 w-3 fill-current opacity-60" aria-hidden><path d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
           </a>
@@ -555,7 +797,7 @@ function BlockRenderer({ block, isFromMe, buttonBuffer, onFlush }: {
 
     case 'contact_card':
       return (
-        <div className={`flex items-center gap-2 rounded-xl bg-black/10 px-3 py-2 text-sm ${isFromMe ? 'text-gray-900' : 'text-white'}`}>
+        <div className="flex items-center gap-2 rounded-xl bg-black/10 px-3 py-2 text-sm text-gray-900 dark:text-[#E9EDEF]">
           <svg viewBox="0 0 24 24" className="h-8 w-8 shrink-0 fill-gray-400" aria-hidden><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
           <div className="min-w-0">
             {block.contacts.slice(0, 2).map((c, i) => (
@@ -571,8 +813,8 @@ function BlockRenderer({ block, isFromMe, buttonBuffer, onFlush }: {
         <div className="rounded-xl bg-black/10 overflow-hidden">
           {block.image && <MediaBlockView media={block.image} isFromMe={isFromMe} />}
           <div className="px-3 py-2">
-            {block.title && <p className={`text-sm font-medium ${isFromMe ? 'text-gray-900' : 'text-white'}`}>{block.title}</p>}
-            {block.price && <p className={`text-xs ${isFromMe ? 'text-gray-500' : 'text-[#8696A0]'}`}>{block.price}</p>}
+            {block.title && <p className="text-sm font-medium text-gray-900 dark:text-[#E9EDEF]">{block.title}</p>}
+            {block.price && <p className="text-xs text-gray-500 dark:text-[#8696A0]">{block.price}</p>}
           </div>
         </div>
       );
@@ -582,8 +824,8 @@ function BlockRenderer({ block, isFromMe, buttonBuffer, onFlush }: {
 
     case 'unsupported':
       return (
-        <p className={`text-xs italic ${isFromMe ? 'text-gray-500' : 'text-[#8696A0]'}`}>
-          {block.reason || 'Unsupported message type'}
+        <p className="text-xs italic text-gray-500 dark:text-[#8696A0]">
+          {block.reason || t('message.unknownType')}
           {block.providerKind && ` (${block.providerKind})`}
         </p>
       );
@@ -595,68 +837,56 @@ function BlockRenderer({ block, isFromMe, buttonBuffer, onFlush }: {
 
 // ── Bubble footer ─────────────────────────────────────────────────────────────
 
-function BubbleFooter({ timestamp, status, downgraded, isFromMe }: {
+function BubbleFooter({ timestamp, status, compatibility, isFromMe }: {
   timestamp: string;
   status: MessageStatus;
-  downgraded: boolean;
+  compatibility: { downgraded: boolean; mode: string };
   isFromMe: boolean;
 }) {
-  const color = isFromMe ? 'text-gray-500' : 'text-[#8696A0]';
+  const color = 'text-gray-500 dark:text-[#8696A0]';
+  // Only show the downgrade badge for true fallback_text (not baileys_native, which is intentional rich rendering)
+  const showDowngradeBadge = compatibility.downgraded && compatibility.mode === 'fallback_text';
   return (
     <div className={`flex items-center justify-end gap-1 text-xs ${color} mt-1`}>
-      {downgraded && (
-        <span className="mr-0.5 text-[10px] opacity-60" title="Sent as text — buttons unsupported on this conversation">📝</span>
+      {showDowngradeBadge && (
+        <span className="mr-0.5 text-[10px] opacity-60" title="Sent as text fallback">📝</span>
       )}
-      <span>{formatTime(timestamp)}</span>
+      <span dir="ltr">{formatTime(timestamp)}</span>
       {isFromMe && <StatusTick status={status} />}
     </div>
   );
 }
 
-// ── Reaction pills ────────────────────────────────────────────────────────────
-
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
-interface ReactionPillsProps {
-  reactions: LegacyReaction[];
-  messageId: string;
-  conversationId?: string;
-  onUpdate?: (messageId: string, reactions: LegacyReaction[]) => void;
-}
-
-function ReactionPills({ reactions, messageId, conversationId, onUpdate }: ReactionPillsProps) {
-  const [list, setList] = useState<LegacyReaction[]>(reactions);
-  const [pickerOpen, setPickerOpen] = useState(false);
-
-  const reactionsSig = reactions.map(r => `${r.id}${r.emoji}`).join('|');
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { setList(reactions); }, [reactionsSig]);
-
-  async function toggle(emoji: string) {
-    setPickerOpen(false);
-    if (!conversationId) return;
-    try {
-      const token = window.localStorage.getItem('accessToken');
-      const res = await fetch(`${API_BASE}/api/conversations/${conversationId}/messages/${messageId}/reactions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        credentials: 'include',
-        body: JSON.stringify({ emoji }),
-      });
-      if (res.ok) {
-        const updated: LegacyReaction[] = await res.json();
-        setList(updated);
-        onUpdate?.(messageId, updated);
-      }
-    } catch { /* non-critical */ }
-  }
-
-  const grouped = list.reduce<Record<string, number>>((acc, r) => { acc[r.emoji] = (acc[r.emoji] ?? 0) + 1; return acc; }, {});
-
-  return { grouped, toggle, pickerOpen, setPickerOpen };
-}
-
 // ── Main renderer ─────────────────────────────────────────────────────────────
+
+// ── Reaction pills ────────────────────────────────────────────────────────────
+
+function ReactionPills({ grouped, isFromMe, onReact }: {
+  grouped: Record<string, number>;
+  isFromMe: boolean;
+  onReact: (emoji: string) => void;
+}) {
+  const { t } = useTranslation('chat');
+  if (!Object.keys(grouped).length) return null;
+  return (
+    <div className={`flex flex-wrap gap-1 mt-1 ${isFromMe ? 'justify-end' : 'justify-start'}`}>
+      {Object.entries(grouped).map(([emoji, count]) => (
+        <button
+          key={emoji}
+          type="button"
+          onClick={() => onReact(emoji)}
+          className="flex items-center gap-0.5 rounded-full border border-gray-200 dark:border-white/10 bg-white dark:bg-[#202C33] px-2 py-0.5 text-xs shadow-sm hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+          title={t('message.reactWith', { emoji })}
+        >
+          <span>{emoji}</span>
+          {count > 1 && <span className="ml-0.5 font-semibold text-gray-600 dark:text-[#AEBAC1]">{count}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export interface MessageRendererProps {
   message: MessageDTO;
@@ -665,11 +895,12 @@ export interface MessageRendererProps {
   onReactionUpdate?: (messageId: string, reactions: LegacyReaction[]) => void;
   onReply?: (message: MessageDTO) => void;
   onDelete?: (messageId: string) => void;
-  onForward?: (body: string) => void;
+  onForward?: (message: MessageDTO) => void;
   variant?: 'chat' | 'preview';
 }
 
 export function MessageRenderer({ message, reactions: reactionsProp = [], conversationId, onReactionUpdate, onReply, onDelete, onForward, variant = 'chat' }: MessageRendererProps) {
+  const { t } = useTranslation('chat');
   const isFromMe = message.direction === 'outbound';
   const { renderable, status, timestamp } = message;
   const blocks = renderable.blocks;
@@ -738,12 +969,12 @@ export function MessageRenderer({ message, reactions: reactionsProp = [], conver
     setShowMenu(false);
   }
 
-  const menuItemCls = 'w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 dark:text-[#E9EDEF] hover:bg-gray-50 dark:hover:bg-white/5 transition-colors text-left';
+  const menuItemCls = 'w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 dark:text-[#E9EDEF] hover:bg-gray-50 dark:hover:bg-white/5 transition-colors text-start';
 
   const grouped = reactions.reduce<Record<string, number>>((acc, r) => { acc[r.emoji] = (acc[r.emoji] ?? 0) + 1; return acc; }, {});
   const bubbleTone = isFromMe
-    ? 'bg-[#DCF8C6] text-gray-900 shadow-[0_1px_2px_rgba(0,0,0,0.15)]'
-    : 'bg-[#202C33] text-[#E9EDEF] shadow-[0_1px_2px_rgba(0,0,0,0.15)]';
+    ? 'bg-[#DCF8C6] dark:bg-[#005C4B] text-gray-900 dark:text-[#E9EDEF] shadow-[0_1px_2px_rgba(0,0,0,0.12)]'
+    : 'bg-white dark:bg-[#202C33] text-gray-900 dark:text-[#E9EDEF] shadow-[0_1px_2px_rgba(0,0,0,0.08)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.15)]';
 
   // Collect consecutive action buttons into a single group
   const buttonTypes = new Set<RenderableBlock['type']>(['reply_button', 'url_button', 'phone_button']);
@@ -764,7 +995,7 @@ export function MessageRenderer({ message, reactions: reactionsProp = [], conver
 
         {/* Quick reaction picker — floats above bubble, within bounds */}
         {pickerOpen && (
-          <div className={`absolute bottom-full mb-1.5 z-30 flex gap-1.5 rounded-full border border-gray-200 dark:border-white/10 bg-white dark:bg-[#202C33] px-2.5 py-1.5 shadow-xl ${isFromMe ? 'right-0' : 'left-0'}`}>
+          <div className={`absolute bottom-full mb-1.5 z-30 flex gap-1.5 rounded-full border border-gray-200 dark:border-white/10 bg-white dark:bg-[#202C33] px-2.5 py-1.5 shadow-xl ${isFromMe ? 'end-0' : 'start-0'}`}>
             {QUICK_REACTIONS.map((e) => (
               <button key={e} type="button" onClick={() => toggleReaction(e)}
                 className="text-lg leading-none hover:scale-125 transition-transform">{e}</button>
@@ -772,62 +1003,61 @@ export function MessageRenderer({ message, reactions: reactionsProp = [], conver
           </div>
         )}
 
-        {/* Chevron — shows on hover, anchored top-right inside the container */}
+        {/* Chevron — always visible, anchored toward the center */}
         {variant === 'chat' && (
-          <div className="absolute top-1 right-1 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className={`absolute top-0 z-10 ${isFromMe ? 'end-0' : 'start-0'}`}>
             <button
               type="button"
               onClick={() => { setShowMenu(v => !v); setPickerOpen(false); }}
-              className={`flex h-5 w-5 items-center justify-center rounded-full transition-colors ${isFromMe ? 'text-gray-500 hover:bg-black/10' : 'text-[#8696A0] hover:bg-white/10'}`}
-              title="More options"
+              className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${isFromMe ? 'text-gray-600 bg-black/5 hover:bg-black/10' : 'text-[#53BDEB] bg-white/10 hover:bg-white/20'}`}
+              title={t('message.moreOptions')}
             >
-              <ChevronDown className="h-3.5 w-3.5" />
+              <ChevronDown className="h-4 w-4" />
             </button>
+          </div>
+        )}
 
-            {showMenu && (
-              <div className="absolute top-6 right-0 min-w-[170px] rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#233038] shadow-2xl py-1 overflow-hidden">
-                {conversationId && (
-                  <button type="button" onClick={() => { setShowMenu(false); setPickerOpen(true); }} className={menuItemCls}>
-                    <span className="text-base leading-none">😊</span>
-                    <span>React</span>
-                  </button>
-                )}
-                {onReply && (
-                  <button type="button" onClick={() => { setShowMenu(false); onReply(message); }} className={menuItemCls}>
-                    <Reply className="h-4 w-4 shrink-0" />
-                    <span>Reply</span>
-                  </button>
-                )}
-                {onForward && (
-                  <button type="button" onClick={() => { setShowMenu(false); onForward(messageText || (message.content as any)?.body || ''); }} className={menuItemCls}>
-                    <Forward className="h-4 w-4 shrink-0" />
-                    <span>Forward</span>
-                  </button>
-                )}
-                {messageText && (
-                  <button type="button" onClick={handleCopy} className={menuItemCls}>
-                    <Copy className="h-4 w-4 shrink-0" />
-                    <span>Copy</span>
-                  </button>
-                )}
-                {isFromMe && onDelete && (
-                  <>
-                    <div className="my-1 h-px bg-gray-100 dark:bg-white/10" />
-                    <button type="button" onClick={() => { setShowMenu(false); onDelete(message.id); }}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-left">
-                      <Trash2 className="h-4 w-4 shrink-0" />
-                      <span>Delete</span>
-                    </button>
-                  </>
-                )}
-              </div>
+        {variant === 'chat' && showMenu && (
+          <div className={`absolute top-6 z-30 min-w-[170px] rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#233038] shadow-2xl py-1 overflow-hidden ${isFromMe ? 'end-0' : 'start-0'}`}>
+            {conversationId && (
+              <button type="button" onClick={() => { setShowMenu(false); setPickerOpen(true); }} className={menuItemCls}>
+                <span className="text-base leading-none">😊</span>
+                <span>{t('message.reactMessage')}</span>
+              </button>
+            )}
+            {onReply && (
+              <button type="button" onClick={() => { setShowMenu(false); onReply(message); }} className={menuItemCls}>
+                <Reply className="h-4 w-4 shrink-0" />
+                <span>{t('message.replyMessage')}</span>
+              </button>
+            )}
+            {onForward && (
+              <button type="button" onClick={() => { setShowMenu(false); onForward(message); }} className={menuItemCls}>
+                <Forward className="h-4 w-4 shrink-0" />
+                <span>{t('message.forwardMessage')}</span>
+              </button>
+            )}
+            {messageText && (
+              <button type="button" onClick={handleCopy} className={menuItemCls}>
+                <Copy className="h-4 w-4 shrink-0" />
+                <span>{t('message.copyMessage')}</span>
+              </button>
+            )}
+            {isFromMe && onDelete && message.id && (
+              <>
+                <div className="my-1 h-px bg-gray-100 dark:bg-white/10" />
+                <button type="button" onClick={() => { setShowMenu(false); if (message.id) onDelete(message.id); }}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-start">
+                  <Trash2 className="h-4 w-4 shrink-0" />
+                  <span>{t('message.deleteMessage')}</span>
+                </button>
+              </>
             )}
           </div>
         )}
 
         {/* Bubble */}
-        <div className={`inline-block w-fit rounded-xl px-3 py-2 ${bubbleTone}`}
-          style={{ minWidth: segments.some(s => s.kind === 'buttons') ? '200px' : undefined }}>
+        <div className={`inline-block w-fit px-3 py-2 ${bubbleTone} ${segments.some(s => s.kind === 'buttons') ? 'min-w-[200px]' : ''} ${isFromMe ? 'rounded-xl rounded-se-sm' : 'rounded-xl rounded-ss-sm'}`}>
 
           <div className="space-y-1.5">
             {segments.map((seg, i) => {
@@ -841,26 +1071,15 @@ export function MessageRenderer({ message, reactions: reactionsProp = [], conver
           {status === 'failed' && isFromMe && (
             <div className="mt-1.5 flex items-center gap-1.5 rounded-lg bg-red-500/10 px-2 py-1 text-xs text-red-500">
               <span>⚠</span>
-              <span>Failed to send</span>
+              <span>{t('message.failedToSend')}</span>
             </div>
           )}
 
-          <BubbleFooter timestamp={timestamp} status={status} downgraded={renderable.compatibility.downgraded} isFromMe={isFromMe} />
+          <BubbleFooter timestamp={timestamp} status={status} compatibility={renderable.compatibility} isFromMe={isFromMe} />
         </div>
 
         {/* Reaction pills — outside bubble for clean layout */}
-        {Object.keys(grouped).length > 0 && (
-          <div className={`flex flex-wrap gap-1 mt-1 ${isFromMe ? 'justify-end' : 'justify-start'}`}>
-            {Object.entries(grouped).map(([emoji, count]) => (
-              <button key={emoji} type="button" onClick={() => toggleReaction(emoji)}
-                className="flex items-center gap-0.5 rounded-full border border-gray-200 dark:border-white/10 bg-white dark:bg-[#202C33] px-2 py-0.5 text-xs shadow-sm hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-                title={`React with ${emoji}`}>
-                <span>{emoji}</span>
-                {count > 1 && <span className="ml-0.5 font-semibold text-gray-600 dark:text-[#AEBAC1]">{count}</span>}
-              </button>
-            ))}
-          </div>
-        )}
+        <ReactionPills grouped={grouped} isFromMe={isFromMe} onReact={toggleReaction} />
       </div>
     </div>
   );
@@ -874,7 +1093,7 @@ interface LegacyMessageBubbleProps {
   onReactionUpdate?: (messageId: string, reactions: LegacyReaction[]) => void;
   onReply?: (message: LegacyMessage) => void;
   onDelete?: (messageId: string) => void;
-  onForward?: (body: string) => void;
+  onForward?: (message: any) => void;
 }
 
 export function LegacyMessageBubble({ message, conversationId, onReactionUpdate, onReply, onDelete, onForward }: LegacyMessageBubbleProps) {
@@ -887,7 +1106,7 @@ export function LegacyMessageBubble({ message, conversationId, onReactionUpdate,
       onReactionUpdate={onReactionUpdate}
       onReply={onReply ? () => onReply(message) : undefined}
       onDelete={onDelete}
-      onForward={onForward}
+      onForward={onForward ? (msg) => onForward(message) : undefined}
     />
   );
 }

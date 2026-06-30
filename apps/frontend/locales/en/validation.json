@@ -1,0 +1,20 @@
+{
+  "required": "{{field}} is required",
+  "email": "Enter a valid email address",
+  "phone": "Enter a valid phone number (e.g. +966501234567)",
+  "minLength": "Must be at least {{min}} characters",
+  "maxLength": "Must be no more than {{max}} characters",
+  "min": "Must be at least {{min}}",
+  "max": "Must be no more than {{max}}",
+  "url": "Enter a valid URL",
+  "unique": "This {{field}} is already taken",
+  "passwordMatch": "Passwords do not match",
+  "invalidDate": "Enter a valid date",
+  "futureDate": "Date must be in the future",
+  "pastDate": "Date must be in the past",
+  "shortcut": "Shortcut must start with /",
+  "templateName": "Template name can only contain lowercase letters, numbers, and underscores",
+  "buttonLimit": "Maximum {{max}} buttons allowed",
+  "bodyRequired": "Message body is required",
+  "recipientsRequired": "Select at least one recipient"
+}

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Plus, Workflow, Zap } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import RuleCard from '../../../components/automations/RuleCard';
 import RuleForm from '../../../components/automations/RuleForm';
 import FlowBuilder from '../../../components/automations/FlowBuilder';
@@ -39,6 +40,7 @@ interface AutomationFlow {
 type Tab = 'rules' | 'flows';
 
 export default function AutomationsPage() {
+  const { t } = useTranslation(['common', 'sidebar']);
   const [tab, setTab] = useState<Tab>('rules');
 
   // Rules state
@@ -107,7 +109,7 @@ export default function AutomationsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 overflow-y-auto">
       <section className="overflow-hidden rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#111B21] p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-2xl">
@@ -115,7 +117,7 @@ export default function AutomationsPage() {
               <Workflow className="h-3.5 w-3.5" />
               Automation center
             </div>
-            <h1 className="mt-3 text-3xl font-semibold text-gray-900 dark:text-white">Automations</h1>
+            <h1 className="mt-3 text-3xl font-semibold text-gray-900 dark:text-white">{t('sidebar:nav.automations')}</h1>
             <p className="mt-1.5 text-sm text-gray-500 dark:text-[#8696A0]">
               Simple reply rules and multi-step drip flows.
             </p>
@@ -160,7 +162,7 @@ export default function AutomationsPage() {
         <>
           {rules.length === 0 && (
             <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#111B21] p-10 text-center text-sm text-gray-500 dark:text-[#8696A0]">
-              No automation rules yet. Click "Add Rule" to create one.
+              {t('common:empty.title')}
             </div>
           )}
           <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
@@ -181,7 +183,7 @@ export default function AutomationsPage() {
         <>
           {flows.length === 0 && (
             <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#111B21] p-10 text-center text-sm text-gray-500 dark:text-[#8696A0]">
-              No multi-step flows yet. Click "Add Flow" to create one.
+              {t('common:empty.title')}
             </div>
           )}
           <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
@@ -206,7 +208,7 @@ export default function AutomationsPage() {
                         : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-[#8696A0]'
                     }`}
                   >
-                    {flow.isActive ? 'Active' : 'Paused'}
+                    {flow.isActive ? t('common:status.active') : t('common:status.scheduled')}
                   </button>
                 </div>
 
@@ -230,14 +232,14 @@ export default function AutomationsPage() {
                     onClick={() => { setEditingFlow(flow); setShowFlowBuilder(true); }}
                     className="flex-1 rounded-lg border border-gray-200 dark:border-white/10 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
                   >
-                    Edit
+                    {t('common:actions.edit')}
                   </button>
                   <button
                     type="button"
                     onClick={() => handleDeleteFlow(flow.id)}
                     className="flex-1 rounded-lg border border-red-200 dark:border-red-500/30 py-1.5 text-xs font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
                   >
-                    Delete
+                    {t('common:actions.delete')}
                   </button>
                 </div>
               </div>

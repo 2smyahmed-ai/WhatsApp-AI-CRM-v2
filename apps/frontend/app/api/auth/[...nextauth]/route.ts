@@ -1,7 +1,10 @@
 import NextAuth from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
+// These calls run server-side (inside the frontend container), so prefer an
+// internal backend URL (e.g. http://backend:4000) to avoid hairpinning out
+// through the public reverse proxy. Falls back to the public URL for local dev.
+const API_BASE_URL = process.env.BACKEND_INTERNAL_URL || process.env.NEXT_PUBLIC_API_URL || '';
 
 declare module 'next-auth' {
   interface User {
@@ -14,6 +17,7 @@ declare module 'next-auth' {
   interface Session {
     accessToken: string;
     refreshToken: string;
+    error?: string;
     user: {
       id: string;
       name?: string | null;
@@ -28,9 +32,48 @@ declare module 'next-auth/jwt' {
   interface JWT {
     accessToken: string;
     refreshToken: string;
+    accessTokenExpires: number;
     userId: string;
     role: string;
     teamId: string | null;
+    error?: string;
+  }
+}
+
+// Read the `exp` claim (ms) out of a backend JWT without verifying it — we only
+// need to know when to proactively refresh. Returns 0 if it can't be parsed.
+function getTokenExpiry(token: string): number {
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+    return typeof payload.exp === 'number' ? payload.exp * 1000 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+// Exchange the (long-lived) refresh token for a fresh access token via the
+// backend. Runs server-side inside the jwt() callback, so it has access to the
+// refresh token stored in the NextAuth JWT.
+async function refreshAccessToken(token: import('next-auth/jwt').JWT) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+      method: 'POST',
+      headers: token.refreshToken ? { Authorization: `Bearer ${token.refreshToken}` } : {},
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data?.token) throw new Error('Refresh failed');
+
+    return {
+      ...token,
+      accessToken: data.token,
+      accessTokenExpires: getTokenExpiry(data.token),
+      role: data.user?.role ?? token.role,
+      teamId: data.user?.teamId ?? token.teamId,
+      error: undefined,
+    };
+  } catch {
+    // Surface the failure so the UI can force a re-login instead of looping 401s.
+    return { ...token, accessToken: '', error: 'RefreshAccessTokenError' };
   }
 }
 
@@ -77,39 +120,33 @@ const handler = NextAuth({
   session: { strategy: 'jwt' },
   callbacks: {
     async jwt({ token, user }) {
+      // Initial sign-in: persist the tokens minted by the backend.
       if (user) {
-        token.accessToken  = user.token;
-        token.refreshToken = user.refreshToken;
-        token.userId       = user.id;
-        token.role         = user.role;
-        token.teamId       = user.teamId;
+        token.accessToken        = user.token;
+        token.refreshToken       = user.refreshToken;
+        token.accessTokenExpires = getTokenExpiry(user.token);
+        token.userId             = user.id;
+        token.role               = user.role;
+        token.teamId             = user.teamId;
         return token;
       }
 
-      if (token.accessToken) return token;
-
-      try {
-        const refresh = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
-          method: 'POST',
-          credentials: 'include',
-        });
-        const data = await refresh.json();
-        if (refresh.ok && data.token) {
-          token.accessToken = data.token;
-          if (data.user) {
-            token.role   = data.user.role   ?? token.role;
-            token.teamId = data.user.teamId ?? token.teamId;
-          }
-        }
-      } catch {
-        token.accessToken = '';
+      // Subsequent calls: reuse the access token while it's still valid
+      // (30s leeway), otherwise refresh it using the stored refresh token.
+      if (
+        token.accessToken &&
+        token.accessTokenExpires &&
+        Date.now() < token.accessTokenExpires - 30_000
+      ) {
+        return token;
       }
 
-      return token;
+      return await refreshAccessToken(token);
     },
     async session({ session, token }) {
       session.accessToken  = token.accessToken as string;
       session.refreshToken = token.refreshToken as string;
+      session.error        = token.error;
       session.user = {
         ...session.user,
         id:     token.userId as string,

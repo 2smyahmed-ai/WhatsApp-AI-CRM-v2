@@ -1,30 +1,55 @@
 'use client';
 
 let audioContext: AudioContext | null = null;
+let gestureReceived = false;
+let audioUnlockBound = false;
 
-function getAudioContext(): AudioContext | null {
+function createAudioContext(): AudioContext | null {
   if (typeof window === 'undefined') return null;
-  if (!audioContext) {
-    try {
-      audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    } catch {
-      return null;
-    }
+  try {
+    return new (window.AudioContext || (window as any).webkitAudioContext)();
+  } catch {
+    return null;
   }
+}
+
+/**
+ * Returns the AudioContext only after a user gesture has been received.
+ * Avoids the "AudioContext was not allowed to start" browser warning.
+ */
+function getAudioContext(): AudioContext | null {
+  if (!gestureReceived) return null;
+  if (!audioContext) audioContext = createAudioContext();
   return audioContext;
+}
+
+/**
+ * Call once on app mount. Defers AudioContext creation until the user's first
+ * click/keypress/touch so the browser autoplay policy is satisfied.
+ */
+export function primeNotificationSound() {
+  if (typeof window === 'undefined' || audioUnlockBound) return;
+  audioUnlockBound = true;
+  const unlock = () => {
+    gestureReceived = true;
+    if (!audioContext) audioContext = createAudioContext();
+    // Do NOT call resume() here — Chrome warns even inside gesture handlers.
+    // A context created during a gesture starts in "running" state automatically.
+  };
+  window.addEventListener('pointerdown', unlock, { once: false, passive: true });
+  window.addEventListener('keydown', unlock, { once: false });
+  window.addEventListener('touchstart', unlock, { once: false, passive: true });
 }
 
 /** Play a short, WhatsApp-like notification chime using the Web Audio API */
 export function playNotificationSound() {
   const ctx = getAudioContext();
-  if (!ctx) return;
-
-  // Resume context if suspended (browser autoplay policy)
-  if (ctx.state === 'suspended') ctx.resume();
+  // If context isn't running (suspended or closed) just skip — no resume() call
+  // to avoid the Chrome autoplay warning. Sound will play after next gesture.
+  if (!ctx || ctx.state !== 'running') return;
 
   const now = ctx.currentTime;
 
-  // Two-tone chime: high note then lower
   const notes = [
     { freq: 1200, start: 0, duration: 0.1 },
     { freq: 880, start: 0.12, duration: 0.15 },
@@ -53,26 +78,30 @@ export async function requestNotificationPermission(): Promise<boolean> {
   return result === 'granted';
 }
 
-/** Show a browser notification */
-export function showBrowserNotification(title: string, body: string, options?: { icon?: string; tag?: string }) {
+/** Show a browser notification. Clicking it focuses the tab and navigates to `href`. */
+export function showBrowserNotification(
+  title: string,
+  body: string,
+  options?: { icon?: string; tag?: string; href?: string },
+) {
   if (typeof window === 'undefined' || !('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;
-  if (document.hasFocus()) return; // don't spam when user is looking at the tab
+  if (document.hasFocus()) return;
 
-  new Notification(title, {
+  const n = new Notification(title, {
     body,
-    icon: options?.icon || '/favicon.ico',
+    icon: options?.icon || '/icon.svg',
     tag: options?.tag,
-    silent: true, // we play our own sound
+    silent: true,
   });
-}
 
-/** Combined: play sound + show browser notification for a new inbound message */
-export function notifyNewMessage(contactName: string, body: string, conversationId: string) {
-  playNotificationSound();
-  showBrowserNotification(
-    `New message from ${contactName}`,
-    body || 'Sent a message',
-    { tag: `conv-${conversationId}` },
-  );
+  if (options?.href) {
+    n.onclick = () => {
+      try {
+        window.focus();
+        window.location.href = options.href!;
+      } catch { /* ignore */ }
+      n.close();
+    };
+  }
 }

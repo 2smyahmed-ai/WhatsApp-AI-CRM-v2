@@ -1,0 +1,64 @@
+{
+  "title": "الصفقات",
+  "subtitle": "تتبع الفرص عبر مسار المبيعات — تتزامن التحديثات فورياً.",
+  "badge": "مسار المبيعات",
+  "newDeal": "صفقة جديدة",
+  "editDeal": "تعديل الصفقة",
+  "totalDeals": "إجمالي الصفقات",
+  "pipeline": "المسار",
+  "won": "المُغلقة",
+  "winRate": "معدل الفوز",
+  "stages": {
+    "NEW": "عملاء جدد",
+    "INTERESTED": "مهتمون",
+    "NEGOTIATION": "قيد التفاوض",
+    "CLOSED": "مُغلقة / فائزة"
+  },
+  "emptyStage": {
+    "NEW": "لا يوجد عملاء جدد بعد.",
+    "INTERESTED": "لا يوجد عملاء مهتمون.",
+    "NEGOTIATION": "لا شيء قيد التفاوض.",
+    "CLOSED": "لا توجد صفقات مُغلقة بعد."
+  },
+  "addDeal": "إضافة صفقة",
+  "noContact": "بدون جهة اتصال",
+  "unassigned": "غير مُعيَّن",
+  "form": {
+    "contact": "جهة الاتصال",
+    "selectContact": "اختر جهة اتصال",
+    "title": "العنوان *",
+    "titlePlaceholder": "عنوان الفرصة",
+    "stage": "المرحلة",
+    "value": "القيمة ($)",
+    "assignedTo": "مُعيَّن إلى",
+    "unassigned": "غير مُعيَّن",
+    "notes": "ملاحظات",
+    "notesPlaceholder": "ملاحظات داخلية حول هذه الصفقة...",
+    "cancel": "إلغاء",
+    "save": "حفظ",
+    "update": "تحديث الصفقة",
+    "create": "إنشاء الصفقة",
+    "saving": "جارٍ الحفظ..."
+  },
+  "deleteConfirm": {
+    "title": "حذف هذه الصفقة؟",
+    "message": "سيتم حذف \"{{title}}\" نهائياً.",
+    "confirm": "نعم، احذف",
+    "cancel": "إلغاء"
+  },
+  "timeAgo": {
+    "justNow": "الآن",
+    "minutesAgo": "منذ {{count}} دقيقة",
+    "hoursAgo": "منذ {{count}} ساعة",
+    "daysAgo": "منذ {{count}} يوم"
+  },
+  "toast": {
+    "created": "تم إنشاء الصفقة.",
+    "updated": "تم تحديث الصفقة.",
+    "deleted": "تم حذف الصفقة.",
+    "saveFailed": "فشل حفظ الصفقة",
+    "deleteFailed": "فشل حذف الصفقة",
+    "loadFailed": "فشل تحميل الصفقات",
+    "advanceFailed": "فشل الانتقال للمرحلة التالية"
+  }
+}

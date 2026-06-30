@@ -3,56 +3,49 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCircle2, Circle, ChevronRight, X, Wifi, UserPlus, MessageSquare, Zap } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { api } from '@/lib/api';
 
 const STORAGE_KEY = 'crm_onboarding_dismissed';
 
-interface Step {
-  id: string;
-  icon: React.ElementType;
-  title: string;
-  description: string;
-  action: string;
-  href: string;
-}
-
-const STEPS: Step[] = [
-  {
-    id: 'connect_wa',
-    icon: Wifi,
-    title: 'Connect WhatsApp',
-    description: 'Scan the QR code to link your WhatsApp account.',
-    action: 'Go to WhatsApp',
-    href: '/settings',
-  },
-  {
-    id: 'add_contact',
-    icon: UserPlus,
-    title: 'Add your first contact',
-    description: 'Import or create a contact to start conversations.',
-    action: 'Go to Contacts',
-    href: '/contacts',
-  },
-  {
-    id: 'send_message',
-    icon: MessageSquare,
-    title: 'Send your first message',
-    description: 'Open a conversation and reply to a contact.',
-    action: 'Go to Conversations',
-    href: '/conversations',
-  },
-  {
-    id: 'create_automation',
-    icon: Zap,
-    title: 'Create an automation',
-    description: 'Set up a keyword reply or multi-step flow.',
-    action: 'Go to Automations',
-    href: '/automations',
-  },
-];
-
 export default function OnboardingWizard() {
+  const { t } = useTranslation('common');
   const router = useRouter();
+
+  const STEPS = [
+    {
+      id: 'connect_wa',
+      icon: Wifi,
+      title: t('onboarding.connectWa.title'),
+      description: t('onboarding.connectWa.description'),
+      action: t('onboarding.connectWa.action'),
+      href: '/settings',
+    },
+    {
+      id: 'add_contact',
+      icon: UserPlus,
+      title: t('onboarding.addContact.title'),
+      description: t('onboarding.addContact.description'),
+      action: t('onboarding.addContact.action'),
+      href: '/contacts',
+    },
+    {
+      id: 'send_message',
+      icon: MessageSquare,
+      title: t('onboarding.sendMessage.title'),
+      description: t('onboarding.sendMessage.description'),
+      action: t('onboarding.sendMessage.action'),
+      href: '/conversations',
+    },
+    {
+      id: 'create_automation',
+      icon: Zap,
+      title: t('onboarding.createAutomation.title'),
+      description: t('onboarding.createAutomation.description'),
+      action: t('onboarding.createAutomation.action'),
+      href: '/automations',
+    },
+  ];
   const [visible, setVisible] = useState(false);
   const [completedSteps, setCompleted] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -104,14 +97,14 @@ export default function OnboardingWizard() {
       {/* Header */}
       <div className="flex items-center justify-between bg-gradient-to-r from-[#25D366] to-[#128C7E] px-4 py-3">
         <div>
-          <p className="text-sm font-bold text-white">Getting Started</p>
-          <p className="text-xs text-white/80">{completedSteps.size}/{STEPS.length} steps complete</p>
+          <p className="text-sm font-bold text-white">{t('onboarding.title')}</p>
+          <p className="text-xs text-white/80">{t('onboarding.stepsProgress', { done: completedSteps.size, total: STEPS.length })}</p>
         </div>
         <button
           type="button"
           onClick={dismiss}
           className="rounded-lg p-1 text-white/70 hover:bg-white/20 transition-colors"
-          aria-label="Dismiss onboarding"
+          aria-label={t('onboarding.dismissLabel')}
         >
           <X className="h-4 w-4" />
         </button>
@@ -152,7 +145,7 @@ export default function OnboardingWizard() {
                   onClick={() => router.push(step.href)}
                   className="shrink-0 mt-0.5 rounded-lg bg-[#25D366]/10 px-2 py-1 text-xs font-medium text-[#25D366] hover:bg-[#25D366]/20 transition-colors flex items-center gap-1"
                 >
-                  Go <ChevronRight className="h-3 w-3" />
+                  {t('onboarding.go')} <ChevronRight className="h-3 w-3" />
                 </button>
               )}
             </div>
@@ -162,13 +155,13 @@ export default function OnboardingWizard() {
 
       {allDone && (
         <div className="px-4 py-3 bg-[#25D366]/10 text-center">
-          <p className="text-sm font-semibold text-[#25D366]">🎉 All set! You are ready to go.</p>
+          <p className="text-sm font-semibold text-[#25D366]">{t('onboarding.allDone')}</p>
           <button
             type="button"
             onClick={dismiss}
             className="mt-2 text-xs text-gray-500 dark:text-[#8696A0] hover:underline"
           >
-            Dismiss
+            {t('onboarding.dismiss')}
           </button>
         </div>
       )}

@@ -1,9 +1,18 @@
 // ─── Canonical Template Schema ────────────────────────────────────────────────
 // Single source of truth for all template operations.
-// Used by: builder state, validator, preview renderer, Meta compiler, Baileys compiler, DB storage.
+// Baileys-first: templates are reusable WhatsApp message compositions.
+// No Meta approval required. All types reflect what Baileys can actually send.
 
-export type MetaCategory = 'MARKETING' | 'UTILITY' | 'AUTHENTICATION'
-export type Provider = 'meta' | 'baileys'
+export type TemplateCategory =
+  | 'GENERAL'
+  | 'ONBOARDING'
+  | 'SALES'
+  | 'SUPPORT'
+  | 'ECOMMERCE'
+  | 'APPOINTMENTS'
+  | 'FOLLOW_UP'
+  | string  // allow legacy DB values
+
 export type TemplateLanguage = string // 'en_US' | 'ar' | 'fr' | 'es' | etc.
 
 // ── Header ────────────────────────────────────────────────────────────────────
@@ -16,20 +25,17 @@ export type TextHeader = {
 export type ImageHeader = {
   type: 'IMAGE'
   url?: string
-  handle?: string // Meta media handle (from upload API)
 }
 
 export type VideoHeader = {
   type: 'VIDEO'
   url?: string
-  handle?: string
 }
 
 export type DocumentHeader = {
   type: 'DOCUMENT'
   url?: string
   filename?: string
-  handle?: string
 }
 
 export type CanonicalHeader = TextHeader | ImageHeader | VideoHeader | DocumentHeader
@@ -38,13 +44,13 @@ export type CanonicalHeader = TextHeader | ImageHeader | VideoHeader | DocumentH
 
 export type QuickReplyButton = {
   type: 'QUICK_REPLY'
-  text: string // max 25 chars
+  text: string // max 60 chars (Baileys; auto-downgraded to numbered text)
 }
 
 export type UrlButton = {
   type: 'URL'
   text: string  // max 25 chars
-  url: string   // can include {{1}} for dynamic suffix
+  url: string   // can include {{variable}} for dynamic suffix
 }
 
 export type PhoneButton = {
@@ -55,24 +61,22 @@ export type PhoneButton = {
 
 export type CanonicalButton = QuickReplyButton | UrlButton | PhoneButton
 
-export type ButtonGroupType = 'QUICK_REPLY' | 'CALL_TO_ACTION'
-
 // ── Canonical Template ────────────────────────────────────────────────────────
 
 export interface CanonicalTemplate {
   name: string
-  category: MetaCategory
+  category: TemplateCategory
   language: TemplateLanguage
 
   header?: CanonicalHeader  // optional
-  body: { text: string }    // required, max 1024 chars, supports {{name}} or {{1}}
+  body: { text: string }    // required, max 4096 chars (WhatsApp limit)
   footer?: { text: string } // optional, max 60 chars, NO variables
-  buttons?: CanonicalButton[] // optional, max 3 QR or max 2 CTA (1 URL + 1 PHONE)
+  buttons?: CanonicalButton[] // optional — sent as numbered text via Baileys
 
-  // Internal metadata — stored in DB, not sent to Meta
+  // Internal metadata — stored in DB
   _meta?: {
-    variableNames?: string[]              // ordered: ["name","order_id"] → {{1}},{{2}}
-    description?: string                  // shown in presets library
+    variableNames?: string[]               // ordered: ["name","order_id"]
+    description?: string                   // shown in presets library
     previewValues?: Record<string, string> // sample values for live preview
   }
 }
@@ -97,30 +101,6 @@ export interface RenderableTemplate {
   }>
 }
 
-// ── Meta API types ────────────────────────────────────────────────────────────
-
-export type MetaComponentType = 'HEADER' | 'BODY' | 'FOOTER' | 'BUTTONS'
-
-export interface MetaComponent {
-  type: MetaComponentType
-  format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT'
-  text?: string
-  buttons?: MetaApiButton[]
-  example?: {
-    header_handle?: string[]
-    header_url?: string[]
-    header_text?: string[]
-    body_text?: string[][]
-  }
-}
-
-export interface MetaApiButton {
-  type: 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER'
-  text: string
-  url?: string
-  phone_number?: string
-}
-
 // ── Validation types ──────────────────────────────────────────────────────────
 
 export type ValidationLevel = 'error' | 'warning' | 'info'
@@ -129,13 +109,12 @@ export interface ValidationIssue {
   level: ValidationLevel
   field?: 'name' | 'category' | 'language' | 'header' | 'body' | 'footer' | 'buttons'
   message: string
-  downgrade?: string // what Baileys will do when this feature is unsupported
+  downgrade?: string // what Baileys will do (auto-format)
 }
 
 export interface ValidationResult {
-  valid: boolean           // no errors
-  metaReady: boolean       // valid + all required Meta fields present
-  baileysSupported: boolean // always true — Baileys always has a plaintext fallback
+  valid: boolean     // no errors
+  sendable: boolean  // valid + ready to send via Baileys
   issues: ValidationIssue[]
   errors: number
   warnings: number
@@ -174,8 +153,14 @@ export const TEMPLATE_LANGUAGES: { code: string; label: string }[] = [
   { code: 'id',    label: 'Indonesian' },
 ]
 
-export const META_CATEGORIES: { value: MetaCategory; label: string; desc: string }[] = [
-  { value: 'MARKETING',       label: 'Marketing',       desc: 'Promotions, offers, announcements' },
-  { value: 'UTILITY',         label: 'Utility',         desc: 'Order updates, alerts, reminders' },
-  { value: 'AUTHENTICATION',  label: 'Authentication',  desc: 'OTPs and verification codes' },
+// ── Category options ──────────────────────────────────────────────────────────
+
+export const TEMPLATE_CATEGORIES: { value: TemplateCategory; label: string; desc: string }[] = [
+  { value: 'GENERAL',      label: 'General',      desc: 'General purpose messages' },
+  { value: 'ONBOARDING',   label: 'Onboarding',   desc: 'Welcome and onboarding flows' },
+  { value: 'SALES',        label: 'Sales',         desc: 'Promotions, offers, win-back' },
+  { value: 'SUPPORT',      label: 'Support',       desc: 'Customer support and tickets' },
+  { value: 'ECOMMERCE',    label: 'E-commerce',    desc: 'Orders, shipping, payments' },
+  { value: 'APPOINTMENTS', label: 'Appointments',  desc: 'Bookings and reminders' },
+  { value: 'FOLLOW_UP',    label: 'Follow-up',     desc: 'Follow-ups and feedback' },
 ]

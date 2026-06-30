@@ -81,7 +81,8 @@ export async function apiRequest(endpoint: string, options: RequestInit = {}, re
       throw new Error(errorData?.error || 'Authentication required');
     }
     const error = new Error(errorData?.error || `API request failed: ${response.statusText}`);
-    (error as Error & { status?: number }).status = response.status;
+    (error as any).status = response.status;
+    (error as any).data = errorData;
     throw error;
   }
 
@@ -116,23 +117,30 @@ export async function apiForm(endpoint: string, formData: FormData, retry = true
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => null);
-    throw new Error(errorData?.error || `API request failed: ${response.statusText}`);
+    const error = new Error(errorData?.error || `API request failed: ${response.statusText}`);
+    (error as any).status = response.status;
+    (error as any).data = errorData;
+    throw error;
   }
 
   return response.json();
 }
 
 export const api = {
-  get: (endpoint: string) => apiRequest(endpoint),
-  post: (endpoint: string, data: any) => apiRequest(endpoint, {
+  get: <T = any>(endpoint: string): Promise<T> => apiRequest(endpoint),
+  post: <T = any>(endpoint: string, data: any): Promise<T> => apiRequest(endpoint, {
     method: 'POST',
     body: JSON.stringify(data),
   }),
-  put: (endpoint: string, data: any) => apiRequest(endpoint, {
+  put: <T = any>(endpoint: string, data: any): Promise<T> => apiRequest(endpoint, {
     method: 'PUT',
     body: JSON.stringify(data),
   }),
-  delete: (endpoint: string) => apiRequest(endpoint, {
+  patch: <T = any>(endpoint: string, data: any): Promise<T> => apiRequest(endpoint, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }),
+  delete: <T = any>(endpoint: string): Promise<T> => apiRequest(endpoint, {
     method: 'DELETE',
   }),
 };

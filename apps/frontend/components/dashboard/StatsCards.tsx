@@ -1,5 +1,7 @@
-import { Users, MessageSquare, Zap, Phone } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
+'use client';
+
+import { useTranslation } from 'react-i18next';
+import { Users, MessageSquare, Zap, MessageCircle, LucideIcon } from 'lucide-react';
 
 interface StatsCardsProps {
   data: {
@@ -10,54 +12,91 @@ interface StatsCardsProps {
   };
 }
 
+function fmt(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return n.toString();
+}
+
+interface CardDef {
+  key: keyof StatsCardsProps['data'];
+  labelKey: string;
+  Icon: LucideIcon;
+  accentBar: string;
+  iconColor: string;
+  iconBg: string;
+  glow: string;
+}
+
+const CARDS: CardDef[] = [
+  {
+    key: 'totalContacts',
+    labelKey: 'stats.totalContacts',
+    Icon: Users,
+    accentBar: 'bg-blue-500 dark:bg-blue-400',
+    iconColor: 'text-blue-500 dark:text-blue-400',
+    iconBg: 'bg-blue-500/10 border-blue-500/20 dark:bg-blue-400/10 dark:border-blue-400/20',
+    glow: 'bg-blue-500/5 dark:bg-blue-400/10',
+  },
+  {
+    key: 'openConversations',
+    labelKey: 'stats.openConversations',
+    Icon: MessageSquare,
+    accentBar: 'bg-[#25D366]',
+    iconColor: 'text-[#128C7E] dark:text-[#25D366]',
+    iconBg: 'bg-[#25D366]/10 border-[#25D366]/20',
+    glow: 'bg-[#25D366]/5 dark:bg-[#25D366]/10',
+  },
+  {
+    key: 'todayMessages',
+    labelKey: 'stats.messagesToday',
+    Icon: MessageCircle,
+    accentBar: 'bg-violet-500 dark:bg-violet-400',
+    iconColor: 'text-violet-500 dark:text-violet-400',
+    iconBg: 'bg-violet-500/10 border-violet-500/20 dark:bg-violet-400/10 dark:border-violet-400/20',
+    glow: 'bg-violet-500/5 dark:bg-violet-400/10',
+  },
+  {
+    key: 'automationsFired',
+    labelKey: 'stats.automationsFired',
+    Icon: Zap,
+    accentBar: 'bg-orange-500 dark:bg-orange-400',
+    iconColor: 'text-orange-500 dark:text-orange-400',
+    iconBg: 'bg-orange-500/10 border-orange-500/20 dark:bg-orange-400/10 dark:border-orange-400/20',
+    glow: 'bg-orange-500/5 dark:bg-orange-400/10',
+  },
+];
+
 export default function StatsCards({ data }: StatsCardsProps) {
-  const stats = [
-    {
-      name: 'Total Contacts',
-      value: data.totalContacts,
-      icon: Users,
-      bgColor: 'bg-blue-50 dark:bg-blue-500/10',
-      iconColor: 'text-blue-600 dark:text-blue-400',
-    },
-    {
-      name: 'Open Conversations',
-      value: data.openConversations,
-      icon: MessageSquare,
-      bgColor: 'bg-[#25D366]/10 dark:bg-[#25D366]/15',
-      iconColor: 'text-[#25D366]',
-    },
-    {
-      name: 'Messages Today',
-      value: data.todayMessages,
-      icon: Phone,
-      bgColor: 'bg-purple-50 dark:bg-purple-500/10',
-      iconColor: 'text-purple-600 dark:text-purple-400',
-    },
-    {
-      name: 'Automations Fired',
-      value: data.automationsFired,
-      icon: Zap,
-      bgColor: 'bg-orange-50 dark:bg-orange-500/10',
-      iconColor: 'text-orange-600 dark:text-orange-400',
-    },
-  ];
+  const { t } = useTranslation('dashboard');
 
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-      {stats.map((stat) => (
-        <Card key={stat.name} className="border-gray-200 dark:border-white/10 bg-white dark:bg-[#111B21] shadow-soft dark:shadow-[0_8px_20px_rgba(0,0,0,0.2)]">
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm text-gray-600 dark:text-[#8696A0]">{stat.name}</p>
-                <p className="mt-2 text-3xl font-semibold text-gray-900 dark:text-white">{stat.value}</p>
-              </div>
-              <div className={`rounded-2xl border border-gray-200 dark:border-white/10 ${stat.bgColor} p-3`}>
-                <stat.icon className={`h-6 w-6 ${stat.iconColor}`} />
-              </div>
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {CARDS.map(({ key, labelKey, Icon, accentBar, iconColor, iconBg, glow }) => (
+        <div
+          key={key}
+          className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md dark:border-transparent dark:bg-[#182229] dark:shadow-[0_4px_24px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.05)]"
+        >
+          {/* Top color accent bar */}
+          <div className={`absolute inset-x-0 top-0 h-[2px] rounded-t-2xl ${accentBar}`} />
+
+          {/* Bottom-right ambient glow */}
+          <div className={`pointer-events-none absolute -bottom-6 -end-6 h-24 w-24 rounded-full blur-2xl ${glow}`} />
+
+          <div className="relative flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-500 dark:text-[#8696A0]">
+                {t(labelKey)}
+              </p>
+              <p className="mt-3 text-4xl font-bold tabular-nums tracking-tight text-gray-900 dark:text-white">
+                {fmt(data[key])}
+              </p>
             </div>
-          </CardContent>
-        </Card>
+            <div className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border ${iconBg}`}>
+              <Icon className={`h-5 w-5 ${iconColor}`} aria-hidden="true" />
+            </div>
+          </div>
+        </div>
       ))}
     </div>
   );

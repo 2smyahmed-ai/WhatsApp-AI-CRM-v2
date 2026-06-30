@@ -19,6 +19,10 @@ export interface InboundFlatContext {
   teamId: string | null;
   /** Which provider produced the raw message. Defaults to 'baileys'. */
   provider?: ProviderName;
+  /** DB message id of the quoted message, if the contact replied to one. */
+  replyToId?: string | null;
+  /** Short preview body of the quoted message for the reply bubble. */
+  replyToBody?: string | null;
 }
 
 /**
@@ -125,7 +129,7 @@ function buildContentFromFlat(flat: FlatInboundMessage): MessageContent {
 }
 
 function buildMetadata(
-  compatibilityMode: 'cloud_api' | 'fallback_text',
+  compatibilityMode: 'cloud_api' | 'baileys_native' | 'fallback_text',
   overrides: Partial<MessageMetadata> = {},
 ): MessageMetadata {
   const now = new Date().toISOString();
@@ -157,8 +161,8 @@ export function buildNormalizedFromFlat(
   context: InboundFlatContext,
   raw: unknown,
 ): NormalizedMessage {
-  const provider: ProviderName = context.provider ?? 'baileys';
-  const compatibilityMode = provider === 'meta' ? 'cloud_api' : 'fallback_text';
+  const provider: ProviderName = 'baileys';
+  const compatibilityMode = 'baileys_native';
 
   return {
     schemaVersion: 1,
@@ -174,7 +178,9 @@ export function buildNormalizedFromFlat(
     content: buildContentFromFlat(flat),
     status: 'received',
     metadata: buildMetadata(compatibilityMode),
-    reply: null,
+    reply: context.replyToId
+      ? { messageId: context.replyToId, externalId: null, preview: context.replyToBody ?? '', kind: 'text' }
+      : null,
     timestamp: flat.timestamp.toISOString(),
     raw,
   };
@@ -231,7 +237,7 @@ export function buildBaileysOutbound(params: BaileysOutboundParams): NormalizedM
     direction: 'outbound',
     content,
     status: 'provider_accepted',
-    metadata: buildMetadata('fallback_text', {
+    metadata: buildMetadata('baileys_native', {
       attemptCount: 1,
       timestamps: { provider_accepted: now },
       origin: 'agent',

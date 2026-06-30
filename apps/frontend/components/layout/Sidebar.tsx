@@ -1,8 +1,10 @@
 'use client';
+
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { useTranslation } from 'react-i18next';
 import {
   BarChart3,
   MessageSquare,
@@ -21,78 +23,128 @@ import {
   FileText,
   Menu,
   X,
+  LayoutTemplate,
+  Bot,
+  Target,
+  Smartphone,
+  Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-const mainNav = [
-  { name: 'Dashboard',     href: '/dashboard',    icon: BarChart3 },
-  { name: 'Conversations', href: '/conversations', icon: MessageSquare },
-  { name: 'Contacts',      href: '/contacts',      icon: Users },
-  { name: 'Tags',          href: '/tags',          icon: Tags },
-  { name: 'Saved Replies', href: '/saved-replies', icon: MessageSquareReply },
-  { name: 'Templates',    href: '/templates',     icon: FileText },
-  { name: 'Deals',         href: '/deals',         icon: BriefcaseBusiness },
-  { name: 'Tasks',         href: '/tasks',         icon: CheckSquare },
-  { name: 'Broadcasts',    href: '/broadcasts',    icon: Send },
-  { name: 'Settings',      href: '/settings',      icon: Settings },
-];
-
-const adminNav = [
-  { name: 'Users',       href: '/admin/users',  icon: UserCog },
-  { name: 'Teams',       href: '/admin/teams',  icon: UsersRound },
-  { name: 'Automations', href: '/automations',  icon: Zap },
-];
-
-const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
+import { useLiveCounts } from '../../hooks/useLiveCounts';
+import { useLeadAlerts } from '../../hooks/useLeadAlerts';
+import { useDirection } from '../../hooks/useDirection';
+import { isManager, roleLabel } from '../../lib/roles';
 
 export default function Sidebar() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const { data: session } = useSession();
-  const role = (session?.user as any)?.role ?? 'AGENT';
-  const isAdmin = ADMIN_ROLES.includes(role);
+  const { t } = useTranslation('sidebar');
+  const { isRTL } = useDirection();
 
-  function NavItem({ item }: { item: { name: string; href: string; icon: React.ElementType } }) {
+  const role    = (session?.user as any)?.role ?? 'AGENT';
+  const isAdmin = isManager(role);
+
+  const { openConversations } = useLiveCounts();
+
+  const { needsAttention } = useLeadAlerts();
+
+  const liveCounts: Record<string, number | null> = {
+    openConversations,
+    leadsNeedsAttention: needsAttention,
+  };
+
+  const mainNav = [
+    { key: 'dashboard',    href: '/dashboard',    icon: BarChart3 },
+    { key: 'conversations',href: '/conversations', icon: MessageSquare, liveKey: 'openConversations' as const },
+    { key: 'contacts',     href: '/contacts',      icon: Users },
+    { key: 'tags',         href: '/tags',          icon: Tags },
+    { key: 'savedReplies', href: '/saved-replies', icon: MessageSquareReply },
+    { key: 'templates',    href: '/templates',     icon: FileText },
+    { key: 'interactive',  href: '/interactive',   icon: Zap },
+    { key: 'deals',        href: '/deals',         icon: BriefcaseBusiness },
+    { key: 'tasks',        href: '/tasks',         icon: CheckSquare },
+    { key: 'broadcasts',   href: '/broadcasts',    icon: Send },
+    { key: 'settings',     href: '/settings',      icon: Settings },
+  ];
+
+  const salesNav = [
+    { key: 'leads', href: '/leads', icon: Target, liveKey: 'leadsNeedsAttention' as const },
+  ];
+
+  const adminNav = [
+    { key: 'users',       href: '/admin/users',        icon: UserCog },
+    { key: 'teams',       href: '/admin/teams',         icon: UsersRound },
+    { key: 'customerAi',  href: '/admin/customer-ai',  icon: Bot },
+    { key: 'chatbot',     href: '/admin/chatbot',       icon: Sparkles },
+  ];
+
+  function NavItem({
+    item,
+  }: {
+    item: {
+      key: string;
+      href: string;
+      icon: React.ElementType;
+      liveKey?: keyof typeof liveCounts;
+    };
+  }) {
     const active = !!pathname?.startsWith(item.href);
+    const count = item.liveKey != null ? liveCounts[item.liveKey] : null;
+    const showBadge = typeof count === 'number' && count > 0;
+
     return (
       <li>
         <Link
           href={item.href}
+          onClick={() => setOpen(false)}
+          aria-current={active ? 'page' : undefined}
           className={cn(
-            'group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150',
+            'group relative flex items-center gap-3 rounded-xl py-2.5 pe-3 ps-4 text-sm transition-all duration-150',
             active
-              ? 'bg-[#25D366]/10 text-[#25D366] dark:bg-[#25D366]/15 dark:text-[#25D366]'
-              : 'text-gray-600 dark:text-[#8696A0] hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-white',
+              ? 'font-bold text-gray-900 dark:text-white'
+              : 'font-medium text-gray-500 dark:text-[#8696A0] hover:text-gray-900 dark:hover:text-white',
           )}
         >
+          {/* Active leading accent bar (flips side automatically via start-0) */}
+          {active && (
+            <span
+              aria-hidden="true"
+              className="absolute inset-y-1 start-0 w-1.5 rounded-full bg-[#16A34A] dark:bg-[#25D366]"
+            />
+          )}
           <item.icon
             className={cn(
-              'h-4 w-4 shrink-0 transition-colors duration-150',
+              'h-[18px] w-[18px] shrink-0 transition-colors duration-150',
               active
-                ? 'text-[#25D366]'
+                ? 'text-[#16A34A] dark:text-[#25D366]'
                 : 'text-gray-400 dark:text-[#8696A0] group-hover:text-gray-600 dark:group-hover:text-white',
             )}
           />
-          <span className="flex-1 truncate">{item.name}</span>
-          {active && <span className="h-2 w-2 rounded-full bg-[#25D366]" />}
+          <span className="flex-1 truncate">{t(`nav.${item.key}`)}</span>
+          {showBadge ? (
+            <span className="flex h-5 min-w-[22px] items-center justify-center rounded-md bg-gray-900 px-1.5 text-[10px] font-bold text-white dark:bg-white/15 dark:text-white">
+              {count > 99 ? '99+' : count}
+            </span>
+          ) : null}
         </Link>
       </li>
     );
   }
-  // Reusable inner content so we can render it for desktop and mobile
+
   const inner = (
     <>
       {/* Logo */}
-      <div className="flex items-center gap-3 border-b border-gray-200 dark:border-white/5 px-5 py-4">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#25D366] to-[#128C7E] shadow-[0_4px_20px_rgba(37,211,102,0.25)]">
+      <div className="flex items-center gap-3 px-5 py-5">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#1f9255] to-[#0c3a27] shadow-[0_8px_20px_-6px_rgba(13,77,46,0.6)]">
           <MessageCircle className="h-5 w-5 text-white" fill="white" strokeWidth={0} />
         </div>
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold leading-tight text-gray-900 dark:text-white">
-            WhatsApp CRM
+          <p className="truncate text-[15px] font-bold leading-tight text-gray-900 dark:text-white">
+            {t('appName')}
           </p>
-          <p className="text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-[#8696A0]">
-            Business Suite
+          <p className="text-[11px] font-medium uppercase tracking-wider text-gray-400 dark:text-[#8696A0]">
+            {t('appSubtitle')}
           </p>
         </div>
       </div>
@@ -102,11 +154,24 @@ export default function Sidebar() {
 
         {/* Main menu */}
         <div>
-          <p className="mb-2 px-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-[#8696A0]">
-            Menu
+          <p className="mb-2 px-4 text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400 dark:text-[#8696A0]">
+            {t('menu')}
           </p>
           <ul className="space-y-1">
-            {mainNav.map((item) => <NavItem key={item.name} item={item} />)}
+            {mainNav.map((item) => <NavItem key={item.key} item={item} />)}
+          </ul>
+        </div>
+
+        {/* Sales Intelligence section */}
+        <div>
+          <div className="mb-2 flex items-center gap-2 px-2">
+            <Target className="h-3.5 w-3.5 text-[#16A34A] dark:text-[#25D366]" />
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-[#16A34A] dark:text-[#25D366]">
+              {t('salesIntelligence')}
+            </p>
+          </div>
+          <ul className="space-y-1">
+            {salesNav.map((item) => <NavItem key={item.key} item={item} />)}
           </ul>
         </div>
 
@@ -116,29 +181,30 @@ export default function Sidebar() {
             <div className="mb-2 flex items-center gap-2 px-2">
               <ShieldCheck className="h-3.5 w-3.5 text-amber-500 dark:text-amber-400" />
               <p className="text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
-                Admin
+                {t('admin')}
               </p>
             </div>
             <ul className="space-y-1">
-              {adminNav.map((item) => <NavItem key={item.name} item={item} />)}
+              {adminNav.map((item) => <NavItem key={item.key} item={item} />)}
             </ul>
           </div>
         )}
       </nav>
 
-      {/* Connection status + role badge */}
-      <div className="border-t border-gray-200 dark:border-white/5 px-5 py-4 space-y-2">
-        <div className="flex items-center gap-2.5">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#25D366] opacity-70" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-[#25D366]" />
-          </span>
-          <span className="text-xs font-medium text-gray-500 dark:text-[#8696A0]">
-            WhatsApp connected
-          </span>
-        </div>
-        {role && (
+      {/* connection / role */}
+      <div className="px-3 pb-4 pt-2">
+        {/* Connection + role line */}
+        <div className="mt-3 flex items-center justify-between px-2">
           <div className="flex items-center gap-2">
+            <span className="relative flex h-2 w-2 shrink-0">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#16A34A] opacity-70 dark:bg-[#25D366]" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#16A34A] dark:bg-[#25D366]" />
+            </span>
+            <span className="text-[11px] font-medium text-gray-500 dark:text-[#8696A0]">
+              {t('connected')}
+            </span>
+          </div>
+          {role && (
             <span
               className={cn(
                 'rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
@@ -147,22 +213,26 @@ export default function Sidebar() {
                   : 'bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-[#8696A0]',
               )}
             >
-              {role.replace('_', ' ')}
+              {roleLabel(role)}
             </span>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </>
   );
 
   return (
     <>
-      {/* Mobile: hamburger toggle */}
+      {/* Mobile: hamburger toggle — flips side in RTL */}
       {!open && (
         <button
-          aria-label="Open sidebar"
+          type="button"
+          aria-label={t('openSidebar')}
           onClick={() => setOpen(true)}
-          className="fixed top-4 left-4 z-50 inline-flex items-center justify-center rounded-md p-2 text-gray-700 bg-white shadow-md lg:hidden dark:bg-[#111B21] dark:text-white"
+          className={cn(
+            'fixed top-4 z-50 hidden sm:inline-flex items-center justify-center rounded-md p-2 text-gray-700 bg-white shadow-md lg:hidden dark:bg-[#111B21] dark:text-white',
+            isRTL ? 'right-4' : 'left-4',
+          )}
         >
           <Menu className="h-5 w-5" />
         </button>
@@ -177,19 +247,25 @@ export default function Sidebar() {
         />
       )}
 
-      {/* Mobile sliding panel */}
+      {/* Mobile sliding panel — slides from start edge (left in LTR, right in RTL) */}
       <div
         className={cn(
-          'fixed inset-y-0 left-0 z-40 w-64 transform transition-transform duration-200 lg:hidden',
-          open ? 'translate-x-0' : '-translate-x-full',
+          'fixed inset-y-0 z-40 w-64 transform transition-transform duration-200 lg:hidden',
+          isRTL
+            ? cn('right-0', open ? 'translate-x-0' : 'translate-x-full')
+            : cn('left-0',  open ? 'translate-x-0' : '-translate-x-full'),
         )}
         aria-hidden={!open}
       >
-        <div className="relative h-full border-r border-gray-200 dark:border-white/5 bg-white dark:bg-[#111B21]">
+        <div className="relative h-full border-e border-gray-200 dark:border-white/5 bg-white dark:bg-[#111B21]">
           <button
-            aria-label="Close sidebar"
+            type="button"
+            aria-label={t('closeSidebar')}
             onClick={() => setOpen(false)}
-            className="absolute top-3 right-3 inline-flex items-center justify-center rounded-md p-1 text-gray-600 hover:bg-gray-100 dark:text-white lg:hidden"
+            className={cn(
+              'absolute top-3 inline-flex items-center justify-center rounded-md p-1 text-gray-600 hover:bg-gray-100 dark:text-white lg:hidden',
+              isRTL ? 'left-3' : 'right-3',
+            )}
           >
             <X className="h-5 w-5" />
           </button>
@@ -197,8 +273,8 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* Desktop sidebar (unchanged) */}
-      <aside className="hidden w-64 shrink-0 lg:flex lg:flex-col border-r border-gray-200 dark:border-white/5 bg-white dark:bg-[#111B21]">
+      {/* Desktop sidebar — blends into the white app container */}
+      <aside className="hidden w-[248px] shrink-0 bg-transparent lg:flex lg:flex-col">
         {inner}
       </aside>
     </>

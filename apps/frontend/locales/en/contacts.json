@@ -1,0 +1,133 @@
+{
+  "title": "Contacts",
+  "subtitle": "Manage contacts with search, CSV import, bulk actions, advanced filters, and realtime sync.",
+  "badge": "Contact studio",
+  "searchPlaceholder": "Search by name, phone, or email...",
+  "addContact": "Add Contact",
+  "importContacts": "Import CSV",
+  "importing": "Importing...",
+  "exportContacts": "Export CSV",
+  "totalContacts": "{{count}} contacts",
+  "noContacts": "No contacts yet",
+  "noContactsSubtitle": "Add your first contact or import from CSV",
+  "noResults": "No contacts match your search",
+  "clearFilters": "Clear filters",
+  "createdFrom": "Created from",
+  "createdTo": "Created to",
+  "clearSelection": "Clear selection",
+  "segments": {
+    "all": "All",
+    "saved": "Saved",
+    "unsaved": "Unknown numbers",
+    "savedHint": "Contacts with a name",
+    "unsavedHint": "Numbers without a saved name"
+  },
+  "filters": {
+    "title": "Advanced filters",
+    "moreFilters": "More filters",
+    "hasTags": "Has tags",
+    "hasNotes": "Has notes",
+    "withTagsOnly": "Tagged only",
+    "withNotesOnly": "With notes",
+    "dateRange": "Created date"
+  },
+  "emptyFiltered": "No contacts match these filters",
+  "emptyFilteredSubtitle": "Try adjusting or clearing your filters.",
+  "loadingDetails": "Loading details...",
+  "contactDetails": "Contact details",
+  "tabs": {
+    "overview": "Overview",
+    "timeline": "Timeline",
+    "tags": "Tags"
+  },
+  "dealsSection": "Deals",
+  "tasksSection": "Tasks",
+  "conversationsSection": "Conversations",
+  "profile": {
+    "dealValue": "Deal value",
+    "openTasks": "Open tasks",
+    "viewProfile": "View full profile"
+  },
+  "newDeal": "New Deal",
+  "newTask": "New Task",
+  "openConversation": "Open Conversation",
+  "noDeals": "No deals linked yet.",
+  "noTasks": "No tasks linked yet.",
+  "noLinkedConversations": "No conversations linked yet.",
+  "deleteBulk": "Delete {{count}}?",
+  "yesDelete": "Yes, delete",
+  "table": {
+    "name": "Name",
+    "phone": "Phone Number",
+    "email": "Email",
+    "tags": "Tags",
+    "assignedTo": "Assigned To",
+    "lastContacted": "Last Contacted",
+    "createdAt": "Created",
+    "actions": "Actions"
+  },
+  "form": {
+    "createTitle": "New Contact",
+    "editTitle": "Edit Contact",
+    "name": "Full Name",
+    "namePlaceholder": "e.g. Ahmed Al-Rashidi",
+    "phone": "Phone Number",
+    "phonePlaceholder": "+966 5X XXX XXXX",
+    "email": "Email Address",
+    "emailPlaceholder": "ahmed@company.com",
+    "company": "Company",
+    "companyPlaceholder": "Company name",
+    "notes": "Notes",
+    "notesPlaceholder": "Add any relevant notes...",
+    "tags": "Tags",
+    "save": "Save Contact",
+    "cancel": "Cancel",
+    "createSuccess": "Contact created successfully",
+    "updateSuccess": "Contact updated successfully"
+  },
+  "timeline": {
+    "title": "Activity Timeline",
+    "noActivity": "No activity yet",
+    "noActivityContact": "No activity yet for this contact.",
+    "conversation": "Conversation",
+    "message": "Message",
+    "note": "Note",
+    "deal": "Deal",
+    "task": "Task",
+    "tagAdded": "Tag added",
+    "tagRemoved": "Tag removed",
+    "assigned": "Assigned",
+    "resolved": "Resolved",
+    "noMessages": "No messages",
+    "justNow": "just now",
+    "minsAgo": "{{count}}m ago",
+    "hrsAgo": "{{count}}h ago"
+  },
+  "tags": {
+    "addTag": "Add tag",
+    "newNamePlaceholder": "New tag name...",
+    "create": "Create",
+    "allAssigned": "All tags assigned"
+  },
+  "deleteConfirm": {
+    "title": "Delete Contact",
+    "message": "Are you sure you want to delete {{name}}? All associated conversations will remain but the contact info will be removed.",
+    "confirm": "Delete",
+    "cancel": "Cancel"
+  },
+  "bulkActions": {
+    "selected": "{{count}} selected",
+    "delete": "Delete Selected",
+    "export": "Export Selected",
+    "addTag": "Add Tag",
+    "assign": "Assign"
+  },
+  "messages": {
+    "importSuccess": "Imported {{imported}} of {{total}} contacts",
+    "importFailed": "Import failed",
+    "deleteFailed": "Failed to delete contact",
+    "hasConversations": "This contact has conversations and cannot be deleted.",
+    "bulkDeletePartialFail": "{{count}} contact(s) could not be deleted — they may have active conversations.",
+    "loadDetailsFailed": "Failed to load contact details"
+  }
+}

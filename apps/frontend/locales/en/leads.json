@@ -1,0 +1,107 @@
+{
+  "badge": "Sales Intelligence",
+  "title": "Lead Management",
+  "subtitle": "AI-qualified customers, prioritized so you act on the best opportunities first.",
+  "search": "Search by name or phone",
+  "analyzeNow": "Analyze",
+  "analyzing": "Analyzing…",
+  "reanalyze": "Re-analyze",
+  "openConversation": "Open chat",
+  "lastAnalyzed": "Analyzed {{time}}",
+  "neverAnalyzed": "Not analyzed yet",
+  "score": "Score",
+  "confidence": "Confidence",
+  "priorityLabel": "Priority",
+  "summary": "AI Summary",
+  "recommendation": "Recommended next step",
+  "signals": "Buying signals",
+  "noSignals": "No specific buying signals detected.",
+  "history": "Status history",
+  "noHistory": "No status changes recorded yet.",
+  "empty": {
+    "title": "No leads here yet",
+    "subtitle": "Customers are qualified automatically as they message you. Check back soon.",
+    "filtered": "No leads match this view."
+  },
+  "stats": {
+    "total": "Total leads",
+    "needsAttention": "Needs attention",
+    "buyingIntent": "Buying intent",
+    "hot": "Hot leads",
+    "noHandoff": "No agent assigned"
+  },
+  "tabs": {
+    "all": "All",
+    "newLeads": "New Leads",
+    "followUp": "Follow Up",
+    "hot": "Hot Leads",
+    "customers": "Customers",
+    "lost": "Lost",
+    "spam": "Spam"
+  },
+  "status": {
+    "NEW_LEAD": "New Lead",
+    "QUALIFIED": "Qualified",
+    "HOT": "Hot Lead",
+    "WARM": "Warm Lead",
+    "COLD": "Cold Lead",
+    "CUSTOMER": "Customer",
+    "LOST": "Lost",
+    "NOT_INTERESTED": "Not Interested",
+    "SPAM": "Spam"
+  },
+  "priority": {
+    "LOW": "Low",
+    "NORMAL": "Normal",
+    "HIGH": "High",
+    "URGENT": "Urgent"
+  },
+  "signalLabels": {
+    "pricingRequest": "Pricing request",
+    "meetingRequest": "Meeting request",
+    "callRequest": "Call request",
+    "urgency": "Urgency",
+    "readyToBuy": "Ready to buy"
+  },
+  "flags": {
+    "needsAttention": "Needs attention",
+    "buyingIntent": "Buying intent"
+  },
+  "panel": {
+    "title": "Sales Intelligence",
+    "noData": "No AI qualification yet for this customer.",
+    "analyzePrompt": "Run an analysis to evaluate this customer."
+  },
+  "notifications": {
+    "title": "Notifications",
+    "empty": "You're all caught up",
+    "emptyHint": "Important lead activity will show up here.",
+    "markAllRead": "Mark all read",
+    "viewAll": "View all leads",
+    "type": {
+      "BUYING_INTENT": "Buying intent",
+      "NEEDS_ATTENTION": "Needs attention",
+      "STATUS_UPGRADE": "Status upgrade"
+    },
+    "popup": {
+      "openChat": "Open chat",
+      "dismiss": "Dismiss"
+    }
+  },
+  "refreshAlerts": "Refresh & Alert",
+  "refreshing": "Sending alerts…",
+  "toast": {
+    "analyzed": "Customer analyzed",
+    "analyzeFailed": "Could not analyze this customer",
+    "loadFailed": "Failed to load leads",
+    "alertsSent": "{{count}} alert(s) sent to the team",
+    "noUnhandled": "All hot leads are assigned — no alerts needed",
+    "refreshFailed": "Failed to send alerts"
+  },
+  "timeAgo": {
+    "justNow": "just now",
+    "minutesAgo": "{{count}}m ago",
+    "hoursAgo": "{{count}}h ago",
+    "daysAgo": "{{count}}d ago"
+  }
+}

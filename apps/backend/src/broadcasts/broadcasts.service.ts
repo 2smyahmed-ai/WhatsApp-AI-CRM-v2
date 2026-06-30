@@ -3,10 +3,6 @@ import { broadcastQueue, ensureBroadcastWorker } from './broadcast.queue';
 
 ensureBroadcastWorker();
 
-function normalizeTagValue(tag: string) {
-  return tag.trim().toLowerCase();
-}
-
 async function resolveRecipients(data: { recipients?: string[]; tag?: string; teamId?: string }) {
   const directRecipients = (data.recipients ?? []).map((phone) => phone.trim()).filter(Boolean);
   const tag = data.tag?.trim();
@@ -18,22 +14,14 @@ async function resolveRecipients(data: { recipients?: string[]; tag?: string; te
   const contacts = await prisma.contact.findMany({
     where: {
       ...(data.teamId ? { teamId: data.teamId } : {}),
-      tag: {
-        contains: tag,
-      },
+      contactTags: { some: { tag: { name: { equals: tag, mode: 'insensitive' } } } },
     },
-    select: { phone: true, tag: true },
+    select: { phone: true },
   });
 
   const taggedRecipients = contacts
-    .filter((contact) =>
-      (contact.tag ?? '')
-        .split(',')
-        .map((value) => normalizeTagValue(value))
-        .includes(normalizeTagValue(tag)),
-    )
     .map((contact) => contact.phone)
-    .filter(Boolean);
+    .filter((p): p is string => Boolean(p));
 
   return Array.from(new Set([...directRecipients, ...taggedRecipients]));
 }
@@ -64,6 +52,7 @@ export class BroadcastsService {
     tag?: string;
     scheduledAt?: Date;
     teamId?: string;
+    interactiveContent?: object;
   }) {
     const recipients = await resolveRecipients(data);
     if (!recipients.length) {
@@ -75,6 +64,7 @@ export class BroadcastsService {
         teamId: data.teamId,
         name: data.name,
         message: data.message,
+        interactiveContent: data.interactiveContent ?? undefined,
         status: data.scheduledAt ? 'SCHEDULED' : 'DRAFT',
         scheduledAt: data.scheduledAt,
         description: data.tag ? `Tag: ${data.tag}` : null,
@@ -96,6 +86,7 @@ export class BroadcastsService {
       tag?: string;
       scheduledAt?: Date;
       teamId?: string;
+      interactiveContent?: object;
     }
   ) {
     const recipients = await resolveRecipients(data);
@@ -115,6 +106,7 @@ export class BroadcastsService {
         teamId: data.teamId,
         name: data.name,
         message: data.message,
+        interactiveContent: data.interactiveContent ?? undefined,
         status: data.scheduledAt ? 'SCHEDULED' : 'DRAFT',
         scheduledAt: data.scheduledAt ?? null,
         description: data.tag ? `Tag: ${data.tag}` : null,

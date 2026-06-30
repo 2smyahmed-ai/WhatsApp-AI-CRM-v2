@@ -1,0 +1,45 @@
+{
+  "success": {
+    "saved": "Saved successfully",
+    "created": "Created successfully",
+    "updated": "Updated successfully",
+    "deleted": "Deleted successfully",
+    "sent": "Message sent",
+    "invited": "Invitation sent",
+    "connected": "WhatsApp connected",
+    "disconnected": "WhatsApp disconnected",
+    "contactSaved": "Contact saved",
+    "replySaved": "Reply saved",
+    "templateSaved": "Template saved",
+    "broadcastSent": "Broadcast sent",
+    "broadcastScheduled": "Broadcast scheduled",
+    "taskCreated": "Task created",
+    "dealCreated": "Deal created",
+    "noteAdded": "Note added",
+    "tagAdded": "Tag added",
+    "assigned": "Conversation assigned",
+    "resolved": "Conversation resolved",
+    "reopened": "Conversation reopened",
+    "languageChanged": "Language updated"
+  },
+  "error": {
+    "saveFailed": "Failed to save. Please try again.",
+    "deleteFailed": "Failed to delete. Please try again.",
+    "sendFailed": "Failed to send message",
+    "loadFailed": "Failed to load data",
+    "connectFailed": "Failed to connect WhatsApp",
+    "inviteFailed": "Failed to send invitation",
+    "uploadFailed": "Failed to upload file",
+    "generic": "Something went wrong"
+  },
+  "warning": {
+    "unsavedChanges": "You have unsaved changes",
+    "broadcastInProgress": "A broadcast is currently running",
+    "providerLimited": "Some features are limited with the current provider"
+  },
+  "info": {
+    "qrRefreshing": "QR code refreshing...",
+    "connecting": "Connecting to WhatsApp...",
+    "syncing": "Syncing..."
+  }
+}

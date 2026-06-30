@@ -18,7 +18,7 @@ router.use(authMiddleware);
 // ── List conversations ──────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
-    const { status, search, assignedTo, view, teamId } = req.query;
+    const { status, search, assignedTo, view, teamId, limit } = req.query;
     const user = (req as any).user;
 
     const conversations = await ConversationsService.getConversations({
@@ -34,6 +34,7 @@ router.get('/', async (req, res) => {
       teamId: teamId as string,
       currentUserId: user?.id,
       currentUserTeamId: user?.teamId,
+      limit: limit ? Math.min(Number(limit), 200) : undefined,
     });
     res.json(conversations);
   } catch (error) {
@@ -184,6 +185,186 @@ router.put('/:id/snooze', async (req, res) => {
   }
 });
 
+// ── AI Bot per-conversation override (tri-state) ──────────────────────────────
+// Accepts `botOverride`: true (force bot ON), false (force OFF), or null (Auto —
+// follow the global targeting rules). Legacy `botEnabled` boolean is still
+// accepted for back-compat and maps to true/null.
+router.put('/:id/bot', async (req, res) => {
+  try {
+    const body = req.body as { botOverride?: boolean | null; botEnabled?: boolean };
+    const { prisma } = await import('../../lib/prisma');
+
+    let botOverride: boolean | null;
+    if ('botOverride' in body) {
+      botOverride = body.botOverride === null ? null : Boolean(body.botOverride);
+    } else {
+      // Legacy callers: botEnabled=true → force on, false → Auto (follow rules).
+      botOverride = body.botEnabled ? true : null;
+    }
+
+    const conversation = await prisma.conversation.update({
+      where: { id: req.params.id },
+      data: {
+        botOverride,
+        // Keep the legacy column in sync for older readers.
+        botEnabled: botOverride === true,
+        // Clear any human-handoff pause when forcing the bot ON.
+        ...(botOverride === true ? { botPausedUntil: null } : {}),
+      },
+      select: { id: true, botOverride: true, botEnabled: true, botPausedUntil: true },
+    });
+    res.json(conversation);
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+  }
+});
+
+// ── AI Bot simulate — create real inbound bubble + bot reply in chat ──────────
+router.post('/:id/bot/simulate', async (req, res) => {
+  try {
+    const { message } = req.body;
+    if (!message?.trim()) return res.status(400).json({ error: 'message is required' });
+    const { prisma } = await import('../../lib/prisma');
+    const { emitRealtime } = await import('../../realtime/socket');
+    const { aiBotService } = await import('../../services/ai-bot.service');
+
+    const conv = await prisma.conversation.findUnique({
+      where: { id: req.params.id },
+      include: { contact: true },
+    });
+    if (!conv) return res.status(404).json({ error: 'Conversation not found' });
+
+    const phone = conv.contact?.phone || '';
+    const sessionId = process.env.WHATSAPP_SESSION_ID || 'default';
+    const externalId = `sim-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    // Save fake inbound message so it appears in chat
+    const inbound = await prisma.message.create({
+      data: {
+        externalId,
+        sessionId,
+        direction: 'INBOUND',
+        from: phone,
+        to: sessionId,
+        phone,
+        conversationId: conv.id,
+        fromMe: false,
+        body: message.trim(),
+        type: 'TEXT',
+        timestamp: new Date(),
+        status: 'PROCESSED',
+      },
+    });
+
+    emitRealtime('message:new', {
+      conversationId: conv.id,
+      message: { ...inbound, sequenceNumber: Number(inbound.sequenceNumber), reactions: [] },
+    }, conv.teamId ?? null);
+
+    // Generate bot reply
+    const provider = (aiBotService as any).defaultProvider();
+    if (!provider) return res.json({ reply: null });
+
+    const recentMessages = await prisma.message.findMany({
+      where: { conversationId: conv.id },
+      orderBy: { timestamp: 'desc' },
+      take: 10,
+      select: { fromMe: true, body: true },
+    });
+
+    const reply = await provider.generateReply({
+      conversationId: conv.id,
+      phone,
+      teamId: conv.teamId,
+      inboundText: message.trim(),
+      recentMessages: recentMessages.reverse(),
+    });
+
+    if (!reply) return res.json({ reply: null });
+
+    // Try to send via WhatsApp (real delivery); fall back to DB-only if WA is offline
+    try {
+      const { sendMessage } = await import('../../whatsapp/sender');
+      await sendMessage(phone, reply, undefined, undefined, undefined, conv.id, { byBot: true });
+    } catch {
+      // WhatsApp not connected — persist locally so the reply still shows in chat
+      const botMsg = await prisma.message.create({
+        data: {
+          externalId: `sim-bot-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          sessionId,
+          direction: 'OUTBOUND',
+          from: sessionId,
+          to: phone,
+          phone,
+          conversationId: conv.id,
+          fromMe: true,
+          body: reply,
+          type: 'TEXT',
+          timestamp: new Date(),
+          status: 'SENT',
+        },
+      });
+      emitRealtime('message:new', {
+        conversationId: conv.id,
+        message: { ...botMsg, sequenceNumber: Number(botMsg.sequenceNumber), reactions: [] },
+      }, conv.teamId ?? null);
+    }
+
+    return res.json({ reply });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+  }
+});
+
+// ── AI Bot test — reply to a message without sending to WhatsApp ──────────────
+router.post('/:id/bot/test', async (req, res) => {
+  try {
+    const { message } = req.body;
+    if (!message?.trim()) return res.status(400).json({ error: 'message is required' });
+    const { prisma } = await import('../../lib/prisma');
+    const { aiBotService } = await import('../../services/ai-bot.service');
+    const conv = await prisma.conversation.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, teamId: true },
+    });
+    if (!conv) return res.status(404).json({ error: 'Conversation not found' });
+    const recentMessages = await prisma.message.findMany({
+      where: { conversationId: req.params.id },
+      orderBy: { timestamp: 'desc' },
+      take: 10,
+      select: { fromMe: true, body: true },
+    });
+    // Call provider directly without sending to WhatsApp
+    const provider = (aiBotService as any).defaultProvider();
+    if (!provider) return res.status(503).json({ error: 'No AI provider registered' });
+    const reply = await provider.generateReply({
+      conversationId: conv.id,
+      phone: '',
+      teamId: conv.teamId,
+      inboundText: message.trim(),
+      recentMessages: recentMessages.reverse(),
+    });
+    res.json({ reply: reply || '' });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+  }
+});
+
+// ── AI Bot resume (clear pause) ───────────────────────────────────────────────
+router.put('/:id/bot/resume', async (req, res) => {
+  try {
+    const { prisma } = await import('../../lib/prisma');
+    const conversation = await prisma.conversation.update({
+      where: { id: req.params.id },
+      data: { botPausedUntil: null },
+      select: { id: true, botEnabled: true, botPausedUntil: true },
+    });
+    res.json(conversation);
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+  }
+});
+
 // ── Internal notes ────────────────────────────────────────────────────────────
 router.get('/:id/notes', async (req, res) => {
   try {
@@ -295,6 +476,7 @@ router.post('/:id/messages/:messageId/reactions', async (req, res) => {
 router.post('/:id/reply', checkPermission('create', 'messages'), upload.single('media'), async (req, res) => {
   try {
     const { message, contactId, mediaCaption, replyToId, replyToBody, clientId } = req.body;
+    const agentId = (req as any).user?.id as string | undefined;
     const hasMedia = Boolean(req.file);
     if ((!message || !String(message).trim()) && !hasMedia) {
       return res.status(400).json({ error: 'Message cannot be empty' });
@@ -334,29 +516,84 @@ router.post('/:id/reply', checkPermission('create', 'messages'), upload.single('
         : undefined,
       replyToId ? { replyToId, replyToBody } : undefined,
       clientId ?? undefined,
+      agentId,
     );
     res.json({ success: true, clientId: clientId ?? null });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('Failed to send conversation reply:', error);
+
+    // Handle warm-up limit errors (return 429)
+    if ((error as any)?.code === 'WARMUP_DAILY_LIMIT') {
+      const err = error as any;
+      return res.status(429).json({
+        error: message,
+        code: 'WARMUP_DAILY_LIMIT',
+        limit: err.limit,
+        sent: err.sent,
+        phaseName: err.phaseName,
+        resetAt: err.resetAt,
+        fullyUnlockedAt: err.fullyUnlockedAt,
+        dayNumber: err.dayNumber,
+      });
+    }
+
     const status = message.includes('not connected') ? 503 : 500;
     res.status(status).json({ error: message });
   }
 });
 
-// ── Send interactive message ──────────────────────────────────────────────────
+// ── Send interactive message (Baileys) ───────────────────────────────────────
 router.post('/:id/interactive', checkPermission('create', 'messages'), async (req, res) => {
   try {
-    const { phone, content } = req.body;
-    if (!phone) return res.status(400).json({ error: 'phone is required' });
-    if (!content?.kind) return res.status(400).json({ error: 'content.kind is required (interactive_buttons | interactive_list | interactive_cta)' });
+    const { content, clientId } = req.body;
+    const agentId = (req as any).user?.id as string | undefined;
+    const VALID_KINDS = ['interactive_buttons', 'interactive_list', 'interactive_cta', 'interactive_carousel'];
+    if (!content?.kind || !VALID_KINDS.includes(content.kind)) {
+      return res.status(400).json({ error: `content.kind must be one of: ${VALID_KINDS.join(' | ')}` });
+    }
 
-    const result = await interactiveMessageService.sendViaMeta(phone, content);
-    res.json({ success: true, messageId: result.messageId });
+    const { prisma } = await import('../../lib/prisma');
+    const conv = await prisma.conversation.findUnique({
+      where: { id: req.params.id },
+      include: { contact: true },
+    });
+    if (!conv?.contact?.phone) return res.status(404).json({ error: 'Conversation or contact not found' });
+
+    const { sendInteractiveViaBaileys } = await import('../../whatsapp/sender');
+    const { id: messageId } = await sendInteractiveViaBaileys(
+      conv.contact.phone,
+      content,
+      req.params.id,
+      clientId ?? undefined,
+    );
+
+    // Auto-assign to the sending agent if the conversation has no assigned agent
+    if (agentId && !conv.assignedTo) {
+      await ConversationsService.assignConversation(req.params.id, agentId, agentId);
+    }
+
+    res.json({ success: true, messageId });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('Failed to send interactive message:', error);
-    const status = message.includes('session') || message.includes('window') ? 400 : 500;
+
+    // Handle warm-up limit errors (return 429)
+    if ((error as any)?.code === 'WARMUP_DAILY_LIMIT') {
+      const err = error as any;
+      return res.status(429).json({
+        error: message,
+        code: 'WARMUP_DAILY_LIMIT',
+        limit: err.limit,
+        sent: err.sent,
+        phaseName: err.phaseName,
+        resetAt: err.resetAt,
+        fullyUnlockedAt: err.fullyUnlockedAt,
+        dayNumber: err.dayNumber,
+      });
+    }
+
+    const status = message.includes('not connected') ? 503 : 500;
     res.status(status).json({ error: message });
   }
 });
