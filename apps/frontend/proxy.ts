@@ -12,7 +12,13 @@ export default withAuth(
   {
     pages: { signIn: '/login' },
     callbacks: {
-      authorized: ({ token }) => !!token,
+      authorized: ({ token, req }) => {
+        // Public marketing routes render without a session; everything else
+        // (the dashboard) requires a valid NextAuth token.
+        const { pathname } = req.nextUrl;
+        if (pathname === '/' || pathname.startsWith('/login')) return true;
+        return !!token;
+      },
     },
   },
 );
