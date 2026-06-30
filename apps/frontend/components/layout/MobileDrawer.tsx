@@ -10,6 +10,7 @@ import {
   Tags, MessageSquareReply, BriefcaseBusiness, CheckSquare,
   ShieldCheck, UserCog, UsersRound, FileText, Bot, Target,
   LogOut, Sun, Moon, Globe, RefreshCw, MessageCircle, Sparkles,
+  type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useLiveCounts } from '@/hooks/useLiveCounts';
@@ -19,7 +20,14 @@ import { useLanguage } from '@/components/providers/I18nProvider';
 import { useSyncStatus } from '@/hooks/useSyncStatus';
 import { isManager, toSimpleRole, SIMPLE_ROLE_LABEL, SIMPLE_ROLE_BADGE } from '@/lib/roles';
 
-const MAIN_NAV = [
+type NavItem = {
+  key: string;
+  href: string;
+  icon: LucideIcon;
+  liveKey?: string;
+};
+
+const MAIN_NAV: readonly NavItem[] = [
   { key: 'dashboard',    href: '/dashboard',    icon: BarChart3 },
   { key: 'conversations',href: '/conversations', icon: MessageSquare, liveKey: 'openConversations' },
   { key: 'contacts',     href: '/contacts',      icon: Users },
@@ -32,7 +40,7 @@ const MAIN_NAV = [
   { key: 'savedReplies', href: '/saved-replies',  icon: MessageSquareReply },
   { key: 'leads',        href: '/leads',          icon: Target, liveKey: 'leadsNeedsAttention' },
   { key: 'settings',     href: '/settings',       icon: Settings },
-] as const;
+];
 
 const ADMIN_NAV = [
   { key: 'users',      href: '/admin/users',       icon: UserCog },

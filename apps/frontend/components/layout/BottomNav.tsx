@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BarChart3, MessageSquare, Users, Send, Grid3X3 } from 'lucide-react';
+import { BarChart3, MessageSquare, Users, Send, Grid3X3, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { useLiveCounts } from '@/hooks/useLiveCounts';
@@ -12,12 +12,19 @@ import MobileDrawer from './MobileDrawer';
 
 // Reversed order — Dashboard is the last item (rightmost) in both LTR and RTL
 // because the pill forces dir="ltr" to keep layout consistent across languages.
-const TABS = [
+type Tab = {
+  key: string;
+  href: string;
+  icon: LucideIcon;
+  liveKey?: 'openConversations';
+};
+
+const TABS: readonly Tab[] = [
   { key: 'broadcasts',    href: '/broadcasts',    icon: Send },
   { key: 'contacts',      href: '/contacts',      icon: Users },
-  { key: 'conversations', href: '/conversations', icon: MessageSquare, liveKey: 'openConversations' as const },
+  { key: 'conversations', href: '/conversations', icon: MessageSquare, liveKey: 'openConversations' },
   { key: 'dashboard',     href: '/dashboard',     icon: BarChart3 },
-] as const;
+];
 
 export default function BottomNav() {
   const pathname = usePathname();
