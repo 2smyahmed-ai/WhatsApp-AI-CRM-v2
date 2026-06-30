@@ -365,7 +365,8 @@ export default function DashboardPage() {
         </div>
 
         {/* Row 3 — Resolution gauge + Uptime tracker */}
-        <div className="lg:col-span-8">
+        {/* Resolution gauge is hidden on phones (shown from md / tablets up) */}
+        <div className="hidden md:block lg:col-span-8">
           <ProgressGauge percent={gaugePercent} caption={t('progress.caption')} legend={gaugeLegend} />
         </div>
         <div className="lg:col-span-4">

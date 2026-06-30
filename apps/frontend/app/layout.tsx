@@ -11,15 +11,19 @@ export const metadata: Metadata = {
     template: '%s | Nexus CRM',
   },
   description:
-    'Manage WhatsApp conversations, automate campaigns, and grow your business. Professional CRM built for WhatsApp at scale.',
-  keywords: ['WhatsApp CRM', 'WhatsApp automation', 'business messaging', 'WhatsApp campaigns'],
+    'Turn WhatsApp conversations into revenue. The premium, AI-powered WhatsApp CRM for Saudi businesses — shared inbox, automation, broadcast campaigns, and analytics. Full Arabic & English support. حوّل محادثات واتساب إلى مبيعات حقيقية.',
+  keywords: [
+    'WhatsApp CRM', 'WhatsApp CRM Saudi Arabia', 'نظام واتساب', 'CRM واتساب',
+    'WhatsApp automation', 'business messaging', 'WhatsApp campaigns', 'AI WhatsApp assistant',
+  ],
   authors: [{ name: 'Nexus CRM' }],
   metadataBase: new URL(process.env.NEXTAUTH_URL || 'http://localhost:3000'),
   openGraph: {
-    title: 'Nexus CRM — WhatsApp Business Platform',
-    description: 'Professional WhatsApp CRM for modern businesses',
+    title: 'Nexus CRM — WhatsApp Business Platform for Saudi Arabia',
+    description: 'Turn WhatsApp conversations into revenue. AI-powered, bilingual (Arabic & English) WhatsApp CRM for Saudi businesses.',
     type: 'website',
     locale: 'en_US',
+    alternateLocale: ['ar_SA'],
   },
   twitter: {
     card: 'summary_large_image',

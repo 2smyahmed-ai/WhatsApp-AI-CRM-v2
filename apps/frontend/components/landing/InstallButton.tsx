@@ -21,9 +21,13 @@ function detectPlatform(): Platform {
 interface InstallButtonProps {
   variant?: 'hero' | 'section'
   className?: string
+  /** Override the dynamic button text (for i18n) */
+  label?: string
+  /** Override the "App Installed" text (for i18n) */
+  installedLabel?: string
 }
 
-export function InstallButton({ variant = 'hero', className = '' }: InstallButtonProps) {
+export function InstallButton({ variant = 'hero', className = '', label, installedLabel }: InstallButtonProps) {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [isInstalled, setIsInstalled] = useState(false)
   const [platform, setPlatform] = useState<Platform>('unknown')
@@ -64,36 +68,50 @@ export function InstallButton({ variant = 'hero', className = '' }: InstallButto
 
   if (isInstalled) {
     return (
-      <span className={`inline-flex items-center gap-2 text-sm text-green-400 font-medium ${className}`}>
+      <span className={`inline-flex items-center gap-2 rounded-xl border border-[#25D366]/30 bg-[#25D366]/10 px-4 py-2.5 text-sm font-semibold text-[#5cf0a0] ${className}`}>
         <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
           <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
         </svg>
-        App Installed
+        {installedLabel ?? 'App Installed'}
       </span>
     )
   }
 
-  const baseClass =
+  // Premium surfaces per placement
+  const surface =
     variant === 'hero'
-      ? `inline-flex items-center gap-2.5 px-6 py-3 rounded-xl font-semibold text-sm border border-white/20 bg-white/10 hover:bg-white/20 text-white backdrop-blur-sm transition-all duration-200 hover:scale-105 active:scale-95 ${className}`
-      : `inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium text-sm bg-[#25D366] hover:bg-[#1db954] text-white transition-all duration-200 hover:scale-105 active:scale-95 ${className}`
+      ? 'lux-glass border border-white/15 text-white hover:border-[#d4af37]/45 hover:shadow-[0_18px_48px_-14px_rgba(212,175,55,0.40)]'
+      : 'lux-btn-primary text-white'
+  const chip =
+    variant === 'hero'
+      ? 'bg-gradient-to-br from-[#2ee676] to-[#0f9b6c] text-white shadow-md shadow-emerald-900/40'
+      : 'bg-white/20 text-white'
 
+  const sizing = variant === 'hero' ? 'px-7 py-3.5 text-base' : 'px-5 py-3 text-sm'
   const PlatformIcon = platform === 'ios' ? Apple : platform === 'android' ? Smartphone : Monitor
 
   return (
     <>
-      <button onClick={handleInstall} className={baseClass}>
-        <Download className="w-4 h-4" />
-        <span>
-          {platform === 'ios'
-            ? 'Add to Home Screen'
-            : platform === 'android'
-            ? 'Install Android App'
-            : installPrompt
-            ? 'Install Desktop App'
-            : 'Get the App'}
+      <button
+        type="button"
+        onClick={handleInstall}
+        className={`group relative inline-flex items-center justify-center gap-2.5 overflow-hidden rounded-xl font-bold transition-all duration-200 hover:-translate-y-0.5 active:scale-95 ${sizing} ${surface} ${className}`}
+      >
+        <span className="lux-sheen" />
+        <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg ${chip}`}>
+          <Download className="h-4 w-4 transition-transform duration-300 group-hover:translate-y-0.5" />
         </span>
-        <PlatformIcon className="w-4 h-4 opacity-70" />
+        <span className="relative">
+          {label ??
+            (platform === 'ios'
+              ? 'Add to Home Screen'
+              : platform === 'android'
+              ? 'Install Android App'
+              : installPrompt
+              ? 'Install Desktop App'
+              : 'Get the App')}
+        </span>
+        <PlatformIcon className="relative h-4 w-4 opacity-60" />
       </button>
 
       {/* iOS instruction modal */}
@@ -130,6 +148,7 @@ export function InstallButton({ variant = 'hero', className = '' }: InstallButto
               </li>
             </ol>
             <button
+              type="button"
               onClick={() => setShowIOSGuide(false)}
               className="mt-5 w-full py-2.5 rounded-xl bg-[#25D366] text-white font-semibold text-sm hover:bg-[#1db954] transition-colors"
             >
