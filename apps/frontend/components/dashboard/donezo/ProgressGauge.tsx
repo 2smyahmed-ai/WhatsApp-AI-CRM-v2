@@ -100,15 +100,15 @@ export default function ProgressGauge({
           )}
 
           {/* Summary numbers */}
-          <div className="grid grid-cols-2 gap-3 border-t border-gray-100 pt-4 dark:border-white/8">
-            <div className="rounded-xl bg-[#25D366]/8 dark:bg-[#25D366]/10 p-3">
-              <p className="text-[22px] font-bold tabular-nums text-[#16A34A] dark:text-[#25D366]">
+          <div className="min-w-0 grid grid-cols-2 gap-2 border-t border-gray-100 pt-4 dark:border-white/8">
+            <div className="p-2.5">
+              <p className="text-lg font-bold tabular-nums text-[#16A34A] dark:text-[#25D366]">
                 {value}%
               </p>
               <p className="mt-0.5 text-[11px] text-gray-500 dark:text-[#8696A0]">{t('collab.completed')}</p>
             </div>
-            <div className="rounded-xl bg-gray-50 dark:bg-white/5 p-3">
-              <p className="text-[22px] font-bold tabular-nums text-gray-700 dark:text-[#8696A0]">
+            <div className="p-2.5">
+              <p className="text-lg font-bold tabular-nums text-gray-700 dark:text-[#8696A0]">
                 {100 - value}%
               </p>
               <p className="mt-0.5 text-[11px] text-gray-500 dark:text-[#8696A0]">{t('collab.pending')}</p>

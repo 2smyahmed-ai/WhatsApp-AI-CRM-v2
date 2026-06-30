@@ -1,0 +1,31 @@
+# Adds a containerized Caddy edge proxy (automatic HTTPS) on top of the tenant
+# stack. Combine it with the tenant compose so both share the same project
+# network — Caddy then reaches `backend` and `frontend` by service name:
+#
+#   docker compose --env-file tenants/<slug>/.env \
+#     -f docker-compose.tenant.yml -f docker-compose.caddy.yml \
+#     -p crm-<slug> up -d --build
+#
+# Requires CADDY_DOMAIN (and optionally CADDY_EMAIL) in the tenant .env file.
+# PUBLIC_URL in that file must be https://<CADDY_DOMAIN>.
+services:
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      - frontend
+      - backend
+    environment:
+      CADDY_DOMAIN: ${CADDY_DOMAIN}
+      CADDY_EMAIL: ${CADDY_EMAIL:-}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

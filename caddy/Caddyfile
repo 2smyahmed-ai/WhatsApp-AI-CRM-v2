@@ -1,0 +1,26 @@
+# Edge reverse proxy with automatic HTTPS (Let's Encrypt).
+# CADDY_DOMAIN / CADDY_EMAIL are injected from the tenant .env file via
+# docker-compose.caddy.yml. Caddy fetches and renews the TLS cert on its own.
+#
+# Routing mirrors how the browser talks to the app: the Next.js frontend calls
+# the backend DIRECTLY at PUBLIC_URL (see apps/frontend/proxy.ts — it is only an
+# auth guard, NOT an API proxy), so /api and /socket.io must reach the backend,
+# and everything else the frontend.
+{
+	email {$CADDY_EMAIL}
+}
+
+{$CADDY_DOMAIN} {
+	encode zstd gzip
+
+	# REST API
+	@api path /api/*
+	reverse_proxy @api backend:4000
+
+	# Socket.IO realtime (Caddy upgrades WebSockets automatically)
+	@socket path /socket.io/*
+	reverse_proxy @socket backend:4000
+
+	# Everything else → Next.js frontend
+	reverse_proxy frontend:3000
+}

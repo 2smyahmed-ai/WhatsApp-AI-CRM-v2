@@ -193,41 +193,46 @@ export default function DashboardPage() {
     <div className="relative space-y-4">
       {/* Ambient gradient blobs — visible through glass cards */}
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 overflow-hidden select-none">
-        <div className="absolute -top-20 right-0 h-80 w-80 rounded-full bg-emerald-300/25 blur-3xl dark:bg-[#25D366]/6" />
-        <div className="absolute top-1/3 -left-16 h-64 w-64 rounded-full bg-sky-300/20 blur-3xl dark:bg-blue-500/4" />
-        <div className="absolute bottom-20 right-1/3 h-52 w-52 rounded-full bg-violet-300/15 blur-3xl dark:bg-violet-500/3" />
+        <div className="absolute -top-20 right-0 h-80 w-80 rounded-full bg-emerald-200/30 blur-3xl dark:bg-[#25D366]/6" />
+        <div className="absolute top-1/3 -left-16 h-64 w-64 rounded-full bg-sky-200/25 blur-3xl dark:bg-blue-500/4" />
+        <div className="absolute bottom-20 right-1/3 h-52 w-52 rounded-full bg-violet-200/20 blur-3xl dark:bg-violet-500/3" />
       </div>
 
       {/* ── Hero card (hidden on mobile) ──────────────────────────────────── */}
-      <div className="hidden sm:block relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#16A34A] via-[#15803D] to-[#0c4a2b] p-5 sm:p-6 shadow-[0_12px_32px_-8px_rgba(22,163,74,0.4)] dark:from-[#0f3d22] dark:via-[#0c3a27] dark:to-[#091f15]">
-        {/* Decorative glows */}
+      <div className="hidden sm:block relative overflow-hidden rounded-2xl bg-white border border-gray-100 shadow-[0_2px_20px_rgba(0,0,0,0.06)] p-5 sm:p-6 dark:bg-[#0d1a14] dark:border-white/[0.07] dark:shadow-[0_8px_40px_rgba(0,0,0,0.6)]">
+        {/* Top shimmer line */}
+        <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#25D366]/40 to-transparent dark:via-[#25D366]/55" />
+
+        {/* Corner glows */}
         <div aria-hidden="true" className="pointer-events-none absolute inset-0 select-none">
-          <div className="absolute -right-10 -top-10 h-48 w-48 rounded-full bg-white/8 blur-2xl" />
-          <div className="absolute bottom-0 left-0 h-32 w-40 rounded-full bg-[#25D366]/15 blur-2xl" />
-          <div className="absolute inset-0 opacity-[0.03] hero-dot-grid" />
+          <div className="absolute -right-12 -top-12 h-52 w-52 rounded-full bg-[#25D366]/6 blur-3xl dark:bg-[#25D366]/12" />
+          <div className="absolute -left-8 bottom-0 h-36 w-44 rounded-full bg-blue-400/5 blur-3xl dark:bg-blue-500/7" />
         </div>
 
-        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        {/* Subtle dot-grid texture */}
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-[0.018] dark:opacity-[0.025] hero-dot-grid" />
+
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <div className="mb-2.5 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold text-white/90 backdrop-blur-sm">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#4ade80] animate-pulse" />
+            <div className="mb-2.5 inline-flex items-center gap-1.5 rounded-full border border-[#16A34A]/20 bg-[#16A34A]/8 px-2.5 py-1 text-[11px] font-semibold text-[#16A34A] dark:border-[#25D366]/25 dark:bg-[#25D366]/10 dark:text-[#25D366]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#16A34A] animate-pulse dark:bg-[#25D366]" />
               {t('badge', { defaultValue: 'Live' })}
             </div>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">{t('title')}</h1>
-            <p className="mt-1 text-sm text-white/65">{t('tagline')}</p>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-white">{t('title')}</h1>
+            <p className="mt-1 text-sm text-gray-500 dark:text-white/40">{t('tagline')}</p>
           </div>
 
           <div className="flex gap-2 sm:shrink-0">
             <Link
               href="/broadcasts/new"
-              className="flex flex-1 sm:flex-none items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-[#15803D] shadow-sm transition-all hover:bg-white/95 active:scale-95"
+              className="flex flex-1 sm:flex-none items-center justify-center gap-2 rounded-xl bg-[#16A34A] px-4 py-2.5 text-sm font-bold text-white shadow-[0_4px_14px_rgba(22,163,74,0.30)] transition-all hover:bg-[#15803D] hover:shadow-[0_6px_20px_rgba(22,163,74,0.40)] active:scale-95 dark:bg-[#25D366] dark:shadow-[0_4px_16px_rgba(37,211,102,0.35)] dark:hover:bg-[#22c55e] dark:hover:shadow-[0_6px_22px_rgba(37,211,102,0.45)]"
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
               {t('newBroadcast')}
             </Link>
             <Link
               href="/contacts"
-              className="flex flex-1 sm:flex-none items-center justify-center gap-2 rounded-xl border border-white/25 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white backdrop-blur-sm transition-all hover:bg-white/20 active:scale-95"
+              className="flex flex-1 sm:flex-none items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm font-semibold text-gray-600 transition-all hover:bg-gray-100 hover:text-gray-900 hover:border-gray-300 active:scale-95 dark:border-white/10 dark:bg-white/[0.05] dark:text-white/70 dark:hover:bg-white/[0.09] dark:hover:text-white dark:hover:border-white/18"
             >
               <Upload className="h-4 w-4" aria-hidden="true" />
               {t('importContacts')}
@@ -270,8 +275,8 @@ export default function DashboardPage() {
       {/* ── KPI row ──────────────────────────────────────────────────────── */}
       {overview && <KpiCards data={overview} />}
 
-      {/* ── Quick Navigate ───────────────────────────────────────────────── */}
-      <div>
+      {/* ── Quick Navigate (hidden on desktop) ───────────────────────────── */}
+      <div className="lg:hidden">
         <p className="mb-2.5 ps-0.5 text-[11px] font-semibold uppercase tracking-widest text-gray-400 dark:text-white/30">
           {t('quickNav.title')}
         </p>
