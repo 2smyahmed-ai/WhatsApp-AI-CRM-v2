@@ -26,6 +26,14 @@ interface StoredAuthData {
  * every key mutation and credential save — Baileys calls these infrequently
  * (handshake + periodic key rotations), so the write amplification is low.
  */
+export async function clearDbAuthState(sessionId: string): Promise<void> {
+  try {
+    await prisma.whatsAppSession.delete({ where: { sessionId } }).catch(() => undefined);
+  } catch (err) {
+    logger.warn('db_auth_state.clear_failed', { sessionId, error: String(err) });
+  }
+}
+
 export async function useDbAuthState(sessionId: string): Promise<{
   state: AuthenticationState;
   saveCreds: () => Promise<void>;

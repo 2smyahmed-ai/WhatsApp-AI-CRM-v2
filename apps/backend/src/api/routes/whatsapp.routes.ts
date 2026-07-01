@@ -9,6 +9,7 @@ import { processIncomingMessage } from '../../workflow/inbound-workflow';
 import { logger } from '../../lib/logger';
 import { prisma } from '../../lib/prisma';
 import { getSessionId } from '../../whatsapp/client';
+import { clearDbAuthState } from '../../whatsapp/db-auth-state';
 import { getWarmupPhase, startOfToday } from '../../whatsapp/warmup';
 import { getFromCache, setInCache, invalidateCache } from '../../lib/status-cache';
 
@@ -23,6 +24,7 @@ router.use((req, res, next) => {
 
 router.post('/connect', checkPermission('update', 'whatsapp'), async (req, res) => {
   try {
+    await clearDbAuthState(process.env.WHATSAPP_SESSION_ID || 'default');
     await providerManager.connect();
     res.json({ success: true });
   } catch (error) {
@@ -33,6 +35,7 @@ router.post('/connect', checkPermission('update', 'whatsapp'), async (req, res) 
 router.post('/reset-auth', checkPermission('update', 'whatsapp'), async (req, res) => {
   try {
     await providerManager.disconnect();
+    await clearDbAuthState(process.env.WHATSAPP_SESSION_ID || 'default');
     const authDir = path.resolve(process.cwd(), 'auth_info_baileys');
     if (fs.existsSync(authDir)) {
       fs.rmSync(authDir, { recursive: true, force: true });

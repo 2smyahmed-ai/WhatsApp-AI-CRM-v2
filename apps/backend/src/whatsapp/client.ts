@@ -4,7 +4,7 @@ import {
   fetchLatestBaileysVersion,
   Browsers,
 } from '@whiskeysockets/baileys';
-import { useDbAuthState } from './db-auth-state';
+import { clearDbAuthState, useDbAuthState } from './db-auth-state';
 import { Boom } from '@hapi/boom';
 import { MessageDirection, MessageType } from '@prisma/client';
 import { prisma } from '../lib/prisma';
@@ -21,6 +21,11 @@ let connectInFlight: Promise<any> | null = null;
 let reconnectTimer: NodeJS.Timeout | null = null;
 let lastConnectionError: { statusCode?: number; reason?: string; message?: string } | null = null;
 let connectedAt: Date | null = null;
+
+function clearActiveQr(): void {
+  currentQR = null;
+  emitRealtime('wa:qr', { qr: null });
+}
 
 function getSessionId() {
   return String(sock?.user?.id || process.env.WHATSAPP_SESSION_ID || 'default').trim();
@@ -134,6 +139,8 @@ export async function connectToWhatsApp() {
       reconnectTimer = null;
     }
 
+    clearActiveQr();
+
     sock = makeWASocket({
       auth: state,
       version,
@@ -157,19 +164,23 @@ export async function connectToWhatsApp() {
         const disconnectStatus = (lastDisconnect?.error as Boom)?.output?.statusCode;
         const boomPayload = (lastDisconnect?.error as Boom)?.output?.payload as any;
         const boomData = (lastDisconnect?.error as any)?.data as any;
+        const errorMessage = boomPayload?.message ?? (lastDisconnect?.error as any)?.message ?? String(lastDisconnect?.error ?? '');
         const loggedOut = disconnectStatus === DisconnectReason.loggedOut;
         const shouldReconnect = !loggedOut;
+        const isAuthFailure = [401, 403, 405].includes(Number(disconnectStatus)) || /unauthorized|forbidden|session|auth|logged out|connection failure/i.test(errorMessage);
 
         lastConnectionError = {
           statusCode: disconnectStatus,
           reason: boomData?.reason,
-          message: boomPayload?.message ?? (lastDisconnect?.error as any)?.message,
+          message: errorMessage,
         };
 
         logger.warn('WhatsApp connection closed', {
           shouldReconnect,
-          error: lastDisconnect?.error instanceof Error ? lastDisconnect?.error.message : String(lastDisconnect?.error),
+          isAuthFailure,
+          error: errorMessage,
         });
+        clearActiveQr();
         waStatus = 'disconnected';
         emitRealtime('wa:status', { status: 'disconnected' });
 
@@ -177,7 +188,8 @@ export async function connectToWhatsApp() {
         connectInFlight = null;
         connectedAt = null;
 
-        if (loggedOut) {
+        if (loggedOut || isAuthFailure) {
+          void clearDbAuthState(authSessionId);
           return;
         }
 
@@ -187,7 +199,7 @@ export async function connectToWhatsApp() {
         }, 3000);
       } else if (connection === 'open') {
         logger.info('WhatsApp connected');
-        currentQR = null;
+        clearActiveQr();
         waStatus = 'connected';
         lastConnectionError = null;
         connectedAt = new Date();
@@ -267,7 +279,7 @@ export async function disconnectWhatsApp() {
 
   const currentSock = sock;
   sock = null;
-  currentQR = null;
+  clearActiveQr();
   waStatus = 'disconnected';
   connectInFlight = null;
   lastConnectionError = null;
