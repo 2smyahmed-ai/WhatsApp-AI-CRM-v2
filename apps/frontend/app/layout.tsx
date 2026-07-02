@@ -3,6 +3,7 @@ import Script from 'next/script'
 import { AuthProvider } from '@/components/providers/SessionProvider'
 import { ThemeProvider } from '@/components/providers/ThemeProvider'
 import { I18nProvider } from '@/components/providers/I18nProvider'
+import SplashController from '@/components/pwa/SplashController'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -38,10 +39,11 @@ export const metadata: Metadata = {
   formatDetection: { telephone: false },
   icons: {
     icon: [
-      { url: '/icons/icon-192.svg', sizes: '192x192', type: 'image/svg+xml' },
-      { url: '/icons/icon-512.svg', sizes: '512x512', type: 'image/svg+xml' },
+      { url: '/icons/favicon-32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
     ],
-    apple: [{ url: '/icons/apple-touch-icon.svg', sizes: '180x180', type: 'image/svg+xml' }],
+    apple: [{ url: '/icons/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
   },
   other: {
     'mobile-web-app-capable': 'yes',
@@ -62,6 +64,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   userScalable: true,
+  // Extend under the notch / home indicator so env(safe-area-*) padding engages.
+  viewportFit: 'cover',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -71,6 +75,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="antialiased" suppressHydrationWarning>
         {/* Runs before React hydrates — prevents theme/RTL/PWA flash */}
         <Script id="bootstrap" src="/scripts/bootstrap.js" strategy="beforeInteractive" />
+
+        {/* Native launch screen — visible only in the installed (standalone) app,
+            painted in the initial HTML so there's no white flash on cold start.
+            SplashController fades it out once the app is interactive. Swap the
+            <img> src for your logo PNG once provided. */}
+        <div id="app-splash" aria-hidden="true">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icons/logo-tight.png" alt="" className="app-splash__logo" />
+          <div className="app-splash__wordmark">Nexus<span>CRM</span></div>
+          <div className="app-splash__dots"><i /><i /><i /></div>
+        </div>
+        <SplashController />
         {/* PWA service worker registration */}
         <Script id="register-sw" strategy="afterInteractive">{`
           if ('serviceWorker' in navigator) {

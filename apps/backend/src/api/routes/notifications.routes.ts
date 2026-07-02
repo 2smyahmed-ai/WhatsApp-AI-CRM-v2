@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware } from '../../auth/auth.middleware';
 import { notificationsService } from '../../notifications/notifications.service';
+import { pushService } from '../../notifications/push.service';
 import { emitToUser } from '../../realtime/socket';
 
 const router = Router();
@@ -30,6 +31,17 @@ if (process.env.NODE_ENV !== 'production') {
       isRead: false,
       createdAt: new Date().toISOString(),
     });
+    // Also fire a real Web Push to this user's devices so phone push can be
+    // verified end-to-end (no-op if push isn't configured / no subscription yet).
+    void pushService
+      .sendToUsers([userId(req)], {
+        title: 'Nexus CRM — test alert',
+        body: 'Customer is asking about pricing and ready to buy. Reply now.',
+        url: '/dashboard',
+        tag: 'test',
+        type,
+      })
+      .catch(() => {});
     res.json({ success: true });
   });
 }

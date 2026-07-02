@@ -16,7 +16,6 @@ import {
   MessageSquareReply,
   BriefcaseBusiness,
   CheckSquare,
-  MessageCircle,
   ShieldCheck,
   UserCog,
   UsersRound,
@@ -136,9 +135,12 @@ export default function Sidebar() {
     <>
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#1f9255] to-[#0c3a27] shadow-[0_8px_20px_-6px_rgba(13,77,46,0.6)]">
-          <MessageCircle className="h-5 w-5 text-white" fill="white" strokeWidth={0} />
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/icons/logo-tight.png"
+          alt={t('appName')}
+          className="h-10 w-10 shrink-0 rounded-2xl shadow-[0_8px_20px_-6px_rgba(13,77,46,0.6)]"
+        />
         <div className="min-w-0">
           <p className="truncate text-[15px] font-bold leading-tight text-gray-900 dark:text-white">
             {t('appName')}

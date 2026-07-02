@@ -29,6 +29,23 @@ model User {
   auditLogs        AuditLog[]
   reactions        MessageReaction[] @relation("UserReactions")
   notifications    Notification[]    @relation("UserNotifications")
+  pushSubscriptions PushSubscription[] @relation("UserPushSubscriptions")
+}
+
+/// A Web Push subscription for a user's device/browser. One user can have many
+/// (phone + laptop). `endpoint` is globally unique per browser push service.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation("UserPushSubscriptions", fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@index([userId])
 }
 
 enum Role {

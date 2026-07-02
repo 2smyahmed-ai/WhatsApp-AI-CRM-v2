@@ -691,6 +691,9 @@ export default function CustomerAiPage() {
                   </Field>
                 </Card>
               )}
+              <Field label={t('whenToAnswer.batchWindow')} hint={t('whenToAnswer.batchWindowHint')}>
+                <TextInput type="number" value={c.gating.batchWindowSeconds} className="max-w-[120px]" onChange={(v) => setGating({ batchWindowSeconds: Math.max(0, parseInt(v) || 0) })} />
+              </Field>
               <Field label={t('whenToAnswer.fallback')} hint={t('whenToAnswer.fallbackHint')}>
                 <TextArea value={c.gating.fallbackMessage} rows={2} onChange={(v) => setGating({ fallbackMessage: v })} />
               </Field>
@@ -734,14 +737,9 @@ export default function CustomerAiPage() {
                   <TextArea value={c.handoff.transferMessage} rows={2} placeholder={t('handoff.transferMessagePlaceholder')} onChange={(v) => setHandoff({ transferMessage: v })} />
                 </Field>
               </div>
-              <SettingRow label={t('whenToAnswer.pauseOnHuman')} description={t('whenToAnswer.pauseOnHumanDesc')}>
-                <Toggle checked={c.gating.pauseOnHumanReply} onChange={() => setGating({ pauseOnHumanReply: !c.gating.pauseOnHumanReply })} />
-              </SettingRow>
-              {c.gating.pauseOnHumanReply && (
-                <Field label={t('whenToAnswer.pauseDuration')} hint={t('whenToAnswer.pauseDurationHint')}>
-                  <TextInput type="number" value={c.gating.pauseDurationHours} className="max-w-[120px]" onChange={(v) => setGating({ pauseDurationHours: parseInt(v) || 8 })} />
-                </Field>
-              )}
+              <Field label={t('whenToAnswer.pauseDuration')} hint={t('whenToAnswer.pauseDurationHint')}>
+                <TextInput type="number" value={c.gating.pauseDurationHours} className="max-w-[120px]" onChange={(v) => setGating({ pauseDurationHours: parseInt(v) || 8 })} />
+              </Field>
               <SectionSave />
             </SectionCard>
           </div>

@@ -20,7 +20,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           <Sidebar />
           <div className="flex min-w-0 flex-1 flex-col">
             <Header />
-            <main className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pt-5 pb-20 sm:px-6 sm:py-5 lg:px-7 animate-fade-in">
+            <main className="relative flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-4 pt-5 pb-20 sm:px-6 sm:py-5 lg:px-7 animate-fade-in">
               {children}
             </main>
           </div>

@@ -12,6 +12,7 @@ import {
 import { useToastStore } from '../../hooks/useToast';
 import { useChatUnread } from '../../stores/chat-unread-store';
 import { formatPhone } from '../../lib/phone';
+import { ensurePushSubscription } from '../../lib/push';
 
 /**
  * Mounted once in the dashboard layout. The single hub for new-message alerts:
@@ -38,6 +39,10 @@ export default function NotificationProvider() {
   useEffect(() => {
     requestNotificationPermission();
     primeNotificationSound();
+    // Register this device for Web Push so hot leads & important alerts reach
+    // the user's phone even when the app is closed (no-op until permission is
+    // granted and the server has VAPID configured).
+    void ensurePushSubscription();
 
     const socket = getSocket();
 

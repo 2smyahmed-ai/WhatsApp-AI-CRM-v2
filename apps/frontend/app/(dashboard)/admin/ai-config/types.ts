@@ -125,10 +125,10 @@ export interface AiConfig {
     businessHoursEnd: string;
     offHoursMessage: string;
     maxResponsesPerHour: number;
+    batchWindowSeconds: number;
     ignoreFirstMessage: boolean;
     typingDelayMs: number;
     fallbackMessage: string;
-    pauseOnHumanReply: boolean;
     pauseDurationHours: number;
   };
   targeting: {

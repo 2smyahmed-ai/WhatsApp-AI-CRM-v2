@@ -831,3 +831,126 @@ html[dir="rtl"] .lux-marquee-track { animation-direction: reverse; }
 @media (prefers-reduced-motion: reduce) {
   .lux-pulse-ring { animation: none; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PWA — NATIVE APP FEEL (installed / standalone only)
+   Gated behind html.pwa-standalone (set in bootstrap.js before first paint) so
+   the site in a normal browser tab keeps normal website behaviour, while the
+   installed app feels native: no text-selection on chrome, no rubber-band /
+   pull-to-refresh, no tap-highlight flash, no zoom-on-input.
+   ══════════════════════════════════════════════════════════════════════════ */
+html.pwa-standalone,
+html.pwa-standalone body {
+  overscroll-behavior: none;                 /* kill pull-to-refresh + rubber-band */
+  -webkit-tap-highlight-color: transparent;
+}
+html.pwa-standalone {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;               /* no long-press callout on iOS */
+}
+/* Re-enable selection where it genuinely matters (typing + opt-in content). */
+html.pwa-standalone input,
+html.pwa-standalone textarea,
+html.pwa-standalone [contenteditable="true"],
+html.pwa-standalone .select-text,
+html.pwa-standalone .select-text * {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+/* Keep mobile inputs ≥16px so iOS doesn't auto-zoom when focusing a field. */
+@media (max-width: 640px) {
+  html.pwa-standalone input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  html.pwa-standalone textarea,
+  html.pwa-standalone select {
+    font-size: 16px;
+  }
+}
+
+/* Extra safe-area helpers (top / sides) — .pb-safe already exists above. */
+.pt-safe { padding-top: env(safe-area-inset-top); }
+.ps-safe { padding-inline-start: env(safe-area-inset-left); }
+.pe-safe { padding-inline-end: env(safe-area-inset-right); }
+.min-h-dvh { min-height: 100dvh; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LAUNCH / SPLASH SCREEN — installed app only, on cold start.
+   Rendered statically in <body> so it paints instantly (no white flash);
+   SplashController fades it out once the app is interactive. Hidden entirely in
+   a normal browser tab.
+   ══════════════════════════════════════════════════════════════════════════ */
+#app-splash { display: none; }
+html.pwa-standalone #app-splash {
+  display: flex;
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding-bottom: env(safe-area-inset-bottom);
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(15,155,108,0.16) 0%, transparent 55%),
+    linear-gradient(180deg, #0a0f1e 0%, #070c10 100%);
+  opacity: 1;
+  transition: opacity 0.5s ease;
+}
+#app-splash.is-hiding { opacity: 0; pointer-events: none; }
+.app-splash__logo {
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+  filter: drop-shadow(0 12px 34px rgba(37,211,102,0.38));
+  animation: splashLogoIn 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.app-splash__wordmark {
+  position: relative;
+  overflow: hidden;
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: 0.16em;
+  color: #ffffff;
+  opacity: 0;
+  animation: splashTextIn 0.7s ease-out 0.28s both;
+}
+.app-splash__wordmark span { color: #25D366; }
+.app-splash__wordmark::after {          /* gold shimmer sweep */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 32%, rgba(212,175,55,0.85) 50%, transparent 68%);
+  transform: translateX(-120%);
+  animation: splashShimmer 1.7s ease-in-out 0.8s infinite;
+}
+.app-splash__dots { display: flex; gap: 6px; margin-top: 2px; opacity: 0; animation: splashTextIn 0.5s ease-out 0.5s both; }
+.app-splash__dots i { width: 7px; height: 7px; border-radius: 9999px; background: #25D366; opacity: 0.35; animation: splashDot 1s ease-in-out infinite; }
+.app-splash__dots i:nth-child(2) { animation-delay: 0.15s; }
+.app-splash__dots i:nth-child(3) { animation-delay: 0.30s; }
+
+@keyframes splashLogoIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+@keyframes splashTextIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes splashShimmer { 0% { transform: translateX(-120%); } 60%, 100% { transform: translateX(120%); } }
+@keyframes splashDot { 0%, 100% { opacity: 0.35; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-4px); } }
+@media (prefers-reduced-motion: reduce) {
+  .app-splash__logo, .app-splash__wordmark, .app-splash__dots, .app-splash__dots i { animation: none; opacity: 1; }
+  .app-splash__wordmark::after { animation: none; opacity: 0; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SKELETON LOADING BLOCKS — premium content placeholders (use <Skeleton/>).
+   ══════════════════════════════════════════════════════════════════════════ */
+.skeleton { position: relative; overflow: hidden; background: rgba(148,163,184,0.18); border-radius: 10px; }
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent);
+  animation: skeletonSweep 1.5s infinite;
+}
+.dark .skeleton { background: rgba(255,255,255,0.07); }
+.dark .skeleton::after { background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent); }
+@keyframes skeletonSweep { 100% { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .skeleton::after { animation: none; } }

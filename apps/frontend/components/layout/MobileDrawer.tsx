@@ -9,7 +9,7 @@ import {
   X, BarChart3, MessageSquare, Users, Send, Zap, Settings,
   Tags, MessageSquareReply, BriefcaseBusiness, CheckSquare,
   ShieldCheck, UserCog, UsersRound, FileText, Bot, Target,
-  LogOut, Sun, Moon, Globe, RefreshCw, MessageCircle, Sparkles,
+  LogOut, Sun, Moon, Globe, RefreshCw, Sparkles,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -105,9 +105,12 @@ export default function MobileDrawer({ open, onClose }: { open: boolean; onClose
         {/* Sheet header */}
         <div className="flex items-center justify-between px-5 py-3 shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#1f9255] to-[#0c3a27] shadow-[0_4px_12px_-4px_rgba(13,77,46,0.5)]">
-              <MessageCircle className="h-4 w-4 text-white" fill="white" strokeWidth={0} />
-            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/icons/logo-tight.png"
+              alt={t('appName')}
+              className="h-8 w-8 shrink-0 rounded-xl shadow-[0_4px_12px_-4px_rgba(13,77,46,0.5)]"
+            />
             <span className="text-[15px] font-bold text-gray-900 dark:text-white">{t('appName')}</span>
           </div>
           <button

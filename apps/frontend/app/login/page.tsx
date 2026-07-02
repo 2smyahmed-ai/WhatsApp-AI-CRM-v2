@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { getSession, signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import {
-  MessageCircle, Eye, EyeOff, Lock, Loader,
+  Eye, EyeOff, Lock, Loader,
   Sun, Moon, Globe, ArrowRight,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -81,9 +81,8 @@ export default function LoginPage() {
 
           {/* Top logo */}
           <div className="flex items-center gap-3 text-2xl font-bold">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#25D366] to-[#128C7E] shadow-lg">
-              <MessageCircle className="h-6 w-6 text-white" fill="white" strokeWidth={0} />
-            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/icons/logo-tight.png" alt="Nexus CRM" className="h-12 w-12 rounded-2xl shadow-lg" />
             <span className="text-gray-900 dark:text-white">CRM</span>
           </div>
 
@@ -159,9 +158,8 @@ export default function LoginPage() {
           <div className="w-full max-w-sm">
             {/* Card header */}
             <div className="mb-8 text-center">
-              <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-[#25D366] to-[#128C7E] shadow-lg shadow-[#25D366]/30">
-                <MessageCircle className="h-8 w-8 text-white" fill="white" strokeWidth={0} />
-              </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/icons/logo-tight.png" alt="Nexus CRM" className="mx-auto mb-6 h-16 w-16 rounded-2xl shadow-lg shadow-[#25D366]/30" />
               <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
                 {t('login.title')}
               </h2>

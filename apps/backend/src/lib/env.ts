@@ -105,6 +105,12 @@ export interface S3Config {
   publicUrl?: string;
 }
 
+export interface WebPushConfig {
+  publicKey: string;
+  privateKey: string;
+  subject: string; // "mailto:you@example.com" or a https URL
+}
+
 export interface Env {
   isProduction: boolean;
   jwtSecret: string;
@@ -114,6 +120,24 @@ export interface Env {
   redisUrl?: string;
   s3?: S3Config;
   devSuperuser?: DevSuperuser;
+  /** Web Push (phone/desktop notifications). Optional — feature is disabled if unset. */
+  webPush?: WebPushConfig;
+}
+
+/**
+ * Web Push is opt-in: set VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY (and optionally
+ * VAPID_SUBJECT) to enable phone/desktop push. If neither is set the feature is
+ * silently disabled. If only one is set that's a misconfiguration → fail fast.
+ */
+function validateWebPush(): WebPushConfig | undefined {
+  const publicKey = process.env.VAPID_PUBLIC_KEY?.trim();
+  const privateKey = process.env.VAPID_PRIVATE_KEY?.trim();
+  if (!publicKey && !privateKey) return undefined;
+  if (!publicKey || !privateKey) {
+    throw new Error('Both VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY must be set to enable Web Push.');
+  }
+  const subject = process.env.VAPID_SUBJECT?.trim() || 'mailto:admin@nexuscrm.app';
+  return { publicKey, privateKey, subject };
 }
 
 function buildDevSuperuser(): DevSuperuser | undefined {
@@ -142,12 +166,14 @@ function buildEnv(): Env {
   let redisUrl: string | undefined;
   let s3: S3Config | undefined;
   let devSuperuser: DevSuperuser | undefined;
+  let webPush: WebPushConfig | undefined;
 
   try { jwtSecret = validateJwtSecret(); } catch (e) { errors.push((e as Error).message); }
   try { databaseUrl = requireEnv('DATABASE_URL'); } catch (e) { errors.push((e as Error).message); }
   try { redisUrl = validateRedisUrl(); } catch (e) { errors.push((e as Error).message); }
   try { s3 = validateS3(); } catch (e) { errors.push((e as Error).message); }
   try { devSuperuser = buildDevSuperuser(); } catch (e) { errors.push((e as Error).message); }
+  try { webPush = validateWebPush(); } catch (e) { errors.push((e as Error).message); }
 
   if (errors.length > 0) {
     throw new Error(`Invalid environment configuration:\n  - ${errors.join('\n  - ')}`);
@@ -162,6 +188,7 @@ function buildEnv(): Env {
     redisUrl,
     s3,
     devSuperuser,
+    webPush,
   };
 }
 
@@ -174,6 +201,7 @@ export function loadEnv(): Env {
       redisConfigured: Boolean(cached.redisUrl),
       s3Configured: Boolean(cached.s3),
       devSuperuserConfigured: Boolean(cached.devSuperuser),
+      webPushConfigured: Boolean(cached.webPush),
     });
   }
   return cached;

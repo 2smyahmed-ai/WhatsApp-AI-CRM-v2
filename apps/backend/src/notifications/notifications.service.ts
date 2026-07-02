@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma';
 import { logger } from '../lib/logger';
 import { emitToUser } from '../realtime/socket';
 import { excludeDevSuperuser } from '../auth/authorize';
+import { pushService } from './push.service';
 
 export interface CreateNotificationInput {
   type: NotificationType;
@@ -77,6 +78,21 @@ class NotificationsService {
       }),
     );
     logger.info('notifications.created', { type: input.type, recipients: recipients.length });
+
+    // Also fire a Web Push so recipients are alerted on their phone even when
+    // the app is closed (hot leads, handoffs, status upgrades — everything that
+    // flows through here). Best-effort; disabled unless VAPID is configured.
+    void pushService
+      .sendToUsers(recipients, {
+        title: input.titleEn,
+        body: input.bodyEn,
+        type: input.type,
+        tag: input.conversationId || input.type,
+        url: input.conversationId
+          ? `/conversations?conversationId=${encodeURIComponent(input.conversationId)}`
+          : '/dashboard',
+      })
+      .catch(() => {});
   }
 
   async list(userId: string, opts: { unreadOnly?: boolean; limit?: number } = {}) {

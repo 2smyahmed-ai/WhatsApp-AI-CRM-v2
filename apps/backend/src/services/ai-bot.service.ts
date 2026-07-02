@@ -42,16 +42,35 @@ export interface AiBotProvider {
 // ── Default pause duration: 8 hours ────────────────────────────────────────
 const DEFAULT_PAUSE_MS = 8 * 60 * 60 * 1000;
 
-// ── Burst window: wait this long for the customer to stop typing before the
-//    bot answers, so a rapid burst of messages costs ONE reply, not N. ────────
-const BOT_BURST_MS = 3_000;
+// ── Burst window: how long to wait after the customer's LAST message before
+//    the bot answers. Customers usually send a single question across several
+//    quick messages, so a real agent waits until they've clearly finished, then
+//    replies once covering everything. Configurable via gating.batchWindowSeconds.
+const DEFAULT_BATCH_WINDOW_MS = 8_000;
+const MIN_BATCH_WINDOW_MS = 1_000;
+const MAX_BATCH_WINDOW_MS = 30_000;
+// Extra grace added when the last message looks unfinished (no sentence-ending
+// punctuation) — a strong hint the customer is still mid-thought.
+const UNFINISHED_GRACE_MS = 4_000;
+
+/** Per-conversation state for coalescing a burst of messages into one reply. */
+interface InboundState {
+  timer: NodeJS.Timeout | null;
+  ctx: { phone: string; sessionId: string; teamId: string | null };
+  /** Text of the most recent inbound message (used for handoff/provider input). */
+  latestText: string;
+  /** True while a reply is being generated/sent for this conversation. */
+  generating: boolean;
+  /** True when new messages arrived while a reply was in flight. */
+  pending: boolean;
+}
 
 // ── Service ──────────────────────────────────────────────────────────────────
 
 class AiBotService {
   private readonly providers = new Map<string, AiBotProvider>();
-  // Per-conversation debounce timers for burst coalescing.
-  private readonly inboundTimers = new Map<string, NodeJS.Timeout>();
+  // Per-conversation burst-coalescing state (debounce timer + in-flight guard).
+  private readonly inbound = new Map<string, InboundState>();
 
   /** Register an AI provider. The first registered provider is used by default. */
   register(provider: AiBotProvider): void {
@@ -60,11 +79,16 @@ class AiBotService {
   }
 
   /**
-   * Debounced entry point for inbound messages. A burst of rapid messages from
-   * the same conversation resets the timer, so the bot replies ONCE — to the
-   * whole burst — after the customer pauses. This both halves token/request
-   * usage for multi-message users and produces a single coherent reply instead
-   * of several fragmented ones. Mirrors the lead-qualifier's debounce.
+   * Debounced entry point for inbound messages. Like a human agent, the bot
+   * waits until the customer has clearly finished sending before it answers, so
+   * a burst of consecutive messages (one question split across several bubbles)
+   * gets ONE complete reply covering everything — not a reply per message.
+   *
+   * Each new message resets the quiet-period timer. The wait is configurable
+   * (gating.batchWindowSeconds, default 8s) and is extended a little when the
+   * last message looks unfinished. If the customer keeps typing while a reply is
+   * already being generated, that reply is NOT interrupted; the new messages are
+   * folded into a fresh cycle afterwards so they still get answered — once.
    */
   scheduleInboundReply(
     conversationId: string,
@@ -72,18 +96,73 @@ class AiBotService {
     ctx: { phone: string; sessionId: string; teamId: string | null },
   ): void {
     if (!inboundText?.trim()) return;
-    const prev = this.inboundTimers.get(conversationId);
-    if (prev) clearTimeout(prev);
+
+    let st = this.inbound.get(conversationId);
+    if (!st) {
+      st = { timer: null, ctx, latestText: inboundText, generating: false, pending: false };
+      this.inbound.set(conversationId, st);
+    }
+    st.ctx = ctx;
+    st.latestText = inboundText;
+
+    // A reply is already being written — don't start a competing one. Mark the
+    // conversation dirty so the in-flight reply reschedules a follow-up pass.
+    if (st.generating) {
+      st.pending = true;
+      return;
+    }
+
+    if (st.timer) clearTimeout(st.timer);
+    st.timer = this.armFlushTimer(conversationId, inboundText);
+  }
+
+  /** Create the quiet-period timer that flushes a conversation's pending reply. */
+  private armFlushTimer(conversationId: string, latestText: string): NodeJS.Timeout {
     const timer = setTimeout(() => {
-      this.inboundTimers.delete(conversationId);
-      // Fires with the LATEST message; handleInboundMessage rebuilds context
-      // (the whole burst) fresh from the DB, so nothing is lost.
-      void this.handleInboundMessage(conversationId, inboundText, ctx).catch((err) =>
-        logger.warn('ai_bot.debounced_failed', { conversationId, error: err instanceof Error ? err.message : String(err) }),
-      );
-    }, BOT_BURST_MS);
+      void this.flushInbound(conversationId);
+    }, this.resolveBatchWindowMs(latestText));
     if (typeof timer.unref === 'function') timer.unref();
-    this.inboundTimers.set(conversationId, timer);
+    return timer;
+  }
+
+  /** Quiet period (ms) to wait before replying, based on config + message shape. */
+  private resolveBatchWindowMs(latestText: string): number {
+    const configured = (aiConfigService.get().gating.batchWindowSeconds ?? 8) * 1000;
+    const base = Math.min(Math.max(configured, MIN_BATCH_WINDOW_MS), MAX_BATCH_WINDOW_MS);
+    // Still mid-thought? Give them a little longer to finish.
+    const looksUnfinished = !/[.!?…؟。]['"”’)\]]?\s*$/u.test(latestText.trim());
+    return looksUnfinished ? Math.min(base + UNFINISHED_GRACE_MS, MAX_BATCH_WINDOW_MS) : base;
+  }
+
+  /**
+   * Fire the actual reply for a conversation once its quiet period elapses,
+   * guarding against overlapping generations. handleInboundMessage rebuilds the
+   * whole conversation context from the DB, so the single reply covers every
+   * message in the burst.
+   */
+  private async flushInbound(conversationId: string): Promise<void> {
+    const st = this.inbound.get(conversationId);
+    if (!st) return;
+    st.timer = null;
+    if (st.generating) return; // safety: never run two generations at once
+    st.generating = true;
+    try {
+      await this.handleInboundMessage(conversationId, st.latestText, st.ctx);
+    } catch (err) {
+      logger.warn('ai_bot.debounced_failed', {
+        conversationId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      st.generating = false;
+      if (st.pending) {
+        // Messages arrived while we were replying — wait again, then answer them.
+        st.pending = false;
+        st.timer = this.armFlushTimer(conversationId, st.latestText);
+      } else {
+        this.inbound.delete(conversationId);
+      }
+    }
   }
 
   /** Returns the first registered provider, or undefined if none are registered. */
@@ -93,12 +172,13 @@ class AiBotService {
 
   /**
    * Check whether the bot should handle inbound messages for this conversation.
-   * Also clears an expired pause so the next call sees the bot as active again.
    *
    * Precedence (highest first):
-   *   1. Active human-handoff pause → never reply (an agent took over).
-   *   2. Per-chat override (botOverride / legacy botEnabled) when targeting
+   *   1. Per-chat override (botOverride / legacy botEnabled) when targeting
    *      respects it → forces the bot on or off for this one conversation.
+   *   2. Active pause (botPausedUntil) → never reply. This is now ONLY set by an
+   *      explicit customer-driven handoff (the bot handed the chat to a human),
+   *      NOT by a teammate simply replying (that auto-pause was removed).
    *   3. Master switch off → never reply.
    *   4. Targeting mode 'all' → reply.
    *   5. Targeting mode 'rules' → reply only if the contact matches the rules.
@@ -124,7 +204,7 @@ class AiBotService {
 
     // (1) An explicit per-conversation override is STICKY: once a user sets a
     // chat's bot to ON or OFF it stays exactly that way until they change it —
-    // it wins over the human-handoff pause AND the global master switch.
+    // it wins over the handoff pause AND the global master switch.
     // botOverride is the tri-state source of truth (null = Auto, follow rules);
     // legacy botEnabled=true maps to "force on".
     if (cfg.targeting.respectPerChatOverride) {
@@ -133,8 +213,9 @@ class AiBotService {
       if (override === false) return false;
     }
 
-    // (2) Auto mode only: a human-handoff pause suppresses the bot so an agent
-    // who took over isn't talked over. Skipped above for explicit overrides.
+    // (2) Auto mode only: a customer-driven handoff pause suppresses the bot so
+    // the human who took over isn't talked over. Skipped above for explicit
+    // overrides. (A teammate simply replying no longer pauses the bot.)
     if (conv.botPausedUntil) {
       if (conv.botPausedUntil > new Date()) return false;
       // Pause expired — clear it silently.
@@ -208,27 +289,6 @@ class AiBotService {
       data: { botPausedUntil: new Date(Date.now() + ms) },
     });
     logger.info('ai_bot.paused', { conversationId, resumeAt: new Date(Date.now() + ms).toISOString() });
-  }
-
-  /**
-   * Pause the bot because a human agent replied — but only when
-   * gating.pauseOnHumanReply is enabled. Called from the message sender.
-   */
-  async pauseForHumanReply(conversationId: string): Promise<void> {
-    const cfg = aiConfigService.get();
-    if (!cfg.gating.pauseOnHumanReply) return;
-    // Don't auto-pause a chat the user has explicitly forced ON — the manual
-    // override is sticky and must stay ON until the user changes it. (In Auto or
-    // forced-OFF chats there is nothing to keep ON, so pause as usual.)
-    if (cfg.targeting.respectPerChatOverride) {
-      const conv = await prisma.conversation.findUnique({
-        where: { id: conversationId },
-        select: { botOverride: true, botEnabled: true },
-      });
-      const override = conv?.botOverride ?? (conv?.botEnabled ? true : null);
-      if (override === true) return;
-    }
-    await this.pauseBot(conversationId);
   }
 
   /**

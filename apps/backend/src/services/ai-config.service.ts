@@ -158,11 +158,11 @@ export interface AiGatingConfig {
   businessHoursEnd: string;       // "HH:MM" local server time
   offHoursMessage: string;        // sent when a message arrives outside hours (blank = stay silent)
   maxResponsesPerHour: number;    // 0 = unlimited; rate-limit bot replies per conversation
+  batchWindowSeconds: number;     // wait this long after the customer's last message before replying (groups a multi-message question into one answer)
   ignoreFirstMessage: boolean;    // skip the very first inbound message in a conversation
   typingDelayMs: number;          // ms to wait before sending (0-5000)
   fallbackMessage: string;        // sent when the AI returns null or errors (blank = stay silent)
-  pauseOnHumanReply: boolean;     // pause the bot when a human agent replies
-  pauseDurationHours: number;     // how long that pause lasts
+  pauseDurationHours: number;     // how long a customer-driven handoff pause lasts
 }
 
 export type TargetingMode = 'all' | 'rules';
@@ -313,10 +313,10 @@ export const DEFAULT_AI_CONFIG: AiConfig = {
     businessHoursEnd: '18:00',
     offHoursMessage: '',
     maxResponsesPerHour: 0,
+    batchWindowSeconds: 8,
     ignoreFirstMessage: false,
     typingDelayMs: 0,
     fallbackMessage: '',
-    pauseOnHumanReply: true,
     pauseDurationHours: 8,
   },
   targeting: {
@@ -412,10 +412,10 @@ function migrateFromLegacy(cfg: AiConfig): AiConfig {
       businessHoursEnd: str('businessHoursEnd') || '18:00',
       offHoursMessage: str('offHoursMessage'),
       maxResponsesPerHour: num('maxResponsesPerHour', 0),
+      batchWindowSeconds: num('batchWindowSeconds', 8),
       ignoreFirstMessage: bool('ignoreFirstMessage'),
       typingDelayMs: num('typingDelayMs', 0),
       fallbackMessage: str('fallbackMessage'),
-      pauseOnHumanReply: bool('pauseOnHumanReply', true),
       pauseDurationHours: num('pauseDurationHours', 8),
     };
 

@@ -11,7 +11,6 @@ import { compileRenderable } from '../messaging/compile-renderable';
 import { persistNormalizedMessage } from '../messaging/persist';
 import { BAILEYS_CAPABILITIES } from '../messaging/capabilities';
 import { interactiveMessageService } from '../services/interactive-message.service';
-import { aiBotService } from '../services/ai-bot.service';
 import { sendCarousel } from '../interactive/carousel';
 import { sendButtons, sendCtaButtons } from '../interactive/buttons';
 import { sendListMenu } from '../interactive/lists';
@@ -318,11 +317,11 @@ export async function sendMessage(
 
   void incrementDailyOutgoingCount();
 
-  // ── Sprint 5: pause bot when a human agent sends (skip when the bot itself
-  // sends). pauseForHumanReply respects the gating.pauseOnHumanReply setting.
-  if (!options?.byBot) {
-    void aiBotService.pauseForHumanReply(conversation.id).catch(() => {});
-  }
+  // NOTE: a teammate replying no longer auto-pauses the bot. That "pause on
+  // human reply" behaviour silently stopped the bot mid-conversation for hours,
+  // which is not what we want: an enabled bot answers until it's explicitly
+  // turned off (per-contact header toggle or the global switch). To hand a
+  // single chat to a human, flip that chat's bot toggle OFF.
 
   return { id: messageId };
 }

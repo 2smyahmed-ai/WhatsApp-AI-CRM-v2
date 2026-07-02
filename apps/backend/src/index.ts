@@ -38,6 +38,7 @@ import uploadRoutes from './api/routes/upload.routes';
 import chatbotRoutes from './api/routes/chatbot.routes';
 import leadsRoutes from './api/routes/leads.routes';
 import notificationsRoutes from './api/routes/notifications.routes';
+import pushRoutes from './api/routes/push.routes';
 
 // Fail fast on missing/weak required configuration before binding the server.
 const config = loadEnv();
@@ -160,6 +161,7 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/chatbot', chatbotRoutes);
 app.use('/api/leads', leadsRoutes);
 app.use('/api/notifications', notificationsRoutes);
+app.use('/api/push', pushRoutes);
 
 // ── DEV ONLY: force re-analysis of the most recent 1-to-1 chats. Runs inside
 // the live server so lead notifications/popups are pushed over the socket.

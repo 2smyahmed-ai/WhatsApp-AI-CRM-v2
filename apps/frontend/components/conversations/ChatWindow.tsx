@@ -18,12 +18,11 @@ import {
   MessageSquare,
   ChevronRight,
   ChevronLeft,
-  PanelLeft,
+  ArrowLeft,
   Info,
   Users,
   User,
   GitBranch,
-  Search,
   ChevronDown,
   Phone,
   VideoIcon,
@@ -334,9 +333,6 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
   const [forwardMessage, setForwardMessage] = useState<any | null>(null);
   const [showInteractiveComposer, setShowInteractiveComposer] = useState(false);
   const [showInteractiveSidebar, setShowInteractiveSidebar] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<Message[]>([]);
-  const [showSearch, setShowSearch] = useState(false);
   const [paginationCursor, setPaginationCursor] = useState<string | null>(null);
   const [hasOlderMessages, setHasOlderMessages] = useState(false);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
@@ -1343,7 +1339,7 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
                 className="md:hidden icon-btn -ms-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-600 dark:text-[#AEBAC1]"
                 aria-label={t('common:actions.back', 'Back')}
               >
-                <PanelLeft className="h-5 w-5" />
+                <ArrowLeft className="h-5 w-5" />
               </button>
             )}
             <div className="relative shrink-0">
@@ -1387,7 +1383,7 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1.5">
             {conversation && globalBotEnabled !== null && (() => {
               if (canToggleGlobalBot) {
                 // Managers: button controls the GLOBAL bot master switch.
@@ -1400,7 +1396,7 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
                       toast.error(t('details.headerBotError', { defaultValue: 'Failed to update the AI bot' })),
                     )}
                     title={t('details.headerBotTitle')}
-                    className={`mr-1 flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-60 ${
+                    className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-60 ${
                       botOn
                         ? 'border-[#25D366]/40 bg-[#25D366]/10 text-[#1FAA5C] dark:text-[#25D366]'
                         : 'border-gray-200 dark:border-white/10 bg-white/60 dark:bg-white/5 text-gray-500 dark:text-[#8696A0]'
@@ -1426,7 +1422,7 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
                   title={forcedOff
                     ? t('details.headerBotEnableChat', { defaultValue: 'Enable bot for this conversation' })
                     : t('details.headerBotDisableChat', { defaultValue: 'Disable bot for this conversation' })}
-                  className={`mr-1 flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-60 ${
+                  className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-60 ${
                     effectiveOn
                       ? 'border-[#25D366]/40 bg-[#25D366]/10 text-[#1FAA5C] dark:text-[#25D366]'
                       : 'border-gray-200 dark:border-white/10 bg-white/60 dark:bg-white/5 text-gray-500 dark:text-[#8696A0]'
@@ -1444,98 +1440,34 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
               <button
                 type="button"
                 onClick={() => setShowSaveContactModal(true)}
-                className="mr-1 rounded-full bg-gradient-to-br from-[#25D366] to-[#1FAA5C] px-3 py-1.5 text-xs font-semibold text-white shadow-md shadow-[#25D366]/30 transition-all hover:shadow-lg hover:shadow-[#25D366]/40 active:scale-95"
+                title={t('details.saveContactBtn')}
+                className="rounded-full bg-gradient-to-br from-[#25D366] to-[#1FAA5C] px-3 py-1.5 text-xs font-semibold text-white shadow-md shadow-[#25D366]/30 transition-all hover:shadow-lg hover:shadow-[#25D366]/40 active:scale-95"
               >
                 {t('details.saveContactBtn')}
               </button>
             )}
-            {/* Search toggle */}
-            <button
-              type="button"
-              onClick={() => { setShowSearch((v) => !v); setSearchQuery(''); setSearchResults([]); }}
-              className={`icon-btn flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
-                showSearch ? 'bg-[#25D366]/15 text-[#25D366]' : 'text-gray-600 dark:text-[#AEBAC1]'
-              }`}
-              aria-label="Search messages"
-            >
-              <Search className="h-[18px] w-[18px]" />
-            </button>
-            {/* Toggle right panel */}
-            <button
-              type="button"
-              onClick={() => setShowRightPanel((v) => !v)}
-              className={`icon-btn flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
-                showRightPanel ? 'bg-[#25D366]/15 text-[#25D366]' : 'text-gray-600 dark:text-[#AEBAC1]'
-              }`}
-              aria-label={showRightPanel ? 'Hide details' : 'Show details'}
-            >
-              <Info className="h-[18px] w-[18px]" />
-            </button>
+
+            {/* Divider between the primary bot control and the utility icons */}
+            <span className="mx-0.5 hidden h-6 w-px bg-black/10 dark:bg-white/10 sm:block" />
+
+            {/* Utility icons */}
+            <div className="flex items-center gap-0.5">
+              {/* Toggle right panel */}
+              <button
+                type="button"
+                onClick={() => setShowRightPanel((v) => !v)}
+                className={`icon-btn flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
+                  showRightPanel ? 'bg-[#25D366]/15 text-[#25D366]' : 'text-gray-600 dark:text-[#AEBAC1]'
+                }`}
+                aria-label={showRightPanel ? 'Hide details' : 'Show details'}
+              >
+                <Info className="h-[18px] w-[18px]" />
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Search bar */}
-        {showSearch && (
-          <div className="slide-down relative z-10 border-b border-black/5 dark:border-white/5 bg-white/80 dark:bg-[#111B21]/80 backdrop-blur-sm px-4 py-2.5">
-            <div className="relative">
-              <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-[#8696A0]" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={async (e) => {
-                  setSearchQuery(e.target.value);
-                  if (!conversationId || !e.target.value.trim()) { setSearchResults([]); return; }
-                  try {
-                    const data = await api.get(`/api/conversations/${conversationId}/messages/search?q=${encodeURIComponent(e.target.value)}`);
-                    setSearchResults(Array.isArray(data) ? data : []);
-                  } catch { setSearchResults([]); }
-                }}
-                placeholder={t('window.searchMessages')}
-                autoFocus
-                className="w-full rounded-full border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#202C33] ps-10 pe-10 py-2 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-[#8696A0] focus:border-[#25D366] focus:outline-none focus:ring-2 focus:ring-[#25D366]/20"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => { setSearchQuery(''); setSearchResults([]); }}
-                  className="absolute end-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-gray-400 hover:bg-gray-200 dark:hover:bg-white/10"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-        {showSearch && searchResults.length > 0 && (
-          <div className="relative z-10 max-h-56 overflow-y-auto chat-scroll border-b border-black/5 dark:border-white/5 bg-white dark:bg-[#111B21]">
-            <div className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400 dark:text-[#5C6970]">
-              {searchResults.length} {searchResults.length === 1 ? 'result' : 'results'}
-            </div>
-            {searchResults.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                className="block w-full px-4 py-2.5 text-start transition-colors hover:bg-gray-50 dark:hover:bg-white/5 border-b border-gray-100 dark:border-white/5 last:border-0"
-                onClick={() => {
-                  setShowSearch(false);
-                  setSearchQuery('');
-                  setSearchResults([]);
-                }}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[#25D366]">
-                    {r.fromMe ? t('message.you') : t('details.contactInfo')}
-                  </p>
-                  <p dir="ltr" className="text-[11px] text-gray-400 dark:text-[#8696A0]">
-                    {new Date(r.timestamp).toLocaleString()}
-                  </p>
-                </div>
-                <p className="mt-0.5 text-sm text-gray-700 dark:text-[#E9EDEF] truncate">{r.body}</p>
-              </button>
-            ))}
-          </div>
-        )}
-
         {/* Messages area */}
         <div className="relative flex-1 overflow-hidden chat-shell-light">
           <div className="absolute inset-0 chat-doodle-bg pointer-events-none" />

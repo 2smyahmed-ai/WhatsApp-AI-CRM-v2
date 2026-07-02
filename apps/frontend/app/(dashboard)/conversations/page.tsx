@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useState, useRef } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import ConversationList from '../../../components/conversations/ConversationList';
 import ChatWindow from '../../../components/conversations/ChatWindow';
 import { api } from '../../../lib/api';
@@ -15,13 +15,21 @@ interface Contact {
 }
 
 function ConversationsPageContent() {
-  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
+  // The open conversation lives in the URL (?c=<id>) so the browser Back/Forward
+  // buttons work: opening a chat pushes a history entry, closing it pops back.
+  const selectedConversationId = searchParams.get('c');
   const targetPhone = searchParams.get('phone');
   const targetConversationId = searchParams.get('conversationId');
   const conversationListRef = useRef<{ refetch: () => void } | null>(null);
   const setChatOpen = useChatOpen((s) => s.setOpen);
+  // True once THIS visit opened a chat from the list (so we pushed a history
+  // entry we can safely pop). Stays false when the user deep-linked straight
+  // into a chat, so closing then reveals the list instead of leaving the app.
+  const pushedFromListRef = useRef(false);
 
   useEffect(() => {
     setChatOpen(!!selectedConversationId);
@@ -47,13 +55,57 @@ function ConversationsPageContent() {
     fetchContacts();
   }, [fetchContacts]);
 
+  // Build a /conversations URL with `c` set (and one-time deep-link params dropped).
+  const buildUrl = useCallback(
+    (conversationId: string | null) => {
+      const params = new URLSearchParams(Array.from(searchParams.entries()));
+      params.delete('phone');
+      params.delete('conversationId');
+      if (conversationId) params.set('c', conversationId);
+      else params.delete('c');
+      const qs = params.toString();
+      return qs ? `${pathname}?${qs}` : pathname;
+    },
+    [pathname, searchParams],
+  );
+
+  // Select (or switch) the open conversation via the URL. Opening from the list
+  // pushes a history entry; switching between chats replaces it, so Back always
+  // returns to the list (not the previously-viewed chat) — like WhatsApp Web.
+  const selectConversation = useCallback(
+    (conversationId: string) => {
+      if (!conversationId || conversationId === selectedConversationId) return;
+      const url = buildUrl(conversationId);
+      if (selectedConversationId) {
+        router.replace(url, { scroll: false });
+      } else {
+        pushedFromListRef.current = true;
+        router.push(url, { scroll: false });
+      }
+    },
+    [router, buildUrl, selectedConversationId],
+  );
+
+  // Close the open conversation (mobile back arrow / conversation-not-found).
+  const closeConversation = useCallback(() => {
+    if (pushedFromListRef.current) {
+      // Pop the entry we pushed — clean Back with no phantom forward entry.
+      pushedFromListRef.current = false;
+      router.back();
+    } else {
+      // Deep-linked straight into a chat: just drop `c` to reveal the list.
+      router.replace(buildUrl(null), { scroll: false });
+    }
+  }, [router, buildUrl]);
+
   useEffect(() => {
     const resolveConversation = async () => {
       if (!targetPhone) return;
       try {
         const result = await api.get(`/api/conversations/by-phone/${encodeURIComponent(targetPhone)}`);
         if (result?.conversation?.id) {
-          setSelectedConversationId(result.conversation.id);
+          // Normalise ?phone=… into the canonical ?c=… (replace: no extra entry).
+          router.replace(buildUrl(result.conversation.id), { scroll: false });
         }
       } catch (error) {
         console.error('Failed to resolve conversation from phone:', error);
@@ -61,12 +113,15 @@ function ConversationsPageContent() {
     };
 
     void resolveConversation();
-  }, [targetPhone]);
+  }, [targetPhone, router, buildUrl]);
 
-  // Deep-link straight to a conversation by id (e.g. from a notification).
+  // Deep-link straight to a conversation by id (e.g. from a notification):
+  // normalise ?conversationId=… into ?c=… without adding a history entry.
   useEffect(() => {
-    if (targetConversationId) setSelectedConversationId(targetConversationId);
-  }, [targetConversationId]);
+    if (targetConversationId) {
+      router.replace(buildUrl(targetConversationId), { scroll: false });
+    }
+  }, [targetConversationId, router, buildUrl]);
 
   return (
     <div dir="ltr" className="absolute inset-0 flex sm:relative sm:inset-auto sm:mx-0 sm:my-0 sm:h-full overflow-hidden rounded-none sm:rounded-2xl border-0 sm:border border-gray-200 dark:border-white/10 bg-white dark:bg-[#111B21] shadow-card dark:shadow-[0_8px_20px_rgba(0,0,0,0.2)]">
@@ -77,7 +132,7 @@ function ConversationsPageContent() {
         <ConversationList
           ref={conversationListRef}
           selectedId={selectedConversationId}
-          onSelect={setSelectedConversationId}
+          onSelect={selectConversation}
         />
       </div>
 
@@ -87,9 +142,9 @@ function ConversationsPageContent() {
           conversationId={selectedConversationId}
           recipientContacts={contacts}
           onContactSaved={handleContactSaved}
-          onBack={() => setSelectedConversationId(null)}
+          onBack={closeConversation}
           onConversationNotFound={() => {
-            setSelectedConversationId(null);
+            closeConversation();
             conversationListRef.current?.refetch?.();
           }}
         />

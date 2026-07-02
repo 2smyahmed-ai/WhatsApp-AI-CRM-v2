@@ -13,6 +13,7 @@ import { useSocket } from '../../hooks/useSocket';
 import { useTags } from '../../hooks/useTags';
 import { useMessagingStore, type ConversationSummary } from '../../stores/messaging-store';
 import Avatar from '../ui/Avatar';
+import { ConversationListSkeleton } from '../ui/Skeleton';
 
 
 type InboxView = 'all' | 'mine' | 'unassigned';
@@ -55,6 +56,7 @@ const ConversationList = forwardRef<ConversationListHandle, ConversationListProp
       { key: 'unassigned', label: t('details.unassigned'), icon: Inbox },
     ];
     const [search, setSearch] = useState('');
+    const [loading, setLoading] = useState(true);
     const [activeView, setActiveView] = useState<InboxView>('all');
     const [statusFilter, setStatusFilter] = useState('');
     const [tagFilter, setTagFilter] = useState('');   // tag id, '' = all
@@ -114,6 +116,8 @@ const ConversationList = forwardRef<ConversationListHandle, ConversationListProp
         seedConversations(list);
       } catch {
         seedConversations([]);
+      } finally {
+        setLoading(false);
       }
     }, [search, activeView, statusFilter, seedConversations]);
 
@@ -389,7 +393,9 @@ const ConversationList = forwardRef<ConversationListHandle, ConversationListProp
         {/* Conversation list */}
         <div className="flex-1 overflow-y-auto" dir="rtl">
           <div dir="ltr">
-            {sorted.length === 0 && (
+            {loading && sorted.length === 0 && <ConversationListSkeleton />}
+
+            {!loading && sorted.length === 0 && (
               <div className="flex flex-col items-center justify-center py-16 text-center text-sm text-gray-500 dark:text-[#8696A0]">
                 <Inbox className="mb-3 h-8 w-8 opacity-40" />
                 <p className="font-medium">{t('noConversations')}</p>

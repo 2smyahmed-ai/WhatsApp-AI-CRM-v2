@@ -184,6 +184,8 @@
     "offHoursMessage": "Off-hours message",
     "offHoursHint": "optional — leave empty to stay silent",
     "offHoursPlaceholder": "e.g. Thanks for reaching out! We'll reply during business hours.",
+    "batchWindow": "Wait for the customer to finish (seconds)",
+    "batchWindowHint": "The bot waits this long after the customer's last message before replying, so several quick messages get one complete answer. Recommended 6–10 seconds.",
     "limits": "Limits & pacing",
     "maxReplies": "Max replies per hour (per conversation)",
     "maxRepliesHint": "0 = unlimited",

@@ -19,6 +19,42 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// ── Web Push ─────────────────────────────────────────────────────────────────
+// Show a notification when the server pushes (works even when the app is closed).
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) { data = {}; }
+
+  const title = data.title || 'Nexus CRM';
+  const options = {
+    body: data.body || '',
+    icon: '/icons/icon-192.png',
+    badge: '/icons/favicon-32.png',
+    tag: data.tag || undefined,
+    renotify: !!data.tag,
+    vibrate: [80, 40, 80],
+    data: { url: data.url || '/dashboard' },
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// Tapping a push focuses an open tab (deep-linking it) or opens a new one.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/dashboard';
+  event.waitUntil((async () => {
+    const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const client of all) {
+      if ('focus' in client) {
+        await client.focus();
+        if ('navigate' in client) { try { await client.navigate(url); } catch (e) {} }
+        return;
+      }
+    }
+    if (self.clients.openWindow) await self.clients.openWindow(url);
+  })());
+});
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
