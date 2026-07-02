@@ -1,6 +1,13 @@
 const CACHE_NAME = 'nexus-crm-v1';
 const STATIC_SHELL = ['/', '/login'];
 
+// Listen for the client asking the new SW to take over immediately
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)

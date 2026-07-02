@@ -87,12 +87,30 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="app-splash__dots"><i /><i /><i /></div>
         </div>
         <SplashController />
-        {/* PWA service worker registration */}
+        {/* PWA service worker registration + update detection */}
         <Script id="register-sw" strategy="afterInteractive">{`
+          window.__applySWUpdate = function () {
+            var w = window.__swWaitingWorker;
+            if (w) w.postMessage({ type: 'SKIP_WAITING' });
+            window.location.reload();
+          };
           if ('serviceWorker' in navigator) {
             window.addEventListener('load', function () {
-              navigator.serviceWorker.register('/sw.js', { scope: '/' })
-                .catch(function (err) { console.warn('SW registration failed:', err); });
+              navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(function (reg) {
+                // Periodically check for updates every 30 minutes
+                setInterval(function () { reg.update(); }, 30 * 60 * 1000);
+                reg.addEventListener('updatefound', function () {
+                  var newSW = reg.installing;
+                  if (!newSW) return;
+                  newSW.addEventListener('statechange', function () {
+                    if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+                      window.__swUpdateAvailable = true;
+                      window.__swWaitingWorker = newSW;
+                      window.dispatchEvent(new CustomEvent('sw-update-available'));
+                    }
+                  });
+                });
+              }).catch(function (err) { console.warn('SW registration failed:', err); });
             });
           }
         `}</Script>

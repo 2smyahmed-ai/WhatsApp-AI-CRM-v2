@@ -13,6 +13,7 @@ import { useLanguage } from '@/components/providers/I18nProvider'
 import { LANDING, type LandingLang } from './content'
 import Reveal from './Reveal'
 import { InstallButton } from './InstallButton'
+import { UpdateButton } from './UpdateButton'
 import CountUp from '@/components/reactbits/CountUp'
 import SpotlightCard from '@/components/reactbits/SpotlightCard'
 
@@ -269,6 +270,7 @@ export default function LandingPage() {
                     label={isAr ? 'حمّل التطبيق' : 'Download the App'}
                     installedLabel={isAr ? 'التطبيق مثبّت' : 'App Installed'}
                   />
+                  <UpdateButton />
                 </div>
                 <Reveal delay={260}>
                   <div className="mt-4 flex justify-center lg:justify-start">

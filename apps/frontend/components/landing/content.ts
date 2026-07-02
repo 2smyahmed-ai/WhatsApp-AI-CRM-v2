@@ -129,7 +129,6 @@ export const LANDING: Record<LandingLang, LandingContent> = {
         { id: 'features', label: 'Features' },
         { id: 'ai', label: 'AI' },
         { id: 'industries', label: 'Solutions' },
-        { id: 'pricing', label: 'Pricing' },
         { id: 'faq', label: 'FAQ' },
       ],
       signIn: 'Sign in',
