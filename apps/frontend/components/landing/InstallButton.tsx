@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { Download, Smartphone, Monitor, Apple, RefreshCw, Loader } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Download, Smartphone, Monitor, Apple, RefreshCw } from 'lucide-react'
+import { hardRefresh } from '@/lib/hard-refresh'
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -30,8 +31,8 @@ export function InstallButton({ variant = 'hero', className = '', label, install
   const [isInstalled, setIsInstalled] = useState(false)
   const [platform, setPlatform] = useState<Platform>('unknown')
   const [showIOSGuide, setShowIOSGuide] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const regRef = useRef<ServiceWorkerRegistration | null>(null)
+  const [updateAvailable, setUpdateAvailable] = useState(false)
+  const [updating, setUpdating] = useState(false)
 
   useEffect(() => {
     setPlatform(detectPlatform())
@@ -45,68 +46,65 @@ export function InstallButton({ variant = 'hero', className = '', label, install
       setInstallPrompt(e as BeforeInstallPromptEvent)
     }
 
+    // React when the SW registration announces a newer version (or one is
+    // already waiting from a previous visit) so the button flips to "Update".
+    if ((window as any).__swUpdateAvailable) setUpdateAvailable(true)
+    const onUpdate = () => setUpdateAvailable(true)
+
     window.addEventListener('beforeinstallprompt', handler)
     window.addEventListener('appinstalled', () => setIsInstalled(true))
-
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.ready.then((reg) => { regRef.current = reg })
-    }
+    window.addEventListener('sw-update-available', onUpdate)
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handler)
+      window.removeEventListener('sw-update-available', onUpdate)
     }
   }, [])
 
-  async function handleClick() {
+  // Full hard refresh: activates the waiting SW, clears Cache Storage, then
+  // reloads — guarantees the newest deployed build, not a stale cached shell.
+  function applyUpdate() {
+    if (updating) return
+    setUpdating(true)
+    void hardRefresh()
+  }
+
+  function handleClick() {
     if (platform === 'ios') {
       setShowIOSGuide(true)
       return
     }
 
     if (installPrompt) {
-      await installPrompt.prompt()
-      const { outcome } = await installPrompt.userChoice
-      if (outcome === 'accepted') setIsInstalled(true)
+      installPrompt.prompt()
+      installPrompt.userChoice.then(({ outcome }) => {
+        if (outcome === 'accepted') setIsInstalled(true)
+      })
       setInstallPrompt(null)
       return
     }
 
-    if ((window as any).__swUpdateAvailable) {
-      (window as any).__applySWUpdate?.()
-      return
-    }
-
-    setLoading(true)
-    try {
-      const reg = regRef.current || (await navigator.serviceWorker.getRegistration('/'))
-      if (reg) {
-        await reg.update()
-        await new Promise((r) => setTimeout(r, 1500))
-        if ((window as any).__swUpdateAvailable) {
-          (window as any).__applySWUpdate?.()
-          return
-        }
-      }
-    } catch {}
-    window.location.reload()
+    // No install prompt (already installed elsewhere / unsupported browser):
+    // deliver the latest version instead — hard refresh past every cache.
+    applyUpdate()
   }
 
   if (isInstalled) {
-    const updateAvailable = typeof window !== 'undefined' && (window as any).__swUpdateAvailable
     if (updateAvailable) {
       return (
         <button
           type="button"
-          onClick={() => (window as any).__applySWUpdate?.()}
-          className={`group relative inline-flex items-center justify-center gap-2.5 overflow-hidden rounded-xl font-bold transition-all duration-200 hover:-translate-y-0.5 active:scale-95 ${variant === 'hero' ? 'px-7 py-3.5 text-base' : 'px-5 py-3 text-sm'} ${className}`}
+          onClick={applyUpdate}
+          disabled={updating}
+          className={`group relative inline-flex items-center justify-center gap-2.5 overflow-hidden rounded-xl font-bold transition-all duration-200 hover:-translate-y-0.5 active:scale-95 disabled:cursor-wait ${variant === 'hero' ? 'px-7 py-3.5 text-base' : 'px-5 py-3 text-sm'} ${className}`}
           style={{
             background: 'linear-gradient(135deg, rgba(212,175,55,0.2), rgba(212,175,55,0.08))',
             border: '1px solid rgba(212,175,55,0.4)',
             color: '#f3d98b',
           }}
         >
-          <RefreshCw className="h-4 w-4 animate-spin" />
-          Update Available — Tap to Reload
+          <RefreshCw className={`h-4 w-4 ${updating ? 'animate-spin' : ''}`} />
+          {updating ? 'Updating…' : 'Update Available — Tap to Update'}
         </button>
       )
     }
@@ -137,20 +135,18 @@ export function InstallButton({ variant = 'hero', className = '', label, install
       <button
         type="button"
         onClick={handleClick}
-        disabled={loading}
-        className={`group relative inline-flex items-center justify-center gap-2.5 overflow-hidden rounded-xl font-bold transition-all duration-200 hover:-translate-y-0.5 active:scale-95 ${sizing} ${surface} ${className}`}
+        disabled={updating}
+        className={`group relative inline-flex items-center justify-center gap-2.5 overflow-hidden rounded-xl font-bold transition-all duration-200 hover:-translate-y-0.5 active:scale-95 disabled:cursor-wait ${sizing} ${surface} ${className}`}
       >
         <span className="lux-sheen" />
         <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg ${chip}`}>
-          {loading ? (
-            <Loader className="h-4 w-4 animate-spin" />
-          ) : (
-            <Download className="h-4 w-4 transition-transform duration-300 group-hover:translate-y-0.5" />
-          )}
+          {updating
+            ? <RefreshCw className="h-4 w-4 animate-spin" />
+            : <Download className="h-4 w-4 transition-transform duration-300 group-hover:translate-y-0.5" />}
         </span>
         <span className="relative">
-          {loading
-            ? 'Checking…'
+          {updating
+            ? 'Getting latest version…'
             : label ??
               (platform === 'ios'
                 ? 'Add to Home Screen'

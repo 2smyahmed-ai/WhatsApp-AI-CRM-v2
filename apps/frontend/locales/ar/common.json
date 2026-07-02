@@ -70,7 +70,8 @@
     "syncing": "جارٍ المزامنة…",
     "lastSynced": "آخر مزامنة {{time}}",
     "searchPlaceholder": "ابحث في جهات الاتصال والمحادثات…",
-    "inbox": "الوارد"
+    "inbox": "الوارد",
+    "hardRefresh": "تحديث التطبيق"
   },
   "pagination": {
     "showing": "عرض {{from}}–{{to}} من {{total}}",

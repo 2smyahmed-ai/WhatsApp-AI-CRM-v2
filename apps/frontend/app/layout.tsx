@@ -81,8 +81,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             SplashController fades it out once the app is interactive. Swap the
             <img> src for your logo PNG once provided. */}
         <div id="app-splash" aria-hidden="true">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icons/logo-tight.png" alt="" className="app-splash__logo" />
+          <div className="app-splash__mark">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/icons/logo-tight.png" alt="" className="app-splash__logo" />
+          </div>
           <div className="app-splash__wordmark">Nexus<span>CRM</span></div>
           <div className="app-splash__dots"><i /><i /><i /></div>
         </div>
@@ -91,12 +93,29 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Script id="register-sw" strategy="afterInteractive">{`
           window.__applySWUpdate = function () {
             var w = window.__swWaitingWorker;
-            if (w) w.postMessage({ type: 'SKIP_WAITING' });
-            window.location.reload();
+            var reloaded = false;
+            var reload = function () { if (!reloaded) { reloaded = true; window.location.reload(); } };
+            if (w && 'serviceWorker' in navigator) {
+              // Wait for the new SW to actually take control before reloading,
+              // otherwise the reload can still be served by the OLD worker.
+              navigator.serviceWorker.addEventListener('controllerchange', reload, { once: true });
+              w.postMessage({ type: 'SKIP_WAITING' });
+              setTimeout(reload, 1500); // safety: never leave the user hanging
+            } else {
+              reload();
+            }
           };
           if ('serviceWorker' in navigator) {
             window.addEventListener('load', function () {
               navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(function (reg) {
+                var announce = function (sw) {
+                  window.__swUpdateAvailable = true;
+                  window.__swWaitingWorker = sw;
+                  window.dispatchEvent(new CustomEvent('sw-update-available'));
+                };
+                // A new version may already be parked in "waiting" from a
+                // previous visit — surface it immediately.
+                if (reg.waiting && navigator.serviceWorker.controller) announce(reg.waiting);
                 // Periodically check for updates every 30 minutes
                 setInterval(function () { reg.update(); }, 30 * 60 * 1000);
                 reg.addEventListener('updatefound', function () {
@@ -104,9 +123,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   if (!newSW) return;
                   newSW.addEventListener('statechange', function () {
                     if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
-                      window.__swUpdateAvailable = true;
-                      window.__swWaitingWorker = newSW;
-                      window.dispatchEvent(new CustomEvent('sw-update-available'));
+                      announce(newSW);
                     }
                   });
                 });

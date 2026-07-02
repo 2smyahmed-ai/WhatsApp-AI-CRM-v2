@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { BarChart3, MessageSquare, Users, Send, Grid3X3, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
+import { haptic } from '@/lib/haptics';
 import { useLiveCounts } from '@/hooks/useLiveCounts';
 import { useChatOpen } from '@/stores/chat-open-store';
 import MobileDrawer from './MobileDrawer';
@@ -53,7 +54,7 @@ export default function BottomNav() {
           {/* More – leftmost, opens drawer */}
           <button
             type="button"
-            onClick={() => setDrawerOpen(true)}
+            onClick={() => { haptic('selection'); setDrawerOpen(true); }}
             aria-label="Open all navigation"
             className="relative flex flex-1 flex-col items-center justify-center gap-1 py-2 select-none"
           >
@@ -74,6 +75,7 @@ export default function BottomNav() {
               <Link
                 key={key}
                 href={href}
+                onClick={() => { if (!active) haptic('selection'); }}
                 aria-current={active ? 'page' : undefined}
                 className="relative flex flex-1 flex-col items-center justify-center gap-1 py-2 select-none"
               >

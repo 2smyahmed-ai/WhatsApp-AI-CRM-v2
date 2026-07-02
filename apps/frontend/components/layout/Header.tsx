@@ -12,6 +12,8 @@ import { useTheme } from '@/components/providers/ThemeProvider';
 import { useLanguage } from '@/components/providers/I18nProvider';
 import { useChatOpen } from '@/stores/chat-open-store';
 import { cn } from '@/lib/utils';
+import { hardRefresh } from '@/lib/hard-refresh';
+import { haptic } from '@/lib/haptics';
 import { useSyncStatus } from '@/hooks/useSyncStatus';
 import NotificationBell from '@/components/notifications/NotificationBell';
 import { toSimpleRole, SIMPLE_ROLE_LABEL, SIMPLE_ROLE_BADGE } from '@/lib/roles';
@@ -37,8 +39,16 @@ export default function Header() {
 
   const [query, setQuery] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [hardRefreshing, setHardRefreshing] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const onHardRefresh = () => {
+    if (hardRefreshing) return;
+    setHardRefreshing(true);
+    haptic('medium');
+    void hardRefresh();
+  };
 
   const user     = session?.user as any;
   const name     = user?.name  || user?.email || '?';
@@ -108,6 +118,16 @@ export default function Header() {
             aria-hidden="true"
           />
           <NotificationBell />
+          <button
+            type="button"
+            onClick={onHardRefresh}
+            disabled={hardRefreshing}
+            aria-label={tCommon('header.hardRefresh')}
+            title={tCommon('header.hardRefresh')}
+            className={cn(ICON_BTN, hardRefreshing && 'cursor-wait text-[#16A34A] dark:text-[#25D366]')}
+          >
+            <RefreshCw className={cn('h-[18px] w-[18px]', hardRefreshing && 'animate-spin')} aria-hidden="true" />
+          </button>
           <button
             type="button"
             onClick={() => document.dispatchEvent(new CustomEvent('toggle-crm-assistant'))}

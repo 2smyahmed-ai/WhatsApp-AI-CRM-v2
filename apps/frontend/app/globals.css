@@ -895,15 +895,32 @@ html.pwa-standalone #app-splash {
     radial-gradient(120% 90% at 50% 0%, rgba(15,155,108,0.16) 0%, transparent 55%),
     linear-gradient(180deg, #0a0f1e 0%, #070c10 100%);
   opacity: 1;
-  transition: opacity 0.5s ease;
+  /* Backdrop fades slightly AFTER the content zooms out → layered, native exit */
+  transition: opacity 0.45s ease 0.12s;
 }
 #app-splash.is-hiding { opacity: 0; pointer-events: none; }
+
+/* Logo mark + breathing halo */
+.app-splash__mark {
+  position: relative;
+  animation: splashLogoIn 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.app-splash__mark::before {              /* soft emerald halo behind the logo */
+  content: "";
+  position: absolute;
+  inset: -46px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(37,211,102,0.28) 0%, rgba(37,211,102,0.10) 42%, transparent 70%);
+  filter: blur(6px);
+  animation: splashHalo 2.6s ease-in-out 0.5s infinite;
+}
 .app-splash__logo {
+  position: relative;
+  display: block;
   width: 96px;
   height: 96px;
   object-fit: contain;
   filter: drop-shadow(0 12px 34px rgba(37,211,102,0.38));
-  animation: splashLogoIn 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 .app-splash__wordmark {
   position: relative;
@@ -929,13 +946,34 @@ html.pwa-standalone #app-splash {
 .app-splash__dots i:nth-child(2) { animation-delay: 0.15s; }
 .app-splash__dots i:nth-child(3) { animation-delay: 0.30s; }
 
-@keyframes splashLogoIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+/* Exit: content gently zooms through + fades, then the backdrop follows.
+   Overrides the entrance animation shorthand, so no snap. */
+#app-splash.is-hiding .app-splash__mark,
+#app-splash.is-hiding .app-splash__wordmark,
+#app-splash.is-hiding .app-splash__dots {
+  animation: splashOut 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes splashLogoIn {
+  0%   { opacity: 0; transform: scale(0.82); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes splashHalo {
+  0%, 100% { transform: scale(1);    opacity: 0.55; }
+  50%      { transform: scale(1.18); opacity: 1; }
+}
 @keyframes splashTextIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes splashShimmer { 0% { transform: translateX(-120%); } 60%, 100% { transform: translateX(120%); } }
 @keyframes splashDot { 0%, 100% { opacity: 0.35; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-4px); } }
+@keyframes splashOut { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(1.08); } }
 @media (prefers-reduced-motion: reduce) {
-  .app-splash__logo, .app-splash__wordmark, .app-splash__dots, .app-splash__dots i { animation: none; opacity: 1; }
+  .app-splash__mark, .app-splash__logo, .app-splash__wordmark, .app-splash__dots, .app-splash__dots i { animation: none; opacity: 1; }
+  .app-splash__mark::before { animation: none; }
   .app-splash__wordmark::after { animation: none; opacity: 0; }
+  #app-splash.is-hiding .app-splash__mark,
+  #app-splash.is-hiding .app-splash__wordmark,
+  #app-splash.is-hiding .app-splash__dots { animation: none; opacity: 0; }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -954,3 +992,12 @@ html.pwa-standalone #app-splash {
 .dark .skeleton::after { background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent); }
 @keyframes skeletonSweep { 100% { transform: translateX(100%); } }
 @media (prefers-reduced-motion: reduce) { .skeleton::after { animation: none; } }
+
+/* Staged content reveal — sections fade + rise in as their data arrives,
+   replacing the skeleton in place (layout stays stable, no jumps). */
+.section-reveal { animation: sectionReveal 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes sectionReveal {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) { .section-reveal { animation: none; } }

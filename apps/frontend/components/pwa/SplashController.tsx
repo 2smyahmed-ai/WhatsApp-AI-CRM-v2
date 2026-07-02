@@ -11,8 +11,14 @@ import { useEffect } from 'react';
  * html.pwa-standalone), but the dismiss logic is harmless in a browser tab too.
  * Because the splash is part of the initial document, it appears on cold
  * start / hard refresh only — never on client-side navigations.
+ *
+ * Dismiss signal: this effect running means React has hydrated and the first
+ * frame of real UI is committed behind the splash — that's the moment the app
+ * is usable, and it fires well before window `load` (which waits on every
+ * image). We still keep `load` + a safety timer as fallbacks.
  */
-const MIN_VISIBLE_MS = 700; // let the entrance animation breathe
+const MIN_VISIBLE_MS = 900; // let the entrance animation breathe
+const EXIT_MS = 620;        // content zoom-out (0.4s) + delayed backdrop fade
 const SAFETY_MS = 4000;     // never trap the user behind the splash
 
 export default function SplashController() {
@@ -29,16 +35,17 @@ export default function SplashController() {
       const wait = Math.max(0, MIN_VISIBLE_MS - (performance.now() - start));
       window.setTimeout(() => {
         el.classList.add('is-hiding');
-        // Remove after the CSS opacity transition (0.5s) finishes.
-        window.setTimeout(() => el.remove(), 550);
+        window.setTimeout(() => el.remove(), EXIT_MS);
       }, wait);
     };
 
-    if (document.readyState === 'complete') dismiss();
-    else window.addEventListener('load', dismiss, { once: true });
+    // Hydration just finished — give the app one painted frame, then go.
+    const raf = requestAnimationFrame(() => requestAnimationFrame(dismiss));
 
+    window.addEventListener('load', dismiss, { once: true });
     const safety = window.setTimeout(dismiss, SAFETY_MS);
     return () => {
+      cancelAnimationFrame(raf);
       window.clearTimeout(safety);
       window.removeEventListener('load', dismiss);
     };

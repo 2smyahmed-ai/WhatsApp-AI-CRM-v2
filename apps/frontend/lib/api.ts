@@ -1,19 +1,50 @@
 import { getSession } from 'next-auth/react';
+import type { Session } from 'next-auth';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
+// getSession() is a network round-trip to /api/auth/session. Without a cache,
+// every api.* call pays that tax — a dashboard load fires 6+ requests and each
+// re-fetched the session. Cache it briefly (well under the 15m access-token TTL)
+// and dedupe concurrent callers so a burst of parallel requests shares one fetch.
+const SESSION_CACHE_MS = 30_000;
+let cachedSession: Session | null = null;
+let cachedSessionAt = 0;
+let inflightSession: Promise<Session | null> | null = null;
+
+async function getCachedSession(): Promise<Session | null> {
+  if (cachedSession && Date.now() - cachedSessionAt < SESSION_CACHE_MS) return cachedSession;
+  if (!inflightSession) {
+    inflightSession = getSession()
+      .then((session) => {
+        cachedSession = session;
+        cachedSessionAt = Date.now();
+        return session;
+      })
+      .finally(() => { inflightSession = null; });
+  }
+  return inflightSession;
+}
+
+/** Drop the cached session (e.g. after a 401 — the token it holds is stale). */
+export function invalidateSessionCache() {
+  cachedSession = null;
+  cachedSessionAt = 0;
+}
+
 async function getAccessToken() {
-  const session = await getSession();
+  const session = await getCachedSession();
   return session?.accessToken || (typeof window !== 'undefined' ? window.localStorage.getItem('accessToken') : null);
 }
 
 async function getRefreshToken() {
-  const session = await getSession();
+  const session = await getCachedSession();
   return session?.refreshToken || (typeof window !== 'undefined' ? window.localStorage.getItem('refreshToken') : null);
 }
 
 async function refreshAccessToken() {
   try {
+    invalidateSessionCache(); // the cached session's access token just failed
     const refreshToken = await getRefreshToken();
     const response = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
       method: 'POST',

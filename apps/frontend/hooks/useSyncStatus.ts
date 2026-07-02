@@ -73,9 +73,19 @@ export function useSyncStatus(): SyncStatus {
     }
   }, []);
 
-  // Auto-sync once on mount so the header shows a real lastSynced time
+  // Auto-sync once shortly after mount so the header shows a real lastSynced
+  // time. Deferred to idle: this fetches the FULL conversation list, and firing
+  // it immediately on cold start competes with the visible screen's critical
+  // requests. Real-time socket events cover the gap until it runs.
   useEffect(() => {
-    sync();
+    const hasIdle = typeof window.requestIdleCallback === 'function';
+    const id = hasIdle
+      ? window.requestIdleCallback(() => { void sync(); }, { timeout: 4000 })
+      : window.setTimeout(() => { void sync(); }, 2500);
+    return () => {
+      if (hasIdle) window.cancelIdleCallback(id);
+      else window.clearTimeout(id);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

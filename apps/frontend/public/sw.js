@@ -1,4 +1,7 @@
-const CACHE_NAME = 'nexus-crm-v1';
+// Bump this on every release that must reach installed clients: the byte
+// change is what makes browsers install the new SW and fire the update flow,
+// and the activate handler below deletes every older cache bucket.
+const CACHE_NAME = 'nexus-crm-v2';
 const STATIC_SHELL = ['/', '/login'];
 
 // Listen for the client asking the new SW to take over immediately

@@ -70,7 +70,8 @@
     "syncing": "Syncing…",
     "lastSynced": "Last synced {{time}}",
     "searchPlaceholder": "Search contacts, chats…",
-    "inbox": "Inbox"
+    "inbox": "Inbox",
+    "hardRefresh": "Refresh app"
   },
   "pagination": {
     "showing": "Showing {{from}}–{{to}} of {{total}}",

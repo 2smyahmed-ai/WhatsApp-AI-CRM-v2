@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { Plus, Upload, MessageSquare, Send, Users, LayoutTemplate, TrendingUp, Tag, ArrowUpRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSession } from 'next-auth/react';
@@ -9,13 +10,25 @@ import { cn } from '../../../lib/utils';
 import { api } from '../../../lib/api';
 import { useSocket } from '../../../hooks/useSocket';
 import KpiCards from '../../../components/dashboard/donezo/KpiCards';
-import MessagesChart from '../../../components/dashboard/MessagesChart';
 import SessionStatusWidget from '../../../components/dashboard/SessionStatusWidget';
 import Reminders from '../../../components/dashboard/donezo/Reminders';
 import AgentCollaboration from '../../../components/dashboard/donezo/AgentCollaboration';
 import ProgressGauge from '../../../components/dashboard/donezo/ProgressGauge';
 import UptimeTracker from '../../../components/dashboard/donezo/UptimeTracker';
 import RecentConversations from '../../../components/dashboard/RecentConversations';
+
+const GLASS = 'rounded-[20px] bg-white/80 backdrop-blur-xl border border-gray-100 shadow-[0_2px_20px_rgba(0,0,0,0.05)] dark:bg-[#182229] dark:border-transparent dark:shadow-[0_4px_24px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.05)]';
+
+function ChartSkeleton() {
+  return <div className="skeleton h-[340px] rounded-[20px]" aria-hidden="true" />;
+}
+
+// recharts is by far the heaviest dependency on this page — load it after the
+// critical content so the dashboard shell + KPIs paint without waiting for it.
+const MessagesChart = dynamic(() => import('../../../components/dashboard/MessagesChart'), {
+  ssr: false,
+  loading: () => <ChartSkeleton />,
+});
 
 interface OverviewData {
   totalContacts: number;
@@ -42,8 +55,6 @@ interface PipelineStats {
 }
 
 const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'TEAM_LEAD'];
-
-const GLASS = 'rounded-[20px] bg-white/80 backdrop-blur-xl border border-gray-100 shadow-[0_2px_20px_rgba(0,0,0,0.05)] dark:bg-[#182229] dark:border-transparent dark:shadow-[0_4px_24px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.05)]';
 
 const QUICK_NAV_ITEMS = [
   {
@@ -87,26 +98,10 @@ const QUICK_NAV_ITEMS = [
   },
 ] as const;
 
-function Skeleton() {
+function KpiSkeleton() {
   return (
-    <div className="animate-pulse space-y-4" role="status" aria-label="Loading dashboard">
-      <div className="h-10 w-1/2 rounded-2xl bg-gray-200 dark:bg-white/8" />
-      {/* Mobile quick actions placeholder */}
-      <div className="grid grid-cols-4 gap-2 lg:hidden">
-        {[...Array(4)].map((_, i) => <div key={i} className={`h-20 ${GLASS}`} />)}
-      </div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {[...Array(4)].map((_, i) => <div key={i} className={`h-36 ${GLASS}`} />)}
-      </div>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-        <div className={`h-72 ${GLASS} lg:col-span-8`} />
-        <div className={`h-72 ${GLASS} lg:col-span-4`} />
-        <div className={`h-48 ${GLASS} lg:col-span-3`} />
-        <div className={`h-48 ${GLASS} lg:col-span-5`} />
-        <div className={`h-48 ${GLASS} lg:col-span-4`} />
-        <div className={`h-60 ${GLASS} lg:col-span-8`} />
-        <div className={`h-60 ${GLASS} lg:col-span-4`} />
-      </div>
+    <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4" role="status" aria-label="Loading stats">
+      {[...Array(4)].map((_, i) => <div key={i} className="skeleton h-[124px] rounded-[20px] sm:h-[150px]" />)}
     </div>
   );
 }
@@ -117,36 +112,36 @@ export default function DashboardPage() {
   const { data: session } = useSession();
 
   const [overview, setOverview] = useState<OverviewData | null>(null);
-  const [messagesData, setMessagesData] = useState<any[]>([]);
-  const [agentStats, setAgentStats] = useState<AgentStat[]>([]);
+  const [overviewLoaded, setOverviewLoaded] = useState(false);
+  const [messagesData, setMessagesData] = useState<any[] | null>(null);
+  const [agentStats, setAgentStats] = useState<AgentStat[] | null>(null);
   const [pipelineStats, setPipelineStats] = useState<PipelineStats | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const role = (session?.user as any)?.role ?? 'AGENT';
   const isAdmin = ADMIN_ROLES.includes(role);
 
-  const fetchData = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const [overviewData, msgData, , agentData, pipelineData] = await Promise.all([
-        api.get('/api/analytics/overview'),
-        api.get('/api/analytics/messages'),
-        api.get('/api/whatsapp/status').catch(() => null),
-        api.get('/api/analytics/agents').catch(() => []),
-        api.get('/api/analytics/pipeline').catch(() => null),
-      ]);
-      setOverview(overviewData);
-      setMessagesData(msgData);
-      setAgentStats(Array.isArray(agentData) ? agentData : []);
-      setPipelineStats(pipelineData?.totalDeals !== undefined ? pipelineData : null);
-    } catch (err: any) {
-      console.error('Failed to fetch dashboard data:', err);
-      setError(err?.message || 'Failed to load dashboard data');
-    } finally {
-      setLoading(false);
-    }
+  // Each section loads independently and reveals as soon as ITS data lands —
+  // the page never blocks on the slowest endpoint. Note: /api/whatsapp/status
+  // is NOT fetched here; SessionStatusWidget owns that call.
+  const fetchData = useCallback(() => {
+    setError(null);
+    void api.get('/api/analytics/overview')
+      .then((data) => setOverview(data))
+      .catch((err: any) => {
+        console.error('Failed to fetch dashboard overview:', err);
+        setError(err?.message || 'Failed to load dashboard data');
+      })
+      .finally(() => setOverviewLoaded(true));
+    void api.get('/api/analytics/messages')
+      .then((data) => setMessagesData(Array.isArray(data) ? data : []))
+      .catch(() => setMessagesData([]));
+    void api.get('/api/analytics/agents')
+      .then((data) => setAgentStats(Array.isArray(data) ? data : []))
+      .catch(() => setAgentStats([]));
+    void api.get('/api/analytics/pipeline')
+      .then((data) => setPipelineStats(data?.totalDeals !== undefined ? data : null))
+      .catch(() => setPipelineStats(null));
   }, []);
 
   useEffect(() => {
@@ -175,10 +170,9 @@ export default function DashboardPage() {
   useSocket('message:new', onMessageNew);
   useSocket('conversation:updated', onConversationUpdated);
 
-  if (loading && !overview) return <Skeleton />;
-
-  const totalResolved = agentStats.reduce((s, a) => s + a.resolvedConversations, 0);
-  const totalOpen = agentStats.reduce((s, a) => s + a.openConversations, 0);
+  const statsLoaded = agentStats !== null;
+  const totalResolved = (agentStats ?? []).reduce((s, a) => s + a.resolvedConversations, 0);
+  const totalOpen = (agentStats ?? []).reduce((s, a) => s + a.openConversations, 0);
   let gaugePercent = 0;
   if (totalResolved + totalOpen > 0) gaugePercent = (totalResolved / (totalResolved + totalOpen)) * 100;
   else if (pipelineStats && pipelineStats.totalDeals > 0) gaugePercent = pipelineStats.conversionRate;
@@ -245,7 +239,7 @@ export default function DashboardPage() {
       {error && !overview && (
         <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-400">
           <p className="font-medium">{error}</p>
-          <button type="button" onClick={() => void fetchData()} className="mt-2 text-xs font-semibold underline underline-offset-2">
+          <button type="button" onClick={() => fetchData()} className="mt-2 text-xs font-semibold underline underline-offset-2">
             {tCommon('retry')}
           </button>
         </div>
@@ -272,8 +266,10 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* ── KPI row ──────────────────────────────────────────────────────── */}
-      {overview && <KpiCards data={overview} />}
+      {/* ── KPI row — first data on screen; skeleton keeps layout stable ── */}
+      {overview
+        ? <div className="section-reveal"><KpiCards data={overview} /></div>
+        : !overviewLoaded && <KpiSkeleton />}
 
       {/* ── Quick Navigate (hidden on desktop) ───────────────────────────── */}
       <div className="lg:hidden">
@@ -347,7 +343,9 @@ export default function DashboardPage() {
 
         {/* Row 1 — Chart (primary) + Session widget */}
         <div className="lg:col-span-8">
-          <MessagesChart data={messagesData} />
+          {messagesData !== null
+            ? <div className="section-reveal"><MessagesChart data={messagesData} /></div>
+            : <ChartSkeleton />}
         </div>
         <div className="lg:col-span-4">
           <SessionStatusWidget />
@@ -358,7 +356,9 @@ export default function DashboardPage() {
           <Reminders openCount={overview?.openConversations ?? 0} />
         </div>
         <div className="lg:col-span-5">
-          <AgentCollaboration agents={agentStats} isAdmin={isAdmin} />
+          {statsLoaded
+            ? <div className="section-reveal h-full"><AgentCollaboration agents={agentStats ?? []} isAdmin={isAdmin} /></div>
+            : <div className="skeleton h-64 rounded-[20px]" aria-hidden="true" />}
         </div>
         <div className="lg:col-span-4">
           <RecentConversations />
@@ -367,7 +367,9 @@ export default function DashboardPage() {
         {/* Row 3 — Resolution gauge + Uptime tracker */}
         {/* Resolution gauge is hidden on phones (shown from md / tablets up) */}
         <div className="hidden md:block lg:col-span-8">
-          <ProgressGauge percent={gaugePercent} caption={t('progress.caption')} legend={gaugeLegend} />
+          {statsLoaded
+            ? <div className="section-reveal h-full"><ProgressGauge percent={gaugePercent} caption={t('progress.caption')} legend={gaugeLegend} /></div>
+            : <div className="skeleton h-52 rounded-[20px]" aria-hidden="true" />}
         </div>
         <div className="lg:col-span-4">
           <UptimeTracker />
