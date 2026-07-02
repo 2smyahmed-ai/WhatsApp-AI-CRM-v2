@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Download, Smartphone, Monitor, Apple } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Download, Smartphone, Monitor, Apple, RefreshCw, Loader } from 'lucide-react'
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -21,9 +21,7 @@ function detectPlatform(): Platform {
 interface InstallButtonProps {
   variant?: 'hero' | 'section'
   className?: string
-  /** Override the dynamic button text (for i18n) */
   label?: string
-  /** Override the "App Installed" text (for i18n) */
   installedLabel?: string
 }
 
@@ -32,11 +30,12 @@ export function InstallButton({ variant = 'hero', className = '', label, install
   const [isInstalled, setIsInstalled] = useState(false)
   const [platform, setPlatform] = useState<Platform>('unknown')
   const [showIOSGuide, setShowIOSGuide] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const regRef = useRef<ServiceWorkerRegistration | null>(null)
 
   useEffect(() => {
     setPlatform(detectPlatform())
 
-    // Detect if already installed (standalone mode)
     if (window.matchMedia('(display-mode: standalone)').matches) {
       setIsInstalled(true)
     }
@@ -49,24 +48,68 @@ export function InstallButton({ variant = 'hero', className = '', label, install
     window.addEventListener('beforeinstallprompt', handler)
     window.addEventListener('appinstalled', () => setIsInstalled(true))
 
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then((reg) => { regRef.current = reg })
+    }
+
     return () => {
       window.removeEventListener('beforeinstallprompt', handler)
     }
   }, [])
 
-  async function handleInstall() {
+  async function handleClick() {
     if (platform === 'ios') {
       setShowIOSGuide(true)
       return
     }
-    if (!installPrompt) return
-    await installPrompt.prompt()
-    const { outcome } = await installPrompt.userChoice
-    if (outcome === 'accepted') setIsInstalled(true)
-    setInstallPrompt(null)
+
+    if (installPrompt) {
+      await installPrompt.prompt()
+      const { outcome } = await installPrompt.userChoice
+      if (outcome === 'accepted') setIsInstalled(true)
+      setInstallPrompt(null)
+      return
+    }
+
+    if ((window as any).__swUpdateAvailable) {
+      (window as any).__applySWUpdate?.()
+      return
+    }
+
+    setLoading(true)
+    try {
+      const reg = regRef.current || (await navigator.serviceWorker.getRegistration('/'))
+      if (reg) {
+        await reg.update()
+        await new Promise((r) => setTimeout(r, 1500))
+        if ((window as any).__swUpdateAvailable) {
+          (window as any).__applySWUpdate?.()
+          return
+        }
+      }
+    } catch {}
+    window.location.reload()
   }
 
   if (isInstalled) {
+    const updateAvailable = typeof window !== 'undefined' && (window as any).__swUpdateAvailable
+    if (updateAvailable) {
+      return (
+        <button
+          type="button"
+          onClick={() => (window as any).__applySWUpdate?.()}
+          className={`group relative inline-flex items-center justify-center gap-2.5 overflow-hidden rounded-xl font-bold transition-all duration-200 hover:-translate-y-0.5 active:scale-95 ${variant === 'hero' ? 'px-7 py-3.5 text-base' : 'px-5 py-3 text-sm'} ${className}`}
+          style={{
+            background: 'linear-gradient(135deg, rgba(212,175,55,0.2), rgba(212,175,55,0.08))',
+            border: '1px solid rgba(212,175,55,0.4)',
+            color: '#f3d98b',
+          }}
+        >
+          <RefreshCw className="h-4 w-4 animate-spin" />
+          Update Available — Tap to Reload
+        </button>
+      )
+    }
     return (
       <span className={`inline-flex items-center gap-2 rounded-xl border border-[#25D366]/30 bg-[#25D366]/10 px-4 py-2.5 text-sm font-semibold text-[#5cf0a0] ${className}`}>
         <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
@@ -77,7 +120,6 @@ export function InstallButton({ variant = 'hero', className = '', label, install
     )
   }
 
-  // Premium surfaces per placement
   const surface =
     variant === 'hero'
       ? 'lux-glass border border-white/15 text-white hover:border-[#d4af37]/45 hover:shadow-[0_18px_48px_-14px_rgba(212,175,55,0.40)]'
@@ -94,27 +136,33 @@ export function InstallButton({ variant = 'hero', className = '', label, install
     <>
       <button
         type="button"
-        onClick={handleInstall}
+        onClick={handleClick}
+        disabled={loading}
         className={`group relative inline-flex items-center justify-center gap-2.5 overflow-hidden rounded-xl font-bold transition-all duration-200 hover:-translate-y-0.5 active:scale-95 ${sizing} ${surface} ${className}`}
       >
         <span className="lux-sheen" />
         <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg ${chip}`}>
-          <Download className="h-4 w-4 transition-transform duration-300 group-hover:translate-y-0.5" />
+          {loading ? (
+            <Loader className="h-4 w-4 animate-spin" />
+          ) : (
+            <Download className="h-4 w-4 transition-transform duration-300 group-hover:translate-y-0.5" />
+          )}
         </span>
         <span className="relative">
-          {label ??
-            (platform === 'ios'
-              ? 'Add to Home Screen'
-              : platform === 'android'
-              ? 'Install Android App'
-              : installPrompt
-              ? 'Install Desktop App'
-              : 'Get the App')}
+          {loading
+            ? 'Checking…'
+            : label ??
+              (platform === 'ios'
+                ? 'Add to Home Screen'
+                : platform === 'android'
+                ? 'Install Android App'
+                : installPrompt
+                ? 'Install Desktop App'
+                : 'Get Latest Version')}
         </span>
         <PlatformIcon className="relative h-4 w-4 opacity-60" />
       </button>
 
-      {/* iOS instruction modal */}
       {showIOSGuide && (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center p-4 bg-black/60 backdrop-blur-sm"
