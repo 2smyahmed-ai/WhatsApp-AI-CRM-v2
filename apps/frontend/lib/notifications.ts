@@ -90,7 +90,7 @@ export function showBrowserNotification(
 
   const n = new Notification(title, {
     body,
-    icon: options?.icon || '/icon.svg',
+    icon: options?.icon || '/icons/icon-192.png',
     tag: options?.tag,
     silent: true,
   });

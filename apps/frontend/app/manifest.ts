@@ -12,7 +12,9 @@ export default function manifest(): MetadataRoute.Manifest {
     display: 'standalone',
     display_override: ['standalone', 'minimal-ui'],
     orientation: 'portrait-primary',
-    background_color: '#0a0f1e',
+    // Matches the splash canvas (#0d1f16 → #05080c family) so the OS launch
+    // frame blends seamlessly into the in-app splash — no color flash.
+    background_color: '#081511',
     theme_color: '#25D366',
     categories: ['business', 'productivity', 'communication'],
     icons: [
@@ -39,19 +41,19 @@ export default function manifest(): MetadataRoute.Manifest {
       {
         name: 'Conversations',
         short_name: 'Chats',
-        url: '/dashboard/conversations',
+        url: '/conversations',
         description: 'Open your WhatsApp conversations',
       },
       {
         name: 'Contacts',
         short_name: 'Contacts',
-        url: '/dashboard/contacts',
+        url: '/contacts',
         description: 'Manage your contacts',
       },
       {
         name: 'Broadcasts',
         short_name: 'Campaigns',
-        url: '/dashboard/broadcasts',
+        url: '/broadcasts',
         description: 'Send bulk campaigns',
       },
     ],

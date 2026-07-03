@@ -81,15 +81,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             SplashController holds it ≥1.6s (premium startup animation, not a
             delay) then dissolves it with a blur+scale exit. */}
         <div id="app-splash" aria-hidden="true">
-          <div className="app-splash__aurora" />
           <div className="app-splash__center">
-            <div className="app-splash__tile">
-              <span className="app-splash__halo" />
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/icons/logo-tight.png" alt="" className="app-splash__logo" />
-            </div>
-            <div className="app-splash__wordmark">Nexus <span>CRM</span></div>
-            <div className="app-splash__bar"><i /></div>
+            <span className="app-splash__halo" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/icons/logo-tight.png" alt="" className="app-splash__logo" />
           </div>
         </div>
         <SplashController />
