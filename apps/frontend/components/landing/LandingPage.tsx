@@ -301,14 +301,16 @@ export default function LandingPage() {
                 <div className="absolute -inset-10 rounded-full bg-gradient-to-br from-[#25D366]/25 via-[#d4af37]/10 to-transparent blur-3xl" />
 
                 {/* Phone app screenshot — image already includes the device frame */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/hero-app.png"
-                  alt={isAr ? 'تطبيق Nexus CRM على الجوال' : 'Nexus CRM dashboard on a phone'}
-                  loading="eager"
-                  draggable={false}
-                  className="lux-float-slow relative z-10 h-auto w-full select-none drop-shadow-[0_36px_70px_rgba(0,0,0,0.65)]"
-                />
+                <div className={`${isAr ? 'scale-x-[-1]' : ''}`}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/hero-app.png"
+                    alt={isAr ? 'تطبيق Nexus CRM على الجوال' : 'Nexus CRM dashboard on a phone'}
+                    loading="eager"
+                    draggable={false}
+                    className="lux-float-slow relative z-10 h-auto w-full select-none drop-shadow-[0_36px_70px_rgba(0,0,0,0.65)]"
+                  />
+                </div>
 
                 {/* Floating stat: AI handled */}
                 <div className="lux-float-delay lux-glass absolute -top-3 -end-3 z-20 hidden rounded-2xl border border-white/12 p-3.5 shadow-xl shadow-black/40 sm:block lg:-end-10">
