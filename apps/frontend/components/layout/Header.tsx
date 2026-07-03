@@ -20,8 +20,8 @@ import { toSimpleRole, SIMPLE_ROLE_LABEL, SIMPLE_ROLE_BADGE } from '@/lib/roles'
 import { useChatUnread } from '@/stores/chat-unread-store';
 
 const ICON_BTN =
-  'flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-500 ' +
-  'transition-colors hover:bg-gray-100 hover:text-gray-900 ' +
+  'press-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-500 ' +
+  'hover:bg-gray-100 hover:text-gray-900 ' +
   'dark:text-[#8696A0] dark:hover:bg-[#2A3942] dark:hover:text-[#E9EDEF] ' +
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16A34A]/40';
 

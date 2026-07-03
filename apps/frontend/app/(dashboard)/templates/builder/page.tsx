@@ -1169,8 +1169,15 @@ function BuilderContent() {
 export default function BuilderPage() {
   return (
     <Suspense fallback={
-      <div className="flex items-center justify-center h-64 text-gray-400">
-        <Loader2 className="h-6 w-6 animate-spin" />
+      <div className="space-y-4 animate-fade-in" role="status" aria-label="Loading builder">
+        <div className="flex items-center justify-between gap-4">
+          <div className="skeleton h-7 w-48" />
+          <div className="skeleton h-10 w-32 rounded-xl" />
+        </div>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="skeleton h-[420px] rounded-2xl lg:col-span-2" />
+          <div className="skeleton h-[420px] rounded-2xl" />
+        </div>
       </div>
     }>
       <BuilderContent />

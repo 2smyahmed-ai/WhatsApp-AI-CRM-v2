@@ -254,8 +254,16 @@ export default function ChatbotAdminPage() {
 
   if (sessionStatus === 'loading' || loading) {
     return (
-      <div className="flex items-center justify-center py-24">
-        <RotateCcw className="h-6 w-6 animate-spin text-[#25D366]" />
+      <div className="space-y-4 animate-fade-in" role="status" aria-label="Loading chatbot settings">
+        <div className="space-y-2">
+          <div className="skeleton h-7 w-52" />
+          <div className="skeleton h-3.5 w-72 max-w-full" />
+        </div>
+        <div className="flex gap-2 overflow-hidden">
+          {[...Array(5)].map((_, i) => <div key={i} className="skeleton h-9 w-28 shrink-0 rounded-full" />)}
+        </div>
+        <div className="skeleton h-44 rounded-2xl" />
+        <div className="skeleton h-64 rounded-2xl" />
       </div>
     );
   }

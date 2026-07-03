@@ -194,8 +194,19 @@ export default function CustomerAiPage() {
 
   // ── Guards ──────────────────────────────────────────────────────────────────
   if (loading) return (
-    <div className="flex min-h-[60vh] items-center justify-center">
-      <RotateCcw className="h-6 w-6 animate-spin text-[#25D366]" />
+    <div className="space-y-4 animate-fade-in" role="status" aria-label="Loading AI settings">
+      <div className="flex items-center justify-between gap-4">
+        <div className="space-y-2">
+          <div className="skeleton h-7 w-48" />
+          <div className="skeleton h-3.5 w-64 max-w-full" />
+        </div>
+        <div className="skeleton h-10 w-28 rounded-xl" />
+      </div>
+      <div className="skeleton h-40 rounded-2xl" />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="skeleton h-56 rounded-2xl" />
+        <div className="skeleton h-56 rounded-2xl" />
+      </div>
     </div>
   );
   if (!cfg) return (

@@ -120,8 +120,22 @@ export default function ContactProfilePage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center text-gray-500 dark:text-[#8696A0]">
-        <Loader2 className="h-6 w-6 animate-spin" />
+      <div className="space-y-4 animate-fade-in" role="status" aria-label="Loading contact">
+        <div className="flex items-center gap-3">
+          <div className="skeleton h-9 w-9 rounded-full" />
+          <div className="skeleton h-12 w-12 rounded-full" />
+          <div className="space-y-2">
+            <div className="skeleton h-5 w-40" />
+            <div className="skeleton h-3 w-28" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[...Array(4)].map((_, i) => <div key={i} className="skeleton h-20 rounded-2xl" />)}
+        </div>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="skeleton h-72 rounded-2xl lg:col-span-2" />
+          <div className="skeleton h-72 rounded-2xl" />
+        </div>
       </div>
     );
   }

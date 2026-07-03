@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { motion, useReducedMotion } from 'motion/react';
 import { BarChart3, MessageSquare, Users, Send, Grid3X3, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
@@ -33,6 +34,7 @@ export default function BottomNav() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { t } = useTranslation('sidebar');
   const chatWindowOpen = useChatOpen((s) => s.isOpen);
+  const reduceMotion = useReducedMotion();
 
   const count = { openConversations: openConversations ?? 0 };
 
@@ -56,7 +58,7 @@ export default function BottomNav() {
             type="button"
             onClick={() => { haptic('selection'); setDrawerOpen(true); }}
             aria-label="Open all navigation"
-            className="relative flex flex-1 flex-col items-center justify-center gap-1 py-2 select-none"
+            className="press relative flex flex-1 flex-col items-center justify-center gap-1 py-2 select-none"
           >
             <span className="flex h-[36px] w-[36px] items-center justify-center rounded-[12px]">
               <Grid3X3 className="h-[18px] w-[18px] text-gray-400 dark:text-[#8696A0]" />
@@ -77,21 +79,30 @@ export default function BottomNav() {
                 href={href}
                 onClick={() => { if (!active) haptic('selection'); }}
                 aria-current={active ? 'page' : undefined}
-                className="relative flex flex-1 flex-col items-center justify-center gap-1 py-2 select-none"
+                className="press relative flex flex-1 flex-col items-center justify-center gap-1 py-2 select-none"
               >
-                {/* Icon bubble */}
-                <span className={cn(
-                  'relative flex h-[36px] w-[36px] items-center justify-center rounded-[12px] transition-all duration-200',
-                  active
-                    ? 'bg-[#16A34A]/12 dark:bg-[#25D366]/15 scale-[1.06]'
-                    : 'scale-100',
-                )}>
-                  <Icon className={cn(
-                    'transition-all duration-200',
-                    active
-                      ? 'h-[19px] w-[19px] text-[#16A34A] dark:text-[#25D366] stroke-[2.4]'
-                      : 'h-[18px] w-[18px] text-gray-400 dark:text-[#8696A0]',
-                  )} />
+                {/* Icon bubble — the active pill GLIDES between tabs (shared layoutId) */}
+                <span className="relative flex h-[36px] w-[36px] items-center justify-center rounded-[12px]">
+                  {active && (
+                    <motion.span
+                      layoutId="bottomnav-pill"
+                      className="absolute inset-0 rounded-[12px] bg-[#16A34A]/12 dark:bg-[#25D366]/15"
+                      transition={reduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 520, damping: 36 }}
+                      aria-hidden="true"
+                    />
+                  )}
+                  <motion.span
+                    className="relative flex items-center justify-center"
+                    animate={{ scale: active ? 1.08 : 1 }}
+                    transition={reduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 500, damping: 22 }}
+                  >
+                    <Icon className={cn(
+                      'h-[18px] w-[18px] transition-colors duration-200',
+                      active
+                        ? 'text-[#16A34A] dark:text-[#25D366] stroke-[2.4]'
+                        : 'text-gray-400 dark:text-[#8696A0]',
+                    )} />
+                  </motion.span>
                   {badge > 0 && (
                     <span className="absolute -end-1 -top-1 flex h-[14px] min-w-[14px] items-center justify-center rounded-full bg-red-500 px-0.5 text-[9px] font-bold leading-none text-white">
                       {badge > 99 ? '99+' : badge}

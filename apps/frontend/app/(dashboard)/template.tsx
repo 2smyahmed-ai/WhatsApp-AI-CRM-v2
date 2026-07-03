@@ -30,9 +30,15 @@ export default function DashboardTemplate({ children }: { children: React.ReactN
   return (
     <motion.div
       className="h-full"
-      initial={{ opacity: 0, y: 12, scale: 0.992 }}
+      initial={{ opacity: 0, y: 14, scale: 0.99 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+      transition={{
+        // Spring on movement (native, physical), quick tween on opacity —
+        // settles in ~250-300ms so navigation always feels responsive.
+        y: { type: 'spring', stiffness: 420, damping: 34, mass: 0.8 },
+        scale: { type: 'spring', stiffness: 420, damping: 34, mass: 0.8 },
+        opacity: { duration: 0.2, ease: 'easeOut' },
+      }}
       onAnimationComplete={() => setEntered(true)}
     >
       {children}

@@ -17,9 +17,9 @@ import { useEffect } from 'react';
  * is usable, and it fires well before window `load` (which waits on every
  * image). We still keep `load` + a safety timer as fallbacks.
  */
-const MIN_VISIBLE_MS = 900; // let the entrance animation breathe
-const EXIT_MS = 620;        // content zoom-out (0.4s) + delayed backdrop fade
-const SAFETY_MS = 4000;     // never trap the user behind the splash
+const MIN_VISIBLE_MS = 1600; // premium startup animation — hold even if ready early
+const EXIT_MS = 700;         // blur+scale content exit (0.5s) + delayed backdrop fade
+const SAFETY_MS = 5000;      // never trap the user behind the splash
 
 export default function SplashController() {
   useEffect(() => {

@@ -48,6 +48,18 @@
   --font-arabic: 'IBM Plex Arabic', 'Segoe UI', system-ui, sans-serif;
   --font-latin: 'Plus Jakarta Sans', 'Segoe UI', 'Helvetica Neue', ui-sans-serif, system-ui, sans-serif;
 
+  /* ─── Motion system — ONE language for the whole product ───
+     ease-out    : expo-out. Decisive start, calm settle. Entrances, reveals.
+     ease-spring : soft overshoot. Playful pops (icons, chips, toggles).
+     ease-swift  : symmetric. Property changes that morph in place (colors, size).
+     Durations   : fast = touch feedback · base = UI state · slow = screen-level. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.45, 0.64, 1);
+  --ease-swift: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 140ms;
+  --dur-base: 240ms;
+  --dur-slow: 420ms;
+
   /* ─── Donezo emerald palette (dashboard surface) ─── */
   --dz-accent: #16A34A;
   --dz-accent-strong: #15803D;
@@ -886,94 +898,155 @@ html.pwa-standalone #app-splash {
   position: fixed;
   inset: 0;
   z-index: 2147483000;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 20px;
   padding-bottom: env(safe-area-inset-bottom);
-  background:
-    radial-gradient(120% 90% at 50% 0%, rgba(15,155,108,0.16) 0%, transparent 55%),
-    linear-gradient(180deg, #0a0f1e 0%, #070c10 100%);
+  overflow: hidden;
+  background: linear-gradient(180deg, #081511 0%, #060b0f 55%, #05080c 100%);
   opacity: 1;
-  /* Backdrop fades slightly AFTER the content zooms out → layered, native exit */
-  transition: opacity 0.45s ease 0.12s;
+  /* Backdrop fades AFTER the content blurs away → layered, native exit */
+  transition: opacity var(--dur-slow) ease var(--dur-fast);
 }
 #app-splash.is-hiding { opacity: 0; pointer-events: none; }
 
-/* Logo mark + breathing halo */
-.app-splash__mark {
-  position: relative;
-  animation: splashLogoIn 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-.app-splash__mark::before {              /* soft emerald halo behind the logo */
+/* Aurora canvas — two soft glows drifting very slowly behind everything */
+.app-splash__aurora { position: absolute; inset: 0; pointer-events: none; }
+.app-splash__aurora::before,
+.app-splash__aurora::after {
   content: "";
   position: absolute;
-  inset: -46px;
   border-radius: 9999px;
-  background: radial-gradient(circle, rgba(37,211,102,0.28) 0%, rgba(37,211,102,0.10) 42%, transparent 70%);
-  filter: blur(6px);
-  animation: splashHalo 2.6s ease-in-out 0.5s infinite;
+  will-change: transform;
+}
+.app-splash__aurora::before {
+  width: 65vmax; height: 65vmax; top: -28vmax; left: -12vmax;
+  background: radial-gradient(circle, rgba(16,140,90,0.22) 0%, transparent 62%);
+  animation: splashDriftA 7s ease-in-out infinite alternate;
+}
+.app-splash__aurora::after {
+  width: 50vmax; height: 50vmax; bottom: -22vmax; right: -14vmax;
+  background: radial-gradient(circle, rgba(212,175,55,0.07) 0%, transparent 60%);
+  animation: splashDriftB 9s ease-in-out infinite alternate;
+}
+
+/* Center column — this is the unit that enters and exits together */
+.app-splash__center {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 26px;
+  animation: splashCenterIn 0.8s var(--ease-out) both;
+}
+
+/* App-icon tile — launching feels like opening a native app */
+.app-splash__tile {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 108px;
+  height: 108px;
+  border-radius: 28px;
+  background: linear-gradient(160deg, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.03) 55%, rgba(37,211,102,0.06) 100%);
+  border: 1px solid rgba(255,255,255,0.10);
+  box-shadow:
+    0 24px 60px -18px rgba(0,0,0,0.65),
+    0 10px 32px -8px rgba(16,140,90,0.35),
+    inset 0 1px 0 rgba(255,255,255,0.12);
+  animation: splashBreathe 3.2s ease-in-out 0.8s infinite;
+  will-change: transform;
+}
+.app-splash__halo {                      /* breathing emerald glow behind the tile */
+  position: absolute;
+  inset: -52px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(37,211,102,0.30) 0%, rgba(37,211,102,0.08) 45%, transparent 70%);
+  filter: blur(10px);
+  animation: splashHalo 3.2s ease-in-out 0.8s infinite;
+  will-change: transform, opacity;
 }
 .app-splash__logo {
   position: relative;
   display: block;
-  width: 96px;
-  height: 96px;
+  width: 64px;
+  height: 64px;
   object-fit: contain;
-  filter: drop-shadow(0 12px 34px rgba(37,211,102,0.38));
+  filter: drop-shadow(0 8px 22px rgba(37,211,102,0.45));
 }
+
+/* Wordmark — quiet, wide-tracked, brand-locked LTR */
 .app-splash__wordmark {
+  direction: ltr;
+  font-family: var(--font-latin);
+  font-weight: 700;
+  font-size: 21px;
+  letter-spacing: 0.22em;
+  color: rgba(255,255,255,0.94);
+  animation: splashRiseIn 0.7s var(--ease-out) 0.18s both;
+}
+.app-splash__wordmark span { color: #25D366; font-weight: 800; }
+
+/* Hairline progress — indeterminate emerald→gold sweep on a 2px track */
+.app-splash__bar {
   position: relative;
+  width: 132px;
+  height: 2px;
+  border-radius: 9999px;
   overflow: hidden;
-  font-weight: 800;
-  font-size: 22px;
-  letter-spacing: 0.16em;
-  color: #ffffff;
-  opacity: 0;
-  animation: splashTextIn 0.7s ease-out 0.28s both;
+  background: rgba(255,255,255,0.08);
+  animation: splashRiseIn 0.7s var(--ease-out) 0.34s both;
 }
-.app-splash__wordmark span { color: #25D366; }
-.app-splash__wordmark::after {          /* gold shimmer sweep */
-  content: "";
+.app-splash__bar i {
   position: absolute;
-  inset: 0;
-  background: linear-gradient(110deg, transparent 32%, rgba(212,175,55,0.85) 50%, transparent 68%);
-  transform: translateX(-120%);
-  animation: splashShimmer 1.7s ease-in-out 0.8s infinite;
-}
-.app-splash__dots { display: flex; gap: 6px; margin-top: 2px; opacity: 0; animation: splashTextIn 0.5s ease-out 0.5s both; }
-.app-splash__dots i { width: 7px; height: 7px; border-radius: 9999px; background: #25D366; opacity: 0.35; animation: splashDot 1s ease-in-out infinite; }
-.app-splash__dots i:nth-child(2) { animation-delay: 0.15s; }
-.app-splash__dots i:nth-child(3) { animation-delay: 0.30s; }
-
-/* Exit: content gently zooms through + fades, then the backdrop follows.
-   Overrides the entrance animation shorthand, so no snap. */
-#app-splash.is-hiding .app-splash__mark,
-#app-splash.is-hiding .app-splash__wordmark,
-#app-splash.is-hiding .app-splash__dots {
-  animation: splashOut 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+  inset-block: 0;
+  left: 0;
+  width: 44%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, transparent, #25D366 35%, #d4af37 85%, transparent);
+  animation: splashSweep 1.3s cubic-bezier(0.65, 0, 0.35, 1) 0.5s infinite;
+  will-change: transform;
 }
 
-@keyframes splashLogoIn {
-  0%   { opacity: 0; transform: scale(0.82); }
-  60%  { opacity: 1; }
-  100% { opacity: 1; transform: scale(1); }
+/* Exit — soft-focus dissolve: blur + scale + fade, then backdrop follows */
+#app-splash.is-hiding .app-splash__center {
+  animation: splashCenterOut 0.5s var(--ease-out) both;
+}
+
+@keyframes splashCenterIn {
+  from { opacity: 0; transform: scale(0.92) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes splashCenterOut {
+  from { opacity: 1; transform: scale(1);    filter: blur(0px); }
+  to   { opacity: 0; transform: scale(1.07); filter: blur(12px); }
+}
+@keyframes splashBreathe {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.022); }
 }
 @keyframes splashHalo {
   0%, 100% { transform: scale(1);    opacity: 0.55; }
-  50%      { transform: scale(1.18); opacity: 1; }
+  50%      { transform: scale(1.16); opacity: 1; }
 }
-@keyframes splashTextIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes splashShimmer { 0% { transform: translateX(-120%); } 60%, 100% { transform: translateX(120%); } }
-@keyframes splashDot { 0%, 100% { opacity: 0.35; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-4px); } }
-@keyframes splashOut { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(1.08); } }
+@keyframes splashRiseIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes splashSweep {
+  0%   { transform: translateX(-110%); }
+  100% { transform: translateX(340%); }
+}
+@keyframes splashDriftA {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(6vmax, 4vmax, 0) scale(1.08); }
+}
+@keyframes splashDriftB {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(-5vmax, -3vmax, 0) scale(1.1); }
+}
 @media (prefers-reduced-motion: reduce) {
-  .app-splash__mark, .app-splash__logo, .app-splash__wordmark, .app-splash__dots, .app-splash__dots i { animation: none; opacity: 1; }
-  .app-splash__mark::before { animation: none; }
-  .app-splash__wordmark::after { animation: none; opacity: 0; }
-  #app-splash.is-hiding .app-splash__mark,
-  #app-splash.is-hiding .app-splash__wordmark,
-  #app-splash.is-hiding .app-splash__dots { animation: none; opacity: 0; }
+  .app-splash__center, .app-splash__tile, .app-splash__halo,
+  .app-splash__wordmark, .app-splash__bar,
+  .app-splash__aurora::before, .app-splash__aurora::after { animation: none; opacity: 1; }
+  .app-splash__bar i { animation: none; transform: none; width: 100%; opacity: 0.5; }
+  #app-splash.is-hiding .app-splash__center { animation: none; opacity: 0; }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -995,9 +1068,43 @@ html.pwa-standalone #app-splash {
 
 /* Staged content reveal — sections fade + rise in as their data arrives,
    replacing the skeleton in place (layout stays stable, no jumps). */
-.section-reveal { animation: sectionReveal 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.section-reveal { animation: sectionReveal var(--dur-slow) var(--ease-out) both; }
 @keyframes sectionReveal {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 @media (prefers-reduced-motion: reduce) { .section-reveal { animation: none; } }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   TOUCH FEEDBACK — premium press physics for every interactive element.
+   Press is instant (fingers expect zero lag); release springs back softly.
+   Compositor-only (transform), so it never janks a scroll.
+   ══════════════════════════════════════════════════════════════════════════ */
+* { -webkit-tap-highlight-color: transparent; }
+
+.press,
+.press-icon {
+  /* Includes color props: this shorthand outranks Tailwind's transition-colors
+     on the same element, so hover tints must stay smooth here too. */
+  transition:
+    transform var(--dur-base) var(--ease-spring),
+    color var(--dur-fast) ease,
+    background-color var(--dur-fast) ease,
+    border-color var(--dur-fast) ease,
+    box-shadow var(--dur-base) var(--ease-swift);
+  will-change: transform;
+}
+.press:active      { transform: scale(0.97); transition-duration: 60ms; }
+.press-icon:active { transform: scale(0.88); transition-duration: 60ms; }
+@media (prefers-reduced-motion: reduce) {
+  .press:active, .press-icon:active { transform: none; }
+}
+
+/* Inputs: smooth focus transitions everywhere a Tailwind transition class
+   isn't already present (element selector loses to any utility class). */
+input, textarea, select {
+  transition:
+    border-color var(--dur-base) var(--ease-swift),
+    box-shadow var(--dur-base) var(--ease-swift),
+    background-color var(--dur-base) var(--ease-swift);
+}

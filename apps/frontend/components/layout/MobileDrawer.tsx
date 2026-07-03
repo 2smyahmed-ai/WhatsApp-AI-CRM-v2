@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { AnimatePresence, motion, useDragControls, useReducedMotion } from 'motion/react';
 import { useSession, signOut } from 'next-auth/react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -51,6 +52,8 @@ const ADMIN_NAV = [
 
 export default function MobileDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname  = usePathname();
+  const dragControls = useDragControls();
+  const reduceMotion = useReducedMotion();
   const { data: session } = useSession();
   const { t }       = useTranslation('sidebar');
   const { t: tCommon } = useTranslation('common');
@@ -83,27 +86,55 @@ export default function MobileDrawer({ open, onClose }: { open: boolean; onClose
   // Auto-close when route changes
   useEffect(() => { onClose(); }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!open) return null;
-
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[2px]"
-        aria-hidden
-        onClick={onClose}
-      />
+    <AnimatePresence>
+      {open && (
+        <>
+          {/* Backdrop */}
+          <motion.div
+            key="drawer-backdrop"
+            className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[2px]"
+            aria-hidden
+            onClick={onClose}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.22, ease: 'easeOut' }}
+          />
 
-      {/* Sheet */}
-      <div className="fixed inset-x-0 bottom-0 z-50 flex max-h-[90vh] flex-col rounded-t-3xl bg-white dark:bg-[#111B21] shadow-[0_-24px_60px_-12px_rgba(0,0,0,0.45)]">
+          {/* Sheet — springs up like a native bottom sheet; swipe down on the
+              handle/header to dismiss (drag starts only from the grip, so the
+              inner nav list still scrolls freely). */}
+          <motion.div
+            key="drawer-sheet"
+            className="fixed inset-x-0 bottom-0 z-50 flex max-h-[90vh] flex-col rounded-t-3xl bg-white dark:bg-[#111B21] shadow-[0_-24px_60px_-12px_rgba(0,0,0,0.45)]"
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={reduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 400, damping: 40 }}
+            drag={reduceMotion ? false : 'y'}
+            dragControls={dragControls}
+            dragListener={false}
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={{ top: 0, bottom: 0.55 }}
+            onDragEnd={(_, info) => {
+              if (info.offset.y > 110 || info.velocity.y > 600) onClose();
+            }}
+          >
 
-        {/* Drag handle */}
-        <div className="flex justify-center pt-3 pb-1 shrink-0">
+        {/* Drag handle — grip zone that drives the swipe-to-dismiss */}
+        <div
+          className="flex cursor-grab touch-none justify-center pt-3 pb-1 shrink-0 active:cursor-grabbing"
+          onPointerDown={(e) => dragControls.start(e)}
+        >
           <div className="h-1 w-10 rounded-full bg-gray-200 dark:bg-white/15" />
         </div>
 
-        {/* Sheet header */}
-        <div className="flex items-center justify-between px-5 py-3 shrink-0">
+        {/* Sheet header — also part of the grip zone */}
+        <div
+          className="flex touch-none items-center justify-between px-5 py-3 shrink-0"
+          onPointerDown={(e) => dragControls.start(e)}
+        >
           <div className="flex items-center gap-2.5">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -282,7 +313,9 @@ export default function MobileDrawer({ open, onClose }: { open: boolean; onClose
 
         {/* iOS safe-area spacer */}
         <div className="shrink-0 pb-safe" />
-      </div>
-    </>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
   );
 }
