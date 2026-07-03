@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useState, type ComponentType } from 'react'
 import {
-  MessageSquare, Users, BotMessageSquare, Megaphone, Workflow, Contact,
+  Users, BotMessageSquare, Megaphone, Workflow, Contact,
   BarChart3, Sparkles, Reply, Filter, FileText, Activity, Languages,
   User, Bot, Database, UtensilsCrossed, Stethoscope, Building2, Store,
   ShoppingBag, GraduationCap, Car, Check, ArrowRight, ChevronDown,
@@ -37,14 +37,11 @@ const INDUSTRY_ICONS: Record<string, Icon> = {
 
 // ─── Logo / brand mark ─────────────────────────────────────────────────────────
 function BrandMark({ size = 'md' }: { size?: 'sm' | 'md' }) {
-  const box = size === 'sm' ? 'w-7 h-7' : 'w-9 h-9'
-  const icon = size === 'sm' ? 'w-3.5 h-3.5' : 'w-4 h-4'
+  const img = size === 'sm' ? 'h-7 w-auto' : 'h-9 w-auto'
   const text = size === 'sm' ? 'text-base' : 'text-lg'
   return (
     <div className="flex items-center gap-2.5">
-      <div className={`${box} rounded-xl bg-gradient-to-br from-[#2ee676] to-[#0f9b6c] flex items-center justify-center shadow-lg shadow-emerald-500/30 ring-1 ring-white/10`}>
-        <MessageSquare className={`${icon} text-white`} strokeWidth={2.5} />
-      </div>
+      <img src="/app-logo.png" alt="NexusCRM" className={`${img} rounded-full drop-shadow-lg`} />
       <span className={`font-extrabold ${text} tracking-tight text-white`}>
         Nexus<span className="text-gold-gradient">CRM</span>
       </span>
