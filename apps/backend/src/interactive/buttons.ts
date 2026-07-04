@@ -36,7 +36,7 @@
  *   Very old clients:   fall back to plain text if they don't support nativeFlowMessage
  */
 
-import { generateMessageID, prepareWAMessageMedia } from '@whiskeysockets/baileys';
+import { prepareWAMessageMedia } from '@whiskeysockets/baileys';
 import type { WASocket } from '@whiskeysockets/baileys';
 import {
   normalizeJid,
@@ -46,6 +46,7 @@ import {
   rateLimiter,
   validateLength,
   validateButtonCount,
+  relayInteractive,
 } from './utils';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -281,15 +282,8 @@ export async function sendButtons(
     await simulateTyping(sock, normalJid, body.length);
   }
 
-  const msgId = generateMessageID();
-
-  await retryAsync(
-    () =>
-      (sock as any).relayMessage(
-        normalJid,
-        { interactiveMessage: interactiveMsg },
-        { messageId: msgId },
-      ),
+  const msgId = await retryAsync(
+    () => relayInteractive(sock, normalJid, interactiveMsg),
     {
       maxAttempts: 3,
       baseDelayMs: 400,
@@ -372,15 +366,8 @@ export async function sendCtaButtons(
     await simulateTyping(sock, normalJid, body.length);
   }
 
-  const msgId = generateMessageID();
-
-  await retryAsync(
-    () =>
-      (sock as any).relayMessage(
-        normalJid,
-        { interactiveMessage: interactiveMsg },
-        { messageId: msgId },
-      ),
+  const msgId = await retryAsync(
+    () => relayInteractive(sock, normalJid, interactiveMsg),
     { maxAttempts: 3, baseDelayMs: 400 },
   );
 
@@ -462,15 +449,8 @@ export async function sendMixedButtons(
     await simulateTyping(sock, normalJid, body.length);
   }
 
-  const msgId = generateMessageID();
-
-  await retryAsync(
-    () =>
-      (sock as any).relayMessage(
-        normalJid,
-        { interactiveMessage: interactiveMsg },
-        { messageId: msgId },
-      ),
+  const msgId = await retryAsync(
+    () => relayInteractive(sock, normalJid, interactiveMsg),
     { maxAttempts: 3, baseDelayMs: 400 },
   );
 

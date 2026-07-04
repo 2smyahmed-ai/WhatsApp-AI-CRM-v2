@@ -49,7 +49,6 @@
  *   Old clients:       may fall back to plain text
  */
 
-import { generateMessageID } from '@whiskeysockets/baileys';
 import type { WASocket } from '@whiskeysockets/baileys';
 import {
   normalizeJid,
@@ -58,6 +57,7 @@ import {
   simulateTyping,
   rateLimiter,
   validateLength,
+  relayInteractive,
 } from './utils';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -257,15 +257,8 @@ export async function sendListMenu(
     await simulateTyping(sock, normalJid, body.length);
   }
 
-  const msgId = generateMessageID();
-
-  await retryAsync(
-    () =>
-      (sock as any).relayMessage(
-        normalJid,
-        { interactiveMessage: interactiveMsg },
-        { messageId: msgId },
-      ),
+  const msgId = await retryAsync(
+    () => relayInteractive(sock, normalJid, interactiveMsg),
     {
       maxAttempts: 3,
       baseDelayMs: 400,

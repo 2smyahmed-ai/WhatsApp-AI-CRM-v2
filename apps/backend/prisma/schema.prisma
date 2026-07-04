@@ -421,6 +421,9 @@ model Broadcast {
   description        String?
   message            String
   interactiveContent Json?
+  mediaUrl           String?
+  mediaType          String?
+  mediaFilename      String?
   status             BroadcastStatus      @default(DRAFT)
   type               BroadcastType        @default(IMMEDIATE)
   scheduledAt        DateTime?

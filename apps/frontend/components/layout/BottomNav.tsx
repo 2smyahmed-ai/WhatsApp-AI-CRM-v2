@@ -38,7 +38,9 @@ export default function BottomNav() {
 
   const count = { openConversations: openConversations ?? 0 };
 
-  // Hide only when a chat window is open — the conversation list still shows the nav
+  // Hide only when a chat window is open — the conversation list still shows the nav.
+  // Focused full-screen editors (template builder, broadcast form) hide the nav
+  // themselves via setNavHidden(true) since they carry their own bottom action bar.
   if (chatWindowOpen) return null;
 
   return (

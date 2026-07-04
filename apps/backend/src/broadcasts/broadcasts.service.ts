@@ -53,6 +53,9 @@ export class BroadcastsService {
     scheduledAt?: Date;
     teamId?: string;
     interactiveContent?: object;
+    mediaUrl?: string | null;
+    mediaType?: string | null;
+    mediaFilename?: string | null;
   }) {
     const recipients = await resolveRecipients(data);
     if (!recipients.length) {
@@ -65,6 +68,9 @@ export class BroadcastsService {
         name: data.name,
         message: data.message,
         interactiveContent: data.interactiveContent ?? undefined,
+        mediaUrl: data.mediaUrl ?? null,
+        mediaType: data.mediaType ?? null,
+        mediaFilename: data.mediaFilename ?? null,
         status: data.scheduledAt ? 'SCHEDULED' : 'DRAFT',
         scheduledAt: data.scheduledAt,
         description: data.tag ? `Tag: ${data.tag}` : null,
@@ -87,6 +93,9 @@ export class BroadcastsService {
       scheduledAt?: Date;
       teamId?: string;
       interactiveContent?: object;
+      mediaUrl?: string | null;
+      mediaType?: string | null;
+      mediaFilename?: string | null;
     }
   ) {
     const recipients = await resolveRecipients(data);
@@ -107,6 +116,9 @@ export class BroadcastsService {
         name: data.name,
         message: data.message,
         interactiveContent: data.interactiveContent ?? undefined,
+        mediaUrl: data.mediaUrl ?? null,
+        mediaType: data.mediaType ?? null,
+        mediaFilename: data.mediaFilename ?? null,
         status: data.scheduledAt ? 'SCHEDULED' : 'DRAFT',
         scheduledAt: data.scheduledAt ?? null,
         description: data.tag ? `Tag: ${data.tag}` : null,

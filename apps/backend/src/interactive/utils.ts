@@ -11,9 +11,48 @@
  *   - Structured send-context builder for tracing / analytics
  */
 
-import { generateMessageID } from '@whiskeysockets/baileys';
+import { generateMessageID, generateWAMessageFromContent } from '@whiskeysockets/baileys';
 import type { WASocket } from '@whiskeysockets/baileys';
 import { randomUUID } from 'crypto';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Interactive relay — proto wrapper that makes buttons ACTUALLY render
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Relay an interactiveMessage proto wrapped the way modern WhatsApp clients
+ * expect it: inside viewOnceMessage with messageContextInfo/deviceListMetadata.
+ *
+ * A bare `relayMessage(jid, { interactiveMessage })` is silently downgraded on
+ * many current Android/iOS builds — the body text arrives but the buttons are
+ * dropped. Wrapping restores 1:1 rendering of what was designed.
+ *
+ * Returns the generated message ID.
+ */
+export async function relayInteractive(
+  sock: WASocket,
+  jid: string,
+  interactiveMessage: Record<string, unknown>,
+): Promise<string> {
+  const full = generateWAMessageFromContent(
+    jid,
+    {
+      viewOnceMessage: {
+        message: {
+          messageContextInfo: {
+            deviceListMetadata: {},
+            deviceListMetadataVersion: 2,
+          },
+          interactiveMessage,
+        },
+      },
+    } as any,
+    { userJid: sock.user?.id ?? '' } as any,
+  );
+
+  await (sock as any).relayMessage(jid, full.message, { messageId: full.key.id });
+  return full.key.id as string;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // JID Validation

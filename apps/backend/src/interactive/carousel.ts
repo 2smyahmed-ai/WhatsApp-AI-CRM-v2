@@ -49,7 +49,7 @@
  *   • Always include at least one button per card so users have a clear CTA
  */
 
-import { generateMessageID, prepareWAMessageMedia } from '@whiskeysockets/baileys';
+import { prepareWAMessageMedia } from '@whiskeysockets/baileys';
 import type { WASocket } from '@whiskeysockets/baileys';
 import {
   normalizeJid,
@@ -58,6 +58,7 @@ import {
   simulateTyping,
   rateLimiter,
   validateLength,
+  relayInteractive,
 } from './utils';
 import { buildQuickReplyButton, buildCtaUrlButton } from './buttons';
 
@@ -268,15 +269,8 @@ export async function sendCarousel(
     await simulateTyping(sock, normalJid, 80);
   }
 
-  const msgId = generateMessageID();
-
-  await retryAsync(
-    () =>
-      (sock as any).relayMessage(
-        normalJid,
-        { interactiveMessage: interactiveMsg },
-        { messageId: msgId },
-      ),
+  const msgId = await retryAsync(
+    () => relayInteractive(sock, normalJid, interactiveMsg),
     {
       // Slightly higher base delay for carousels — they carry heavier CDN-upload state
       maxAttempts: 3,

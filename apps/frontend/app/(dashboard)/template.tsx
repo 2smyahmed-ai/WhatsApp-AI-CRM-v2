@@ -25,11 +25,18 @@ export default function DashboardTemplate({ children }: { children: React.ReactN
 
   const skip = reduceMotion || !!pathname?.startsWith('/conversations');
 
-  if (skip || entered) return <div className="h-full">{children}</div>;
+  // `min-h-full` (not `h-full`) so tall pages GROW past the viewport instead of
+  // being capped at 100% — a capped wrapper lets content overflow its box, which
+  // hid page content behind the floating mobile bottom nav. `sm:h-full` keeps the
+  // definite full height that full-height desktop screens (e.g. Conversations)
+  // rely on. `pb-[var(--bottom-nav-space)]` reserves the nav's footprint (0 on sm+).
+  const wrapperClass = 'min-h-full sm:h-full pb-[var(--bottom-nav-space)]';
+
+  if (skip || entered) return <div className={wrapperClass}>{children}</div>;
 
   return (
     <motion.div
-      className="h-full"
+      className={wrapperClass}
       initial={{ opacity: 0, y: 14, scale: 0.99 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{

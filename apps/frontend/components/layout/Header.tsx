@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { useTheme } from '@/components/providers/ThemeProvider';
 import { useLanguage } from '@/components/providers/I18nProvider';
 import { useChatOpen } from '@/stores/chat-open-store';
+import { useHeaderHidden } from '@/stores/header-hidden-store';
 import { cn } from '@/lib/utils';
 import { hardRefresh } from '@/lib/hard-refresh';
 import { haptic } from '@/lib/haptics';
@@ -31,6 +32,7 @@ export default function Header() {
   const { theme, toggle } = useTheme();
   const { language, setLanguage } = useLanguage();
   const chatWindowOpen = useChatOpen((s) => s.isOpen);
+  const headerHidden = useHeaderHidden((s) => s.hidden);
   const { t } = useTranslation('auth');
   const { t: tCommon } = useTranslation('common');
   const { connection, syncing, lastSynced, sync } = useSyncStatus();
@@ -89,7 +91,7 @@ export default function Header() {
     : tCommon('header.syncNow');
 
   return (
-    <header className={`sticky top-0 z-40 bg-white/90 backdrop-blur-md dark:bg-[#0B141A]/90 border-b border-gray-100/60 dark:border-white/5${chatWindowOpen ? ' hidden sm:block' : ''}`}>
+    <header className={`sticky top-0 z-40 bg-white/90 backdrop-blur-md dark:bg-[#0B141A]/90 border-b border-gray-100/60 dark:border-white/5${headerHidden ? ' hidden' : chatWindowOpen ? ' hidden sm:block' : ''}`}>
 
       {/* ── Mobile header (hidden sm+) ── */}
       <div className="flex sm:hidden items-center justify-between px-4 py-3">

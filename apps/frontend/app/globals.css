@@ -301,6 +301,21 @@ select:focus {
   margin-bottom: env(safe-area-inset-bottom);
 }
 
+/* ─── Floating mobile bottom-nav reserved space ──────────────
+   Single source of truth for the room the floating bottom nav
+   occupies (pill height + gap + safe-area). 0 on sm+ where the
+   nav is hidden. Consumed by the dashboard scroll spacer, the
+   full-height pages' own scroll areas, and floating action bars
+   via `[var(--bottom-nav-space)]` so nothing hides behind it. */
+:root {
+  --bottom-nav-space: 0px;
+}
+@media (max-width: 639.98px) {
+  :root {
+    --bottom-nav-space: calc(6.5rem + env(safe-area-inset-bottom));
+  }
+}
+
 /* ─── Scrollbar-none utility ─────────────────────────────── */
 .scrollbar-none {
   scrollbar-width: none;

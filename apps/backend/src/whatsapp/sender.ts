@@ -12,7 +12,7 @@ import { persistNormalizedMessage } from '../messaging/persist';
 import { BAILEYS_CAPABILITIES } from '../messaging/capabilities';
 import { interactiveMessageService } from '../services/interactive-message.service';
 import { sendCarousel } from '../interactive/carousel';
-import { sendButtons, sendCtaButtons } from '../interactive/buttons';
+import { sendButtons, sendCtaButtons, type ButtonHeader } from '../interactive/buttons';
 import { sendListMenu } from '../interactive/lists';
 import ffmpegPath from 'ffmpeg-static';
 import { existsSync } from 'fs';

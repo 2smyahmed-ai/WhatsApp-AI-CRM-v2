@@ -4,16 +4,25 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   Users, MessageSquare, Calendar, Send, ChevronDown, ChevronUp,
   Tag, Search, X, Check, Clock, Zap, AlertCircle, Smartphone,
-  Layers, Type, ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, Type, Image as ImageIcon, Video, FileText, Upload, Loader2,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { api } from '../../lib/api';
+import { api, apiForm } from '../../lib/api';
 import { cn } from '../../lib/utils';
 import { useTags } from '../../hooks/useTags';
 import { useDirection } from '../../hooks/useDirection';
 import { useChatOpen } from '../../stores/chat-open-store';
-import type { InteractiveContent } from '../../lib/interactive-engine';
-import InteractiveBuilder, { getInteractivePreviewText } from './InteractiveBuilder';
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+const QUICK_EMOJI = ['😊', '👋', '🎉', '✅', '🔥', '🙏', '📦', '💳', '📅', '⭐'];
+
+type MsgType = 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT';
+const MESSAGE_TYPES: Array<{ type: MsgType; icon: typeof Type; labelKey: string; fallback: string }> = [
+  { type: 'TEXT',     icon: Type,      labelKey: 'form.typeText',     fallback: 'Text' },
+  { type: 'IMAGE',    icon: ImageIcon, labelKey: 'form.typeImage',    fallback: 'Image' },
+  { type: 'VIDEO',    icon: Video,     labelKey: 'form.typeVideo',    fallback: 'Video' },
+  { type: 'DOCUMENT', icon: FileText,  labelKey: 'form.typeDocument', fallback: 'Document' },
+];
 
 interface Contact {
   id: string;
@@ -30,6 +39,9 @@ interface BroadcastFormProps {
     recipients: string[];
     tag?: string;
     scheduledAt?: string;
+    mediaUrl?: string;
+    mediaType?: string;
+    mediaFilename?: string;
   };
   submitLabel?: string;
   onBack?: () => void;
@@ -40,6 +52,9 @@ interface BroadcastFormProps {
     tag?: string;
     scheduledAt?: Date;
     interactiveContent?: object;
+    mediaUrl?: string;
+    mediaType?: string;
+    mediaFilename?: string;
   }) => void;
 }
 
@@ -52,9 +67,13 @@ const VARIABLES = [
 ];
 const TOTAL_STEPS = 4;
 
-function PhonePreview({ message }: { message: string }) {
+function PhonePreview({ message, mediaType, mediaUrl, mediaFilename }: {
+  message: string; mediaType?: MsgType; mediaUrl?: string; mediaFilename?: string;
+}) {
   const { t } = useTranslation('broadcasts');
   const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const hasMedia = mediaType && mediaType !== 'TEXT' && !!mediaUrl;
+  const hasContent = message.trim() || hasMedia;
   return (
     <div className="mx-auto w-[210px] rounded-[28px] border-[3px] border-[#2A3942] bg-[#0B141A] p-1.5 shadow-2xl">
       <div className="mb-1 flex items-center justify-between px-2 pt-0.5 text-[8px] text-white/40">
@@ -68,16 +87,36 @@ function PhonePreview({ message }: { message: string }) {
         <span className="text-[10px] font-medium text-white">{t('form.businessPreview')}</span>
       </div>
       <div className="min-h-[150px] rounded-b-xl bg-[#0B141A] p-2">
-        {message.trim() ? (
-          <div className="max-w-[160px] rounded-[6px] rounded-tl-none bg-[#202C33] p-2 shadow-sm">
-            <p className="whitespace-pre-wrap break-words text-[10px] leading-[1.5] text-white">
-              {message.length > 200 ? message.slice(0, 200) + '…' : message}
-            </p>
-            <div className="mt-1 flex items-center justify-end gap-1">
-              <span className="text-[8px] text-[#8696A0]">{now}</span>
-              <svg className="h-3 w-3 text-[#25D366]" viewBox="0 0 18 18" fill="currentColor">
-                <path d="M17.394 5.035l-.57-.444a.434.434 0 00-.6.076L8.175 15.35l-4.306-3.396a.434.434 0 00-.6.076l-.47.595a.434.434 0 00.076.6l5.055 3.985a.434.434 0 00.6-.076l9.44-12.5a.434.434 0 00-.076-.599z" />
-              </svg>
+        {hasContent ? (
+          <div className="max-w-[170px] overflow-hidden rounded-[6px] rounded-tl-none bg-[#202C33] shadow-sm">
+            {hasMedia && (
+              <div className="overflow-hidden">
+                {mediaType === 'IMAGE' ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={mediaUrl} alt="" className="max-h-24 w-full object-cover"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                ) : mediaType === 'VIDEO' ? (
+                  <div className="flex h-20 items-center justify-center bg-black/40 text-white/60"><Video className="h-6 w-6" /></div>
+                ) : (
+                  <div className="flex items-center gap-1.5 bg-white/5 px-2 py-2">
+                    <FileText className="h-4 w-4 shrink-0 text-white/70" />
+                    <span className="truncate text-[9px] text-white/80">{mediaFilename || 'document.pdf'}</span>
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="p-2">
+              {message.trim() && (
+                <p className="whitespace-pre-wrap break-words text-[10px] leading-[1.5] text-white">
+                  {message.length > 200 ? message.slice(0, 200) + '…' : message}
+                </p>
+              )}
+              <div className="mt-1 flex items-center justify-end gap-1">
+                <span className="text-[8px] text-[#8696A0]">{now}</span>
+                <svg className="h-3 w-3 text-[#25D366]" viewBox="0 0 18 18" fill="currentColor">
+                  <path d="M17.394 5.035l-.57-.444a.434.434 0 00-.6.076L8.175 15.35l-4.306-3.396a.434.434 0 00-.6.076l-.47.595a.434.434 0 00.076.6l5.055 3.985a.434.434 0 00.6-.076l9.44-12.5a.434.434 0 00-.076-.599z" />
+                </svg>
+              </div>
             </div>
           </div>
         ) : (
@@ -152,22 +191,22 @@ export default function BroadcastForm({
     sendNow: !initialValues?.scheduledAt,
   });
 
-  const [messageType, setMessageType] = useState<'text' | 'interactive'>('text');
-  const [interactiveContent, setInteractiveContent] = useState<InteractiveContent | null>(null);
-  const [interactiveValid, setInteractiveValid] = useState(false);
-
-  const handleInteractiveChange = useCallback(
-    (content: InteractiveContent, valid: boolean) => {
-      setInteractiveContent(content);
-      setInteractiveValid(valid);
-    },
-    [],
-  );
-
   const [selectedContacts, setSelectedContacts] = useState<string[]>(initialRecipientSet);
   const [manualPhones, setManualPhones] = useState('');
   const [contactSearch, setContactSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  // Message type + media (image / video / document broadcasts)
+  const [messageType, setMessageType] = useState<MsgType>(
+    (initialValues?.mediaType as MsgType) || 'TEXT',
+  );
+  const [mediaUrl, setMediaUrl] = useState<string>(initialValues?.mediaUrl ?? '');
+  const [mediaFilename, setMediaFilename] = useState<string>(initialValues?.mediaFilename ?? '');
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const isMedia = messageType !== 'TEXT';
+  const acceptFor = messageType === 'IMAGE' ? 'image/*' : messageType === 'VIDEO' ? 'video/*' : '*/*';
 
   const [templates, setTemplates] = useState<Array<{ id: string; name: string; content: string }>>([]);
   const [showTemplates, setShowTemplates] = useState(false);
@@ -256,9 +295,23 @@ export default function BroadcastForm({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contacts, formData.tag, manualPhones, selectedContacts]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  // The broadcast must ONLY be sent by an explicit tap on the real Send button.
+  // We never send via the form's onSubmit, so implicit submission — the mobile
+  // keyboard "Go", an Enter keypress, or a stray enabled submit button — can
+  // never fire the broadcast before the user reaches the final step.
+  const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
+    if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') {
+      e.preventDefault();
+    }
+  };
+
+  const submitBroadcast = () => {
     setError(null);
+
+    if (!isValid) {
+      setError(t('form.errorIncomplete', { defaultValue: 'Please complete every step before sending.' }));
+      return;
+    }
 
     const recipients = Array.from(new Set([...selectedContacts, ...normalizePhoneList(manualPhones)]));
 
@@ -270,24 +323,16 @@ export default function BroadcastForm({
       setError(t('form.errorNoSchedule'));
       return;
     }
-    if (messageType === 'interactive' && !interactiveValid) {
-      setError(t('form.errorInteractive'));
-      return;
-    }
-
-    const messageBody =
-      messageType === 'interactive' && interactiveContent
-        ? ((interactiveContent as any).body ?? '')
-        : formData.message;
 
     onSave({
       name: formData.name,
-      message: messageBody,
+      message: formData.message,
       recipients,
       tag: formData.tag.trim() || undefined,
       scheduledAt: formData.sendNow ? undefined : new Date(formData.scheduledAt),
-      interactiveContent:
-        messageType === 'interactive' && interactiveContent ? interactiveContent : undefined,
+      mediaUrl: isMedia ? (mediaUrl || undefined) : undefined,
+      mediaType: isMedia ? messageType : undefined,
+      mediaFilename: isMedia ? (mediaFilename || undefined) : undefined,
     });
   };
 
@@ -306,17 +351,48 @@ export default function BroadcastForm({
     setSelectedContacts((prev) => prev.filter((p) => !phones.has(p)));
   };
 
-  const insertVariable = (variable: string) => {
+  const insertAtCursor = (token: string) => {
     const el = messageRef.current;
-    if (!el) return;
+    if (!el) {
+      setFormData((prev) => ({ ...prev, message: prev.message + token }));
+      return;
+    }
     const start = el.selectionStart;
     const end = el.selectionEnd;
-    const next = formData.message.slice(0, start) + variable + formData.message.slice(end);
+    const next = formData.message.slice(0, start) + token + formData.message.slice(end);
     setFormData((prev) => ({ ...prev, message: next }));
     setTimeout(() => {
-      el.selectionStart = el.selectionEnd = start + variable.length;
+      el.selectionStart = el.selectionEnd = start + token.length;
       el.focus();
     }, 0);
+  };
+  const insertVariable = insertAtCursor;
+
+  const changeMessageType = (type: MsgType) => {
+    if (type === messageType) return;
+    setMessageType(type);
+    setUploadError(null);
+    setMediaUrl('');
+    setMediaFilename('');
+  };
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await apiForm('/api/upload', fd);
+      setMediaUrl(`${API_BASE}${res.url}`);
+      setMediaFilename(file.name);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : t('form.uploadFailed', { defaultValue: 'Upload failed' }));
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   const filteredTemplates = useMemo(() => {
@@ -329,7 +405,8 @@ export default function BroadcastForm({
   const charWarning = charCount > 1000;
   const charLimit = charCount > 4096;
 
-  const messageReady = messageType === 'text' ? formData.message.trim().length > 0 : interactiveValid;
+  // Text broadcasts need a message; media broadcasts just need an attachment (caption optional).
+  const messageReady = isMedia ? mediaUrl.trim().length > 0 : formData.message.trim().length > 0;
 
   const hasAudience =
     selectedContacts.length > 0 ||
@@ -353,10 +430,7 @@ export default function BroadcastForm({
     t('form.deliverySection'),
   ];
 
-  const previewText =
-    messageType === 'interactive' && interactiveContent
-      ? getInteractivePreviewText(interactiveContent)
-      : formData.message;
+  const previewText = formData.message;
 
   const BackIcon = isRtl ? ChevronRight : ChevronLeft;
 
@@ -666,7 +740,7 @@ export default function BroadcastForm({
   );
 
   return (
-    <form onSubmit={handleSubmit} className="relative pb-24 sm:pb-0">
+    <form onSubmit={(e) => e.preventDefault()} onKeyDown={handleFormKeyDown} className="relative pb-24 sm:pb-0">
 
       {/* ── Mobile wizard header ── */}
       <div className="sm:hidden mb-6">
@@ -699,62 +773,102 @@ export default function BroadcastForm({
 
           {/* 1 · Campaign name */}
           <div className={mobileStep === 1 ? 'block' : 'hidden sm:block'}>
-            <SectionCard step={1} icon={MessageSquare} title={t('form.nameSection')} subtitle={t('form.nameSubtitle')}>
-              <input
-                type="text"
-                required
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full rounded-xl border border-white/10 bg-[#202C33] px-4 py-3 text-sm text-white placeholder-[#8696A0] outline-none transition focus:border-[#25D366]/50 focus:ring-1 focus:ring-[#25D366]/20"
-                placeholder={t('form.namePlaceholder2')}
-              />
+            <SectionCard step={1} icon={Tag} title={t('form.nameSection')} subtitle={t('form.nameSubtitle')}>
+              <div className="relative">
+                <Tag className="pointer-events-none absolute start-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[#25D366]" />
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full rounded-2xl border-2 border-white/10 bg-[#202C33] py-4 ps-12 pe-4 text-base font-semibold text-white placeholder-[#8696A0]/70 outline-none transition focus:border-[#25D366]/60 focus:ring-2 focus:ring-[#25D366]/20"
+                  placeholder={t('form.namePlaceholder2')}
+                />
+              </div>
+              <p className="mt-2.5 flex items-center gap-1.5 text-[11px] text-[#8696A0]">
+                <MessageSquare className="h-3.5 w-3.5 shrink-0 text-[#8696A0]/70" />
+                {t('form.nameHelper', { defaultValue: 'Only you see this — it helps you find the broadcast later. Recipients never see it.' })}
+              </p>
             </SectionCard>
           </div>
 
           {/* 2 · Message */}
           <div className={mobileStep === 2 ? 'block' : 'hidden sm:block'}>
             <SectionCard step={2} icon={MessageSquare} title={t('form.messageSection')} subtitle={t('form.messageSubtitle')}>
-              {/* Message type toggle */}
-              <div className="mb-5 grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setMessageType('text')}
-                  className={cn(
-                    'flex items-center gap-2.5 rounded-xl border p-3 text-left transition-all',
-                    messageType === 'text' ? 'border-[#25D366]/40 bg-[#25D366]/10' : 'border-white/10 bg-[#202C33] hover:border-white/20',
-                  )}
-                >
-                  <Type className={cn('h-4 w-4 shrink-0', messageType === 'text' ? 'text-[#25D366]' : 'text-[#8696A0]')} />
-                  <div>
-                    <p className={cn('text-xs font-semibold', messageType === 'text' ? 'text-[#25D366]' : 'text-white')}>
-                      {t('form.plainText')}
+                  {/* Message type — segmented control */}
+                  <div className="mb-4">
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-[#8696A0]">
+                      {t('form.messageType', { defaultValue: 'Message type' })}
                     </p>
-                    <p className="text-[10px] text-[#8696A0]">{t('form.plainTextDesc', { variables: '{{variables}}' })}</p>
+                    <div className="grid grid-cols-4 gap-1.5 rounded-2xl border border-white/10 bg-[#0B141A] p-1.5">
+                      {MESSAGE_TYPES.map(({ type, icon: Icon, labelKey, fallback }) => {
+                        const active = messageType === type;
+                        return (
+                          <button
+                            key={type}
+                            type="button"
+                            onClick={() => changeMessageType(type)}
+                            className={cn(
+                              'flex flex-col items-center gap-1.5 rounded-xl px-1 py-2.5 transition-all',
+                              active ? 'bg-[#202C33] text-[#25D366] shadow-sm' : 'text-[#8696A0] hover:text-white',
+                            )}
+                          >
+                            <Icon className="h-[18px] w-[18px]" />
+                            <span className="text-[11px] font-medium">{t(labelKey, { defaultValue: fallback })}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                  {messageType === 'text' && <Check className="ms-auto h-3.5 w-3.5 shrink-0 text-[#25D366]" />}
-                </button>
 
-                <button
-                  type="button"
-                  onClick={() => setMessageType('interactive')}
-                  className={cn(
-                    'flex items-center gap-2.5 rounded-xl border p-3 text-left transition-all',
-                    messageType === 'interactive' ? 'border-[#25D366]/40 bg-[#25D366]/10' : 'border-white/10 bg-[#202C33] hover:border-white/20',
+                  {/* Media upload (image / video / document) */}
+                  {isMedia && (
+                    <div className="mb-4">
+                      <input ref={fileInputRef} type="file" accept={acceptFor} onChange={handleFile} className="hidden" />
+                      {mediaUrl ? (
+                        <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-[#0B141A] p-3">
+                          {messageType === 'IMAGE' ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={mediaUrl} alt="" className="h-14 w-14 shrink-0 rounded-xl object-cover"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                          ) : (
+                            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-[#25D366]/10 text-[#25D366]">
+                              {messageType === 'VIDEO' ? <Video className="h-6 w-6" /> : <FileText className="h-6 w-6" />}
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-white">{mediaFilename || t('form.fileAttached', { defaultValue: 'File attached' })}</p>
+                            <button type="button" onClick={() => fileInputRef.current?.click()} className="text-xs text-[#25D366] hover:underline">
+                              {t('form.replaceFile', { defaultValue: 'Replace' })}
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => { setMediaUrl(''); setMediaFilename(''); }}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg text-[#8696A0] transition hover:bg-red-500/10 hover:text-red-400"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={uploading}
+                          className="flex w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-white/15 bg-[#0B141A] py-8 text-[#8696A0] transition hover:border-[#25D366]/50 hover:text-[#25D366] disabled:opacity-60"
+                        >
+                          {uploading ? <Loader2 className="h-6 w-6 animate-spin" /> : <Upload className="h-6 w-6" />}
+                          <span className="text-sm font-medium">
+                            {uploading ? t('form.uploading', { defaultValue: 'Uploading…' }) : t('form.tapToUpload', { defaultValue: 'Tap to upload' })}
+                          </span>
+                        </button>
+                      )}
+                      {uploadError && <p className="mt-1.5 text-xs text-red-400">{uploadError}</p>}
+                    </div>
                   )}
-                >
-                  <Layers className={cn('h-4 w-4 shrink-0', messageType === 'interactive' ? 'text-[#25D366]' : 'text-[#8696A0]')} />
-                  <div>
-                    <p className={cn('text-xs font-semibold', messageType === 'interactive' ? 'text-[#25D366]' : 'text-white')}>
-                      {t('form.interactive')}
-                    </p>
-                    <p className="text-[10px] text-[#8696A0]">{t('form.interactiveDesc')}</p>
-                  </div>
-                  {messageType === 'interactive' && <Check className="ms-auto h-3.5 w-3.5 shrink-0 text-[#25D366]" />}
-                </button>
-              </div>
 
-              {messageType === 'text' && (
-                <>
+                  {/* Use a saved template as the message body / caption */}
                   {templates.length > 0 && (
                     <div className="mb-4">
                       <button
@@ -799,6 +913,7 @@ export default function BroadcastForm({
                     </div>
                   )}
 
+                  {/* Personalization variables */}
                   <div className="mb-2.5">
                     <p className="mb-1.5 text-[10px] text-[#8696A0]">{t('form.insertVariable')}</p>
                     <div className="flex flex-wrap gap-2">
@@ -816,38 +931,50 @@ export default function BroadcastForm({
                     </div>
                   </div>
 
-                  <textarea
-                    ref={messageRef}
-                    required={messageType === 'text'}
-                    rows={5}
-                    value={formData.message}
-                    onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-                    className={cn(
-                      'w-full resize-none rounded-xl border bg-[#202C33] px-4 py-3 text-sm text-white placeholder-[#8696A0] outline-none transition focus:ring-1',
-                      charLimit
-                        ? 'border-red-400/50 focus:border-red-400/50 focus:ring-red-400/20'
-                        : charWarning
-                          ? 'border-amber-400/40 focus:border-amber-400/40 focus:ring-amber-400/20'
-                          : 'border-white/10 focus:border-[#25D366]/50 focus:ring-[#25D366]/20',
-                    )}
-                    placeholder={t('form.messagePlaceholder')}
-                  />
+                  {/* Message / caption with embedded emoji toolbar */}
+                  <div className={cn(
+                    'rounded-2xl border bg-[#202C33] transition focus-within:ring-1',
+                    charLimit
+                      ? 'border-red-400/50 focus-within:ring-red-400/20'
+                      : charWarning
+                        ? 'border-amber-400/40 focus-within:ring-amber-400/20'
+                        : 'border-white/10 focus-within:border-[#25D366]/50 focus-within:ring-[#25D366]/20',
+                  )}>
+                    <textarea
+                      ref={messageRef}
+                      rows={5}
+                      value={formData.message}
+                      onChange={(e) => setFormData({ ...formData, message: e.target.value })}
+                      className="w-full resize-none rounded-t-2xl bg-transparent px-4 py-3 text-sm text-white placeholder-[#8696A0] outline-none"
+                      placeholder={isMedia
+                        ? t('form.captionPlaceholder', { defaultValue: 'Add a caption… (optional)' })
+                        : t('form.messagePlaceholder')}
+                    />
+                    <div className="flex flex-wrap items-center gap-1 border-t border-white/5 px-2 py-2">
+                      {QUICK_EMOJI.map((e) => (
+                        <button
+                          key={e}
+                          type="button"
+                          onClick={() => insertAtCursor(e)}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-lg transition hover:bg-white/5"
+                        >
+                          {e}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
                   <div className="mt-1.5 flex items-center justify-between">
-                    <p className="text-[10px] text-[#8696A0]">{t('form.variablesHint')}</p>
+                    <p className="text-[10px] text-[#8696A0]">
+                      {isMedia
+                        ? t('form.captionHint', { defaultValue: 'Caption is optional · *bold* _italic_' })
+                        : t('form.variablesHint')}
+                    </p>
                     <span className={cn('text-[10px] font-semibold tabular-nums',
                       charLimit ? 'text-red-400' : charWarning ? 'text-amber-400' : 'text-[#8696A0]')}>
                       {charCount.toLocaleString()} / 4,096
                     </span>
                   </div>
-                </>
-              )}
-
-              {messageType === 'interactive' && (
-                <div className="rounded-xl border border-white/10 bg-[#0B141A] p-4">
-                  <InteractiveBuilder onChange={handleInteractiveChange} />
-                </div>
-              )}
             </SectionCard>
           </div>
 
@@ -892,7 +1019,8 @@ export default function BroadcastForm({
               </p>
             </div>
             <button
-              type="submit"
+              type="button"
+              onClick={submitBroadcast}
               disabled={!isValid}
               className="inline-flex items-center gap-2 rounded-xl bg-[#25D366] px-5 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-[#25D366]/90 disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -910,7 +1038,12 @@ export default function BroadcastForm({
                 <Smartphone className="h-4 w-4 text-[#25D366]" />
                 <p className="text-sm font-semibold text-white">{t('form.livePreview')}</p>
               </div>
-              <PhonePreview message={previewText} />
+              <PhonePreview
+                message={previewText}
+                mediaType={messageType}
+                mediaUrl={mediaUrl}
+                mediaFilename={mediaFilename}
+              />
             </div>
 
             {resolvedAudience.count > 0 && (
@@ -955,7 +1088,8 @@ export default function BroadcastForm({
             </button>
           ) : (
             <button
-              type="submit"
+              type="button"
+              onClick={submitBroadcast}
               disabled={!isValid}
               className="flex flex-1 h-12 items-center justify-center gap-2 rounded-xl bg-[#25D366] text-sm font-bold text-slate-950 transition hover:bg-[#25D366]/90 disabled:cursor-not-allowed disabled:opacity-40 active:scale-95"
             >

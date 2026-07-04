@@ -102,7 +102,7 @@ router.post('/:id/render', checkPermission('read', 'templates'), async (req, res
     const teamId = (req as any).user?.teamId;
     const vars = req.body?.variables || {};
     const template = await (prisma as any).messageTemplate.findFirst({
-      where: { id: req.params.id, ...(teamId ? { teamId } : {}) },
+      where: { id: req.params.id, ...(teamId ? { OR: [{ teamId }, { teamId: null }] } : {}) },
     });
     if (!template) return res.status(404).json({ error: 'Template not found' });
     const rendered = renderTemplate(template, vars);
@@ -112,7 +112,7 @@ router.post('/:id/render', checkPermission('read', 'templates'), async (req, res
   }
 });
 
-// ── Send via Baileys ────────────────────────────────────────────────────────
+// ── Send via Baileys (single phone / test send) ─────────────────────────────
 router.post('/:id/send', checkPermission('create', 'messages'), async (req, res) => {
   try {
     const { phone, variables } = req.body;
@@ -120,12 +120,88 @@ router.post('/:id/send', checkPermission('create', 'messages'), async (req, res)
 
     const teamId = (req as any).user?.teamId;
     const template = await (prisma as any).messageTemplate.findFirst({
-      where: { id: req.params.id, ...(teamId ? { teamId } : {}) },
+      where: { id: req.params.id, ...(teamId ? { OR: [{ teamId }, { teamId: null }] } : {}) },
     });
     if (!template) return res.status(404).json({ error: 'Template not found' });
 
     const result = await sendTemplate(phone, template, variables ?? {});
     res.json({ success: true, messageId: result.messageId });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+  }
+});
+
+// ── Send to selected conversations (bulk, personalized per contact) ─────────
+const AUTO_DELAY_MIN_MS = 500;
+const AUTO_DELAY_MAX_MS = 1500;
+const MAX_BULK_RECIPIENTS = 100;
+
+router.post('/:id/send-bulk', checkPermission('create', 'messages'), async (req, res) => {
+  try {
+    const { conversationIds, variables } = req.body as {
+      conversationIds?: string[];
+      variables?: Record<string, string>;
+    };
+    if (!Array.isArray(conversationIds) || conversationIds.length === 0) {
+      return res.status(400).json({ error: 'conversationIds is required' });
+    }
+    if (conversationIds.length > MAX_BULK_RECIPIENTS) {
+      return res.status(400).json({
+        error: `Maximum ${MAX_BULK_RECIPIENTS} recipients per send — use Broadcasts for larger audiences`,
+      });
+    }
+
+    const teamId = (req as any).user?.teamId;
+    const template = await (prisma as any).messageTemplate.findFirst({
+      where: { id: req.params.id, ...(teamId ? { OR: [{ teamId }, { teamId: null }] } : {}) },
+    });
+    if (!template) return res.status(404).json({ error: 'Template not found' });
+
+    const conversations = await prisma.conversation.findMany({
+      where: { id: { in: conversationIds } },
+      include: { contact: { select: { name: true, phone: true } } },
+    });
+    const byId = new Map(conversations.map(c => [c.id, c]));
+
+    let sent = 0;
+    let failed = 0;
+    const errors: string[] = [];
+
+    for (let i = 0; i < conversationIds.length; i++) {
+      const conv = byId.get(conversationIds[i]);
+      if (!conv?.contact?.phone) { failed += 1; continue; }
+
+      const contactName = conv.contact.name?.trim() || '';
+      // Contact fields win over manually entered values for the auto variables.
+      const perContactVars: Record<string, string> = {
+        ...(variables ?? {}),
+        ...(contactName ? { name: contactName, first_name: contactName.split(/\s+/)[0] } : {}),
+        phone: conv.contact.phone,
+      };
+
+      try {
+        await sendTemplate(conv.contact.phone, template, perContactVars, { conversationId: conv.id });
+        sent += 1;
+      } catch (error) {
+        failed += 1;
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        if (errors.length < 5) errors.push(message);
+        // Stop the whole batch on connection loss or warm-up limit — the rest would fail too.
+        if (message.includes('not connected') || (error as any)?.code === 'WARMUP_DAILY_LIMIT') {
+          return res.status((error as any)?.code === 'WARMUP_DAILY_LIMIT' ? 429 : 503).json({
+            error: message, sent, failed: failed + (conversationIds.length - i - 1),
+          });
+        }
+      }
+
+      // Anti-ban: small randomized delay between recipients
+      if (i < conversationIds.length - 1) {
+        const ms = AUTO_DELAY_MIN_MS + Math.floor(Math.random() * (AUTO_DELAY_MAX_MS - AUTO_DELAY_MIN_MS));
+        await new Promise(r => setTimeout(r, ms));
+      }
+    }
+
+    res.json({ success: failed === 0, sent, failed, errors: errors.length ? errors : undefined });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
   }

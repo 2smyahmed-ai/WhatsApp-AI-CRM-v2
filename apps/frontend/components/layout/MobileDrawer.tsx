@@ -7,7 +7,7 @@ import { AnimatePresence, motion, useDragControls, useReducedMotion } from 'moti
 import { useSession, signOut } from 'next-auth/react';
 import { useTranslation } from 'react-i18next';
 import {
-  X, BarChart3, MessageSquare, Users, Send, Zap, Settings,
+  X, BarChart3, MessageSquare, Users, Send, Settings,
   Tags, MessageSquareReply, BriefcaseBusiness, CheckSquare,
   ShieldCheck, UserCog, UsersRound, FileText, Bot, Target,
   LogOut, Sun, Moon, Globe, RefreshCw, Sparkles,
@@ -34,7 +34,6 @@ const MAIN_NAV: readonly NavItem[] = [
   { key: 'contacts',     href: '/contacts',      icon: Users },
   { key: 'broadcasts',   href: '/broadcasts',    icon: Send },
   { key: 'templates',    href: '/templates',     icon: FileText },
-  { key: 'interactive',  href: '/interactive',   icon: Zap },
   { key: 'deals',        href: '/deals',         icon: BriefcaseBusiness },
   { key: 'tasks',        href: '/tasks',          icon: CheckSquare },
   { key: 'tags',         href: '/tags',           icon: Tags },

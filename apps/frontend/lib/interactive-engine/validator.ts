@@ -12,8 +12,27 @@ import type {
   InteractiveCtaContent,
 } from '@crm/messaging-schema';
 import { BAILEYS_CAPABILITIES } from '@crm/messaging-schema';
-import type { ValidationResult, ValidationIssue } from '../template-engine/schema';
 import type { InteractiveContent } from './compiler';
+
+// Local validation types — the interactive composer (live chat) has its own
+// field set (header/body/footer/buttons/sections/cta) independent of the
+// simplified template builder.
+export type ValidationLevel = 'error' | 'warning' | 'info';
+
+export interface ValidationIssue {
+  level: ValidationLevel;
+  field?: string;
+  message: string;
+  downgrade?: string;
+}
+
+export interface ValidationResult {
+  valid: boolean;
+  sendable: boolean;
+  issues: ValidationIssue[];
+  errors: number;
+  warnings: number;
+}
 
 type Provider = 'baileys';
 

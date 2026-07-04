@@ -1,7 +1,9 @@
 // ─── Canonical Template Schema ────────────────────────────────────────────────
 // Single source of truth for all template operations.
-// Baileys-first: templates are reusable WhatsApp message compositions.
-// No Meta approval required. All types reflect what Baileys can actually send.
+// Baileys-first: a template is either a plain text message or a media message
+// (image / video / document) with a caption. Nothing else — no buttons, no
+// footer, no interactive configuration, because Baileys cannot send those
+// reliably. This keeps creation dead-simple and delivery 100% faithful.
 
 export type TemplateCategory =
   | 'GENERAL'
@@ -15,51 +17,22 @@ export type TemplateCategory =
 
 export type TemplateLanguage = string // 'en_US' | 'ar' | 'fr' | 'es' | etc.
 
-// ── Header ────────────────────────────────────────────────────────────────────
+// ── Message type ────────────────────────────────────────────────────────────────
+// The single choice a user makes: what kind of message is this?
 
-export type TextHeader = {
-  type: 'TEXT'
-  text: string // max 60 chars, at most 1 {{variable}}
+export type MessageType = 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT'
+
+export type MediaType = 'IMAGE' | 'VIDEO' | 'DOCUMENT'
+
+// ── Media ────────────────────────────────────────────────────────────────────
+// Present only for image / video / document templates. The message text lives in
+// `body` and is sent as the caption.
+
+export interface CanonicalMedia {
+  type: MediaType
+  url?: string       // resolved URL after upload
+  filename?: string  // shown for documents
 }
-
-export type ImageHeader = {
-  type: 'IMAGE'
-  url?: string
-}
-
-export type VideoHeader = {
-  type: 'VIDEO'
-  url?: string
-}
-
-export type DocumentHeader = {
-  type: 'DOCUMENT'
-  url?: string
-  filename?: string
-}
-
-export type CanonicalHeader = TextHeader | ImageHeader | VideoHeader | DocumentHeader
-
-// ── Buttons ───────────────────────────────────────────────────────────────────
-
-export type QuickReplyButton = {
-  type: 'QUICK_REPLY'
-  text: string // max 60 chars (Baileys; auto-downgraded to numbered text)
-}
-
-export type UrlButton = {
-  type: 'URL'
-  text: string  // max 25 chars
-  url: string   // can include {{variable}} for dynamic suffix
-}
-
-export type PhoneButton = {
-  type: 'PHONE_NUMBER'
-  text: string
-  phone_number: string
-}
-
-export type CanonicalButton = QuickReplyButton | UrlButton | PhoneButton
 
 // ── Canonical Template ────────────────────────────────────────────────────────
 
@@ -68,10 +41,8 @@ export interface CanonicalTemplate {
   category: TemplateCategory
   language: TemplateLanguage
 
-  header?: CanonicalHeader  // optional
-  body: { text: string }    // required, max 4096 chars (WhatsApp limit)
-  footer?: { text: string } // optional, max 60 chars, NO variables
-  buttons?: CanonicalButton[] // optional — sent as numbered text via Baileys
+  media?: CanonicalMedia  // present for image/video/document messages
+  body: { text: string }  // the message text (caption for media). Max 4096 chars.
 
   // Internal metadata — stored in DB
   _meta?: {
@@ -82,23 +53,15 @@ export interface CanonicalTemplate {
 }
 
 // ── Renderable ────────────────────────────────────────────────────────────────
-// Output of toRenderable() — what the MessageRenderer and preview panel consume.
+// Output of toRenderable() — what the preview panel consumes.
 
 export interface RenderableTemplate {
-  header?: {
-    type: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT'
-    text?: string
+  media?: {
+    type: MediaType
     url?: string
     filename?: string
   }
   body: string
-  footer?: string
-  buttons?: Array<{
-    type: 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER'
-    text: string
-    url?: string
-    phone?: string
-  }>
 }
 
 // ── Validation types ──────────────────────────────────────────────────────────
@@ -107,9 +70,8 @@ export type ValidationLevel = 'error' | 'warning' | 'info'
 
 export interface ValidationIssue {
   level: ValidationLevel
-  field?: 'name' | 'category' | 'language' | 'header' | 'body' | 'footer' | 'buttons'
+  field?: 'name' | 'category' | 'language' | 'media' | 'body'
   message: string
-  downgrade?: string // what Baileys will do (auto-format)
 }
 
 export interface ValidationResult {

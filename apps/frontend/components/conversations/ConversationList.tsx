@@ -390,8 +390,10 @@ const ConversationList = forwardRef<ConversationListHandle, ConversationListProp
           </div>
         )}
 
-        {/* Conversation list */}
-        <div className="flex-1 overflow-y-auto" dir="rtl">
+        {/* Conversation list — reserve the floating bottom-nav's footprint on
+            mobile (this pane owns its own scroll; the dashboard spacer can't
+            reach it). 0 on sm+, so the desktop split view is unaffected. */}
+        <div className="flex-1 overflow-y-auto pb-[var(--bottom-nav-space)]" dir="rtl">
           <div dir="ltr">
             {loading && sorted.length === 0 && <ConversationListSkeleton />}
 

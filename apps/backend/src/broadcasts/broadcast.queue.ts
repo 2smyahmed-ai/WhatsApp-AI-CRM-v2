@@ -30,6 +30,42 @@ function personalizeMessage(template: string, vars: Record<string, string>): str
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? '');
 }
 
+// Fallback mime per message type when the file server doesn't return a useful one.
+const MEDIA_MIME_FALLBACK: Record<string, string> = {
+  IMAGE: 'image/jpeg',
+  VIDEO: 'video/mp4',
+  DOCUMENT: 'application/octet-stream',
+};
+
+/**
+ * Download the broadcast attachment ONCE (the same file goes to every recipient)
+ * and resolve a usable mimetype. Returns null if there's no media or the fetch fails,
+ * in which case the worker falls back to a plain-text send.
+ */
+async function fetchBroadcastMedia(
+  url: string,
+  mediaType?: string | null,
+  filename?: string | null,
+): Promise<{ buffer: Buffer; mimetype: string; filename?: string } | null> {
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`status ${resp.status}`);
+    const buffer = Buffer.from(await resp.arrayBuffer());
+    const headerMime = resp.headers.get('content-type')?.split(';')[0]?.trim();
+    const mimetype =
+      headerMime && headerMime !== 'application/octet-stream'
+        ? headerMime
+        : (mediaType && MEDIA_MIME_FALLBACK[mediaType]) || 'application/octet-stream';
+    return { buffer, mimetype, filename: filename ?? undefined };
+  } catch (err) {
+    logger.warn('broadcast.media_fetch_failed', {
+      url,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
 let workerInitialized = false;
 
 export function ensureBroadcastWorker() {
@@ -54,6 +90,16 @@ export function ensureBroadcastWorker() {
     let sent = 0;
     let failed = 0;
     const total = broadcast.recipients.length;
+
+    // Media is the same for everyone — fetch it once up front, then reuse the buffer.
+    const mediaUrl = (broadcast as any).mediaUrl as string | null | undefined;
+    const media = mediaUrl
+      ? await fetchBroadcastMedia(
+          mediaUrl,
+          (broadcast as any).mediaType,
+          (broadcast as any).mediaFilename,
+        )
+      : null;
 
     for (let i = 0; i < broadcast.recipients.length; i++) {
       const recipient = broadcast.recipients[i];
@@ -123,6 +169,18 @@ export function ensureBroadcastWorker() {
             });
             await interactiveMessageService.send(recipient.phone, personalizedInteractive as any);
           }
+        } else if (media) {
+          // Image / video / document broadcast — the personalized text rides as the caption.
+          await providerManager.sendMessage({
+            phone: recipient.phone,
+            text: '',
+            media: {
+              buffer: media.buffer,
+              mimetype: media.mimetype,
+              filename: media.filename,
+              caption: personalizedMessage,
+            },
+          });
         } else {
           await providerManager.sendMessage({ phone: recipient.phone, text: personalizedMessage });
         }
