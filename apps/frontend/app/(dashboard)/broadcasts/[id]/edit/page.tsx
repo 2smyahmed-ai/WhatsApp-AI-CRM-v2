@@ -22,6 +22,9 @@ interface Broadcast {
   message: string;
   scheduledAt: string | null;
   recipients: { phone: string }[];
+  mediaUrl?: string | null;
+  mediaType?: string | null;
+  mediaFilename?: string | null;
 }
 
 export default function EditBroadcastPage() {
@@ -59,6 +62,9 @@ export default function EditBroadcastPage() {
     recipients: string[];
     scheduledAt?: Date;
     interactiveContent?: object;
+    mediaUrl?: string;
+    mediaType?: string;
+    mediaFilename?: string;
   }) => {
     if (!params?.id) return;
     await api.put(`/api/broadcasts/${params.id}`, values);
@@ -90,6 +96,9 @@ export default function EditBroadcastPage() {
             message: broadcast.message,
             recipients: broadcast.recipients.map(recipient => recipient.phone),
             scheduledAt: broadcast.scheduledAt ? new Date(broadcast.scheduledAt).toISOString().slice(0, 16) : '',
+            mediaUrl: broadcast.mediaUrl ?? undefined,
+            mediaType: broadcast.mediaType ?? undefined,
+            mediaFilename: broadcast.mediaFilename ?? undefined,
           }}
           submitLabel={t('form.saveChanges')}
           onBack={() => router.push('/broadcasts')}
@@ -98,6 +107,8 @@ export default function EditBroadcastPage() {
       ) : (
         <div className="rounded-lg bg-white dark:bg-[#111B21] p-6 shadow-card dark:shadow-[0_8px_20px_rgba(0,0,0,0.2)] text-gray-900 dark:text-white">{t('form.loading')}</div>
       )}
+      {/* Mobile bottom-nav spacer */}
+      <div aria-hidden="true" className="h-[var(--bottom-nav-space)] sm:hidden" />
     </div>
   );
 }

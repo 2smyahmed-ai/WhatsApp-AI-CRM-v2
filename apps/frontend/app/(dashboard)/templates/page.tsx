@@ -5,13 +5,14 @@ import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import {
   Plus, Trash2, FileText, Pencil, Search, Copy,
-  CheckCircle2, AlertTriangle, Sparkles, LayoutTemplate, Star,
+  CheckCircle2, AlertTriangle, Sparkles, LayoutTemplate, Star, Send,
 } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { api } from '../../../lib/api';
 import PRESETS from '../../../lib/template-engine/presets';
 import type { CanonicalTemplate } from '../../../lib/template-engine/schema';
 import { isCanonicalPayload, TEMPLATE_CATEGORIES } from '../../../lib/template-engine/schema';
+import SendTemplateDialog from '../../../components/templates/SendTemplateDialog';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -19,7 +20,7 @@ interface MessageTemplate {
   id: string;
   name: string;
   content: string;
-  type?: 'TEXT' | 'MEDIA' | 'INTERACTIVE';
+  type?: 'TEXT' | 'MEDIA';
   status?: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
   category?: string | null;
   language?: string;
@@ -33,8 +34,7 @@ type Tab = 'library' | 'presets';
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function typeColor(type?: string) {
-  if (type === 'INTERACTIVE') return 'bg-violet-500/10 text-violet-600 dark:text-violet-400';
-  if (type === 'MEDIA')       return 'bg-amber-500/10 text-amber-600 dark:text-amber-400';
+  if (type === 'MEDIA') return 'bg-amber-500/10 text-amber-600 dark:text-amber-400';
   return 'bg-blue-500/10 text-blue-600 dark:text-blue-400';
 }
 
@@ -52,10 +52,10 @@ const CATEGORY_FILTERS = ['All', ...TEMPLATE_CATEGORIES.map(c => c.value), 'Draf
 // ── Template card ─────────────────────────────────────────────────────────────
 
 function TemplateCard({
-  t: template, onEdit, onDuplicate, onDelete, deleting,
+  t: template, onSend, onEdit, onDuplicate, onDelete, deleting,
 }: {
   t: MessageTemplate;
-  onEdit: () => void; onDuplicate: () => void; onDelete: () => void;
+  onSend: () => void; onEdit: () => void; onDuplicate: () => void; onDelete: () => void;
   deleting: boolean;
 }) {
   const { t } = useTranslation('templates');
@@ -116,8 +116,16 @@ function TemplateCard({
       <div className="flex gap-1.5 pt-1 border-t border-gray-100 dark:border-white/5">
         <button
           type="button"
+          onClick={onSend}
+          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#25D366] py-1.5 text-xs font-semibold text-white hover:bg-[#1FAA5C] transition-colors"
+        >
+          <Send className="h-3 w-3" /> {t('send.action', { defaultValue: 'Send' })}
+        </button>
+
+        <button
+          type="button"
           onClick={onEdit}
-          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#202C33] py-1.5 text-xs font-medium text-gray-700 dark:text-white hover:border-[#25D366]/50 hover:bg-[#25D366]/5 transition-colors"
+          className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#202C33] px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-white hover:border-[#25D366]/50 hover:bg-[#25D366]/5 transition-colors"
         >
           <Pencil className="h-3 w-3" /> {t('common:actions.edit')}
         </button>
@@ -158,6 +166,7 @@ export default function TemplatesPage() {
   const [tab, setTab] = useState<Tab>('library');
   const [addingPreset, setAddingPreset] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [sendTarget, setSendTarget] = useState<MessageTemplate | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
@@ -205,7 +214,7 @@ export default function TemplatesPage() {
         variables: tpl.variables,
         category: tpl.category,
         language: tpl.language,
-        status: 'DRAFT',
+        status: 'PUBLISHED',
       });
       await fetchTemplates();
       showToast('Template duplicated');
@@ -220,12 +229,12 @@ export default function TemplatesPage() {
       await api.post('/api/templates', {
         name: preset.name,
         content: preset.body.text,
-        type: preset.buttons ? 'INTERACTIVE' : preset.header && preset.header.type !== 'TEXT' ? 'MEDIA' : 'TEXT',
+        type: preset.media ? 'MEDIA' : 'TEXT',
         payload: preset,
         variables: preset._meta?.variableNames ?? [],
         category: preset.category,
         language: preset.language,
-        status: 'DRAFT',
+        status: 'PUBLISHED',
       });
       await fetchTemplates();
       setTab('library');
@@ -252,7 +261,7 @@ export default function TemplatesPage() {
   });
 
   return (
-    <div className="space-y-6 overflow-y-auto">
+    <div className="space-y-6">
       {/* Toast */}
       {toast && (
         <div className={`fixed top-4 right-4 z-50 rounded-xl border px-4 py-3 text-sm font-medium shadow-lg flex items-center gap-2 ${
@@ -274,7 +283,7 @@ export default function TemplatesPage() {
             </div>
             <h1 className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{t('title')}</h1>
             <p className="mt-1 text-sm text-gray-500 dark:text-[#8696A0]">
-              Reusable WhatsApp message compositions — no approval required.
+              {t('mergedSubtitle', { defaultValue: 'Design once — text, media and tappable buttons — then send to anyone. Delivered exactly as previewed.' })}
             </p>
             {templates.length > 0 && (
               <p className="mt-2 text-xs text-gray-400 dark:text-[#8696A0]">
@@ -394,6 +403,7 @@ export default function TemplatesPage() {
                 <TemplateCard
                   key={tpl.id}
                   t={tpl}
+                  onSend={() => setSendTarget(tpl)}
                   onEdit={() => router.push(`/templates/builder?id=${tpl.id}`)}
                   onDuplicate={() => handleDuplicate(tpl)}
                   onDelete={() => handleDelete(tpl.id)}
@@ -431,8 +441,7 @@ export default function TemplatesPage() {
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {group.templates.map(preset => {
                   const vars = preset._meta?.variableNames ?? [];
-                  const hasButtons = (preset.buttons?.length ?? 0) > 0;
-                  const type = hasButtons ? 'INTERACTIVE' : preset.header && preset.header.type !== 'TEXT' ? 'MEDIA' : 'TEXT';
+                  const type = preset.media ? 'MEDIA' : 'TEXT';
                   const alreadyInLibrary = templates.some(tpl => tpl.name === preset.name);
 
                   return (
@@ -510,6 +519,23 @@ export default function TemplatesPage() {
           ))}
         </div>
       )}
+
+      {/* ── Send dialog — the single place to send any template ── */}
+      {sendTarget && (
+        <SendTemplateDialog
+          template={sendTarget}
+          onClose={() => setSendTarget(null)}
+          onSent={({ sent, failed }) => {
+            if (failed > 0) {
+              showToast(t('send.resultPartial', { defaultValue: 'Sent to {{sent}} — {{failed}} failed', sent, failed }), sent > 0 ? 'success' : 'error');
+            } else {
+              showToast(t('send.resultOk', { defaultValue: 'Sent to {{sent}} recipient(s)', sent }));
+            }
+          }}
+        />
+      )}
+      {/* Mobile bottom-nav spacer */}
+      <div aria-hidden="true" className="h-[var(--bottom-nav-space)] sm:hidden" />
     </div>
   );
 }

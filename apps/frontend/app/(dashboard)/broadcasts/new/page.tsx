@@ -42,6 +42,9 @@ export default function NewBroadcastPage() {
     recipients: string[];
     scheduledAt?: Date;
     interactiveContent?: object;
+    mediaUrl?: string;
+    mediaType?: string;
+    mediaFilename?: string;
   }) => {
     const createdBroadcast = await api.post('/api/broadcasts', broadcast);
 
@@ -76,6 +79,8 @@ export default function NewBroadcastPage() {
         onBack={() => router.push('/broadcasts')}
         onSave={handleSave}
       />
+      {/* Mobile bottom-nav spacer */}
+      <div aria-hidden="true" className="h-[var(--bottom-nav-space)] sm:hidden" />
     </div>
   );
 }

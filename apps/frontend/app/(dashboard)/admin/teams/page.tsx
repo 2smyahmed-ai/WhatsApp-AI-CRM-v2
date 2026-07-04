@@ -118,7 +118,7 @@ export default function AdminTeamsPage() {
   if (status === 'loading' || !isManager(role)) return null;
 
   return (
-    <div className="space-y-6 overflow-y-auto">
+    <div className="space-y-6">
       {/* Header */}
       <section className="rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#202C33] p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -303,6 +303,8 @@ export default function AdminTeamsPage() {
             </div>
           </form>
       </Modal>
+      {/* Mobile bottom-nav spacer */}
+      <div aria-hidden="true" className="h-[var(--bottom-nav-space)] sm:hidden" />
     </div>
   );
 }

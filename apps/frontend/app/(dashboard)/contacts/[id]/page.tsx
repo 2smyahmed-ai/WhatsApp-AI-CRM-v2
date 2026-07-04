@@ -355,6 +355,8 @@ export default function ContactProfilePage() {
           </SectionCard>
         </div>
       </div>
+      {/* Mobile bottom-nav spacer */}
+      <div aria-hidden="true" className="h-[var(--bottom-nav-space)] sm:hidden" />
     </div>
   );
 }

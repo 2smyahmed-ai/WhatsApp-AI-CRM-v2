@@ -962,7 +962,8 @@ function Playground({ config, isRTL, t }: { config: AiConfig; isRTL: boolean; t:
   ];
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#0B141A]">
+    <>
+      <div className="flex flex-col overflow-hidden rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#0B141A]">
       <div className="flex items-center justify-between gap-2 border-b border-gray-200 dark:border-white/10 px-4 py-3">
         <div className="flex items-center gap-2">
           <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-purple-500/15">
@@ -1036,5 +1037,8 @@ function Playground({ config, isRTL, t }: { config: AiConfig; isRTL: boolean; t:
         </button>
       </div>
     </div>
+    {/* Mobile bottom-nav spacer */}
+    <div aria-hidden="true" className="h-[var(--bottom-nav-space)] sm:hidden" />
+    </>
   );
 }

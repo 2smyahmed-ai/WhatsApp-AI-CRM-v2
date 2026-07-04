@@ -394,7 +394,7 @@ export default function TasksPage() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-6 overflow-y-auto">
+    <div className="space-y-6">
 
       {/* ── Header ── */}
       <section className="relative overflow-hidden rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#111B21] p-6 shadow-[0_8px_20px_rgba(0,0,0,0.2)]">
@@ -710,7 +710,7 @@ export default function TasksPage() {
 
       {/* ── Bulk action bar ── */}
       {selectedIds.size > 0 && (
-        <div className="fixed bottom-24 sm:bottom-6 left-1/2 z-40 -translate-x-1/2 flex flex-wrap items-center gap-3 rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#202C33] px-5 py-3 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
+        <div className="fixed bottom-[var(--bottom-nav-space)] sm:bottom-6 left-1/2 z-40 -translate-x-1/2 flex flex-wrap items-center gap-3 rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#202C33] px-5 py-3 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
           <span className="text-sm font-medium text-gray-900 dark:text-white">
             {selectedIds.size} {selectedIds.size === 1 ? t('title').toLowerCase().replace(/s$/, '') : t('title').toLowerCase()} selected
           </span>
@@ -906,6 +906,8 @@ export default function TasksPage() {
             </div>
           </form>
       </Modal>
+      {/* Mobile bottom-nav spacer */}
+      <div aria-hidden="true" className="h-[var(--bottom-nav-space)] sm:hidden" />
     </div>
   );
 }

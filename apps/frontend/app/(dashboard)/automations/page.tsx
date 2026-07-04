@@ -109,7 +109,7 @@ export default function AutomationsPage() {
   };
 
   return (
-    <div className="space-y-6 overflow-y-auto">
+    <div className="space-y-6">
       <section className="overflow-hidden rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#111B21] p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-2xl">
@@ -274,6 +274,8 @@ export default function AutomationsPage() {
           onCancel={() => { setShowFlowBuilder(false); setEditingFlow(null); }}
         />
       )}
+      {/* Mobile bottom-nav spacer */}
+      <div aria-hidden="true" className="h-[var(--bottom-nav-space)] sm:hidden" />
     </div>
   );
 }

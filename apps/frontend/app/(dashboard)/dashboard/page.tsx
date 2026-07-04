@@ -376,6 +376,10 @@ export default function DashboardPage() {
         </div>
 
       </div>
+      {/* Mobile bottom-nav spacer — real element in flow so content is never
+          hidden behind the fixed nav. Height matches --bottom-nav-space
+          (0 on sm+ where the nav is hidden). */}
+      <div aria-hidden="true" className="h-[var(--bottom-nav-space)] sm:hidden" />
     </div>
   );
 }

@@ -367,7 +367,7 @@ export default function DealsPage() {
   }));
 
   return (
-    <div className="space-y-6 overflow-y-auto">
+    <div className="space-y-6">
 
       {/* ── Header ── */}
       <section className="relative overflow-hidden rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#111B21] p-4 sm:p-6 shadow-[0_8px_20px_rgba(0,0,0,0.2)]">
@@ -582,6 +582,8 @@ export default function DealsPage() {
             </div>
           </form>
       </Modal>
+      {/* Mobile bottom-nav spacer */}
+      <div aria-hidden="true" className="h-[var(--bottom-nav-space)] sm:hidden" />
     </div>
   );
 }

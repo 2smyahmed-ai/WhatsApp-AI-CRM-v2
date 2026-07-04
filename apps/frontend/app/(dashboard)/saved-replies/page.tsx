@@ -73,7 +73,7 @@ export default function SavedRepliesPage() {
   };
 
   return (
-    <div className="space-y-6 overflow-y-auto">
+    <div className="space-y-6">
       <section className="overflow-hidden rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#202C33] p-6 shadow-card dark:shadow-[0_8px_20px_rgba(0,0,0,0.2)]">
         <div className="max-w-3xl">
           <div className="inline-flex items-center gap-2 rounded-full border border-[#25D366]/30 dark:border-[#25D366]/30 bg-[#25D366]/10 dark:bg-[#25D366]/15 px-3 py-1.5 text-xs font-medium text-[#25D366]">
@@ -188,6 +188,8 @@ export default function SavedRepliesPage() {
           </div>
         </section>
       </div>
+      {/* Mobile bottom-nav spacer */}
+      <div aria-hidden="true" className="h-[var(--bottom-nav-space)] sm:hidden" />
     </div>
   );
 }

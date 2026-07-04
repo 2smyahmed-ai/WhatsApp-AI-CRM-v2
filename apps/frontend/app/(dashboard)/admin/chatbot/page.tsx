@@ -815,6 +815,8 @@ export default function ChatbotAdminPage() {
           )}
         </>
       )}
+      {/* Mobile bottom-nav spacer */}
+      <div aria-hidden="true" className="h-[var(--bottom-nav-space)] sm:hidden" />
     </div>
   );
 }

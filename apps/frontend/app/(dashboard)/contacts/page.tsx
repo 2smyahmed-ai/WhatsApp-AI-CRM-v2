@@ -339,7 +339,7 @@ export default function ContactsPage() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-6 overflow-y-auto">
+    <div className="space-y-6">
 
       {status === 'loading' && (
         <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-slate-600">
@@ -654,7 +654,7 @@ export default function ContactsPage() {
 
       {/* ── Bulk action bar ── */}
       {selectedIds.size > 0 && (
-        <div className="fixed bottom-24 sm:bottom-6 left-1/2 z-40 -translate-x-1/2 flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-[#202C33] px-5 py-3 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
+        <div className="fixed bottom-[var(--bottom-nav-space)] sm:bottom-6 left-1/2 z-40 -translate-x-1/2 flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-[#202C33] px-5 py-3 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
           <span className="text-sm font-medium text-white">
             {t('bulkActions.selected', { count: selectedIds.size })}
           </span>
@@ -699,6 +699,9 @@ export default function ContactsPage() {
           )}
         </div>
       )}
+
+      {/* Mobile bottom-nav spacer */}
+      <div aria-hidden="true" className="h-[var(--bottom-nav-space)] sm:hidden" />
 
       {/* ── Create / Edit modal (ContactForm renders its own accessible Modal) ── */}
       {showForm && (

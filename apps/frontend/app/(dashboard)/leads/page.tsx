@@ -121,7 +121,7 @@ export default function LeadsPage() {
   };
 
   return (
-    <div className="space-y-6 overflow-y-auto">
+    <div className="space-y-6">
       {/* ── Header ── */}
       <section className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-[0_8px_20px_rgba(0,0,0,0.2)] dark:border-white/10 dark:bg-[#111B21]">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(37,211,102,0.10),transparent_40%)]" />
@@ -216,6 +216,8 @@ export default function LeadsPage() {
           ))}
         </div>
       )}
+      {/* Mobile bottom-nav spacer */}
+      <div aria-hidden="true" className="h-[var(--bottom-nav-space)] sm:hidden" />
     </div>
   );
 }
