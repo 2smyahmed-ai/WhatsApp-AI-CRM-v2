@@ -4,14 +4,17 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Plus, Send, Megaphone, Pause, Play, Trash2,
-  SlidersHorizontal, ArrowUpDown, ArrowUp, ArrowDown, X,
+  SlidersHorizontal, ArrowUpDown, ArrowUp, ArrowDown, X, Info,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api } from '../../../lib/api';
 import { useSocket } from '../../../hooks/useSocket';
 import { useToast } from '../../../hooks/useToast';
+import { useSessionStatus } from '../../../hooks/useSessionStatus';
 import { TablePagination } from '../../../components/ui/TablePagination';
+import FriendlyError from '../../../components/ui/FriendlyError';
+import { classifyError } from '../../../lib/friendly-error';
 import { cn } from '../../../lib/utils';
 
 interface Broadcast {
@@ -55,7 +58,12 @@ function SortIcon({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
 export default function BroadcastsPage() {
   const router = useRouter();
   const { t } = useTranslation('broadcasts');
+  const { t: tErr } = useTranslation('errors');
   const { success, error: toastError } = useToast();
+  const { status: waStatus } = useSessionStatus() as { status?: string };
+
+  // Turn a raw send/pause/delete error into a short, friendly toast headline.
+  const explainToast = (err: unknown) => toastError(tErr(`friendly.${classifyError(err).code}.title`));
 
   // ─── data ─────────────────────────────────────────────────────────────────
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
@@ -231,7 +239,7 @@ export default function BroadcastsPage() {
       success('Broadcast started sending.');
       await fetchBroadcasts();
     } catch (err) {
-      toastError(err instanceof Error ? err.message : 'Failed to send broadcast');
+      explainToast(err);
     } finally {
       setSendingId(null);
     }
@@ -244,7 +252,7 @@ export default function BroadcastsPage() {
       success('Broadcast paused.');
       await fetchBroadcasts();
     } catch (err) {
-      toastError(err instanceof Error ? err.message : 'Failed to pause broadcast');
+      explainToast(err);
     } finally {
       setPausingId(null);
     }
@@ -257,7 +265,7 @@ export default function BroadcastsPage() {
       success('Broadcast resumed.');
       await fetchBroadcasts();
     } catch (err) {
-      toastError(err instanceof Error ? err.message : 'Failed to resume broadcast');
+      explainToast(err);
     } finally {
       setPausingId(null);
     }
@@ -275,7 +283,7 @@ export default function BroadcastsPage() {
       router.refresh();
     } catch (err) {
       setBroadcasts(snapshot);
-      toastError(err instanceof Error ? err.message : 'Failed to delete broadcast');
+      explainToast(err);
     } finally {
       setDeletingId(null);
     }
@@ -351,6 +359,40 @@ export default function BroadcastsPage() {
           pulse={totals.sending > 0}
         />
       </div>
+
+      {/* ── Why did messages fail? — friendly, actionable explanation ── */}
+      {totals.failed > 0 && (
+        waStatus === 'disconnected' ? (
+          <FriendlyError classified={{ code: 'whatsappDisconnected', severity: 'error', values: {}, raw: '' }} />
+        ) : (
+          <div className="rounded-2xl border border-amber-300/60 bg-amber-50 p-4 dark:border-amber-500/25 dark:bg-amber-500/[0.07]">
+            <div className="flex items-start gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-amber-100 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400">
+                <Info className="h-5 w-5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                  {t('failureInsight.title', { count: totals.failed })}
+                </p>
+                <p className="mt-0.5 text-[13px] text-amber-800/90 dark:text-amber-300/80">
+                  {t('failureInsight.intro')}
+                </p>
+                <ul className="mt-2 space-y-1 text-[13px] text-amber-800/90 dark:text-amber-300/80">
+                  {['reasonNotOnWhatsapp', 'reasonWarmup', 'reasonDisconnected', 'reasonInvalid'].map((k) => (
+                    <li key={k} className="flex gap-2">
+                      <span aria-hidden="true" className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-amber-500" />
+                      <span>{t(`failureInsight.${k}`)}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2.5 text-[13px] font-medium text-amber-900 dark:text-amber-200">
+                  {t('failureInsight.tip')}
+                </p>
+              </div>
+            </div>
+          </div>
+        )
+      )}
 
       {/* ── Table ── */}
       <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#111B21] overflow-hidden">

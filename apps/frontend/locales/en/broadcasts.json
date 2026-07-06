@@ -51,6 +51,15 @@
     "deliveryRate": "Delivery Rate",
     "readRate": "Read Rate"
   },
+  "failureInsight": {
+    "title": "{{count}} message(s) couldn't be delivered",
+    "intro": "When a broadcast shows failures, it's usually one of these:",
+    "reasonDisconnected": "WhatsApp dropped offline part-way through the send",
+    "reasonNotOnWhatsapp": "Some numbers don't have a WhatsApp account",
+    "reasonWarmup": "Your number hit its daily warm-up limit — new numbers are throttled to avoid bans",
+    "reasonInvalid": "A number wasn't in full international format, e.g. +9665XXXXXXXX",
+    "tip": "Keep WhatsApp connected while broadcasts run, and make sure numbers are valid and on WhatsApp."
+  },
   "form": {
     "createTitle": "New Broadcast",
     "editTitle": "Edit Broadcast",

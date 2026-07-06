@@ -156,7 +156,10 @@
     "pickRecipients": "اختر مستلماً واحداً على الأقل",
     "sendNow": "إرسال إلى {{count}} مستلم",
     "resultOk": "تم الإرسال إلى {{sent}} مستلم",
-    "resultPartial": "تم الإرسال إلى {{sent}} — فشل {{failed}}"
+    "resultPartial": "تم الإرسال إلى {{sent}} — فشل {{failed}}",
+    "resultSummary": "تم الإرسال إلى {{sent}} · تعذّر تسليم {{failed}}",
+    "resultNoDetail": "بعض المستلمين لا يملكون رقم واتساب صالحاً.",
+    "done": "تم"
   },
   "presets": {
     "title": "قوالب جاهزة",

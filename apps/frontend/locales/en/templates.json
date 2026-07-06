@@ -156,7 +156,10 @@
     "pickRecipients": "Select at least one recipient",
     "sendNow": "Send to {{count}} recipient(s)",
     "resultOk": "Sent to {{sent}} recipient(s)",
-    "resultPartial": "Sent to {{sent}} — {{failed}} failed"
+    "resultPartial": "Sent to {{sent}} — {{failed}} failed",
+    "resultSummary": "Sent to {{sent}} · {{failed}} couldn't be delivered",
+    "resultNoDetail": "Some recipients had no valid WhatsApp number.",
+    "done": "Done"
   },
   "presets": {
     "title": "Ready-made Templates",

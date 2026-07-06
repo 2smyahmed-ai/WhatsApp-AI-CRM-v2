@@ -13,9 +13,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import {
-  X, Search, Send, Users, MessageCircle, Loader2, CheckCircle2, AlertTriangle, AtSign,
+  X, Search, Send, Users, MessageCircle, Loader2, CheckCircle2, AtSign,
 } from 'lucide-react';
 import { api } from '../../lib/api';
+import FriendlyError from '../ui/FriendlyError';
+import { groupErrors } from '../../lib/friendly-error';
 import { formatPhone } from '../../lib/phone';
 import type { CanonicalTemplate } from '../../lib/template-engine/schema';
 import { isCanonicalPayload } from '../../lib/template-engine/schema';
@@ -124,7 +126,10 @@ export default function SendTemplateDialog({
     () => ({ ...(canonical._meta?.previewValues ?? {}) }),
   );
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown | null>(null);
+  // When a send finishes with some failures, we keep the dialog open and show a
+  // grouped, friendly breakdown of WHY they failed instead of just a count.
+  const [result, setResult] = useState<{ sent: number; failed: number; errors: string[] } | null>(null);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -187,19 +192,35 @@ export default function SendTemplateDialog({
 
   const canSend = selected.size > 0 && !sending;
 
+  const finishWithResult = () => {
+    if (result) onSent({ sent: result.sent, failed: result.failed });
+    onClose();
+  };
+
   const handleSend = async () => {
     if (!canSend) return;
     setSending(true);
     setError(null);
+    setResult(null);
     try {
       const res = await api.post(`/api/templates/${template.id}/send-bulk`, {
         conversationIds: Array.from(selected),
         variables: vars,
       });
-      onSent({ sent: res?.sent ?? 0, failed: res?.failed ?? 0 });
+      const sent = res?.sent ?? 0;
+      const failed = res?.failed ?? 0;
+      if (failed > 0) {
+        // Some/all failed — stay open and explain the causes.
+        setResult({ sent, failed, errors: Array.isArray(res?.errors) ? res.errors : [] });
+        setSending(false);
+        return;
+      }
+      onSent({ sent, failed });
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to send');
+      // Whole batch stopped (e.g. WhatsApp disconnected, warm-up limit) — the
+      // thrown error carries any partial progress in err.data.
+      setError(err);
       setSending(false);
     }
   };
@@ -389,10 +410,35 @@ export default function SendTemplateDialog({
                 <PreviewBubble canonical={canonical} vars={previewVars} />
               </div>
 
-              {error && (
-                <div className="flex items-start gap-2 rounded-xl border border-rose-300 dark:border-rose-500/20 bg-rose-50 dark:bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-300">
-                  <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                  {error}
+              {/* Whole batch failed to start — one clear, actionable cause. */}
+              {error != null && (
+                <FriendlyError error={error} compact onRetry={handleSend} />
+              )}
+
+              {/* Completed with failures — grouped, friendly "why" breakdown. */}
+              {result && (
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-2 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 px-3 py-2.5">
+                    <CheckCircle2 className={`h-4 w-4 shrink-0 ${result.sent > 0 ? 'text-[#25D366]' : 'text-gray-400'}`} />
+                    <p className="text-xs font-medium text-gray-700 dark:text-white/80">
+                      {t('send.resultSummary', {
+                        defaultValue: 'Sent to {{sent}} · {{failed}} couldn’t be delivered',
+                        sent: result.sent,
+                        failed: result.failed,
+                      })}
+                    </p>
+                  </div>
+                  {result.errors.length > 0 ? (
+                    groupErrors(result.errors).map((g) => (
+                      <FriendlyError key={g.code} classified={g.sample} count={g.count} compact hideAction />
+                    ))
+                  ) : (
+                    <p className="px-1 text-[11px] text-gray-500 dark:text-[#8696A0]">
+                      {t('send.resultNoDetail', {
+                        defaultValue: 'Some recipients had no valid WhatsApp number.',
+                      })}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -401,20 +447,31 @@ export default function SendTemplateDialog({
 
         {/* Footer — sticky, above mobile safe area */}
         <div className="flex-shrink-0 border-t border-gray-200 dark:border-white/10 bg-white dark:bg-[#111B21] px-4 sm:px-5 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-          <button
-            type="button"
-            onClick={handleSend}
-            disabled={!canSend}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#25D366] py-3 text-sm font-semibold text-white transition-all hover:bg-[#1FAA5C] disabled:cursor-not-allowed disabled:opacity-40 active:scale-[0.99]"
-          >
-            {sending ? (
-              <><Loader2 className="h-4 w-4 animate-spin" /> {t('send.sending', { defaultValue: 'Sending…' })}</>
-            ) : selected.size === 0 ? (
-              <>{t('send.pickRecipients', { defaultValue: 'Select at least one recipient' })}</>
-            ) : (
-              <><CheckCircle2 className="h-4 w-4" /> {t('send.sendNow', { defaultValue: 'Send to {{count}} recipient(s)', count: selected.size })}</>
-            )}
-          </button>
+          {result ? (
+            <button
+              type="button"
+              onClick={finishWithResult}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#25D366] py-3 text-sm font-semibold text-white transition-all hover:bg-[#1FAA5C] active:scale-[0.99]"
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              {t('send.done', { defaultValue: 'Done' })}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleSend}
+              disabled={!canSend}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#25D366] py-3 text-sm font-semibold text-white transition-all hover:bg-[#1FAA5C] disabled:cursor-not-allowed disabled:opacity-40 active:scale-[0.99]"
+            >
+              {sending ? (
+                <><Loader2 className="h-4 w-4 animate-spin" /> {t('send.sending', { defaultValue: 'Sending…' })}</>
+              ) : selected.size === 0 ? (
+                <>{t('send.pickRecipients', { defaultValue: 'Select at least one recipient' })}</>
+              ) : (
+                <><CheckCircle2 className="h-4 w-4" /> {t('send.sendNow', { defaultValue: 'Send to {{count}} recipient(s)', count: selected.size })}</>
+              )}
+            </button>
+          )}
         </div>
       </div>
     </div>

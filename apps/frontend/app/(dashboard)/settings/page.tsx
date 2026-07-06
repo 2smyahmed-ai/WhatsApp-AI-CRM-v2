@@ -1,11 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../../lib/api';
 import QRCodeDisplay from '../../../components/shared/QRCodeDisplay';
 import ConnectionStatus from '../../../components/shared/ConnectionStatus';
+import FriendlyError from '../../../components/ui/FriendlyError';
 import { useSocket } from '../../../hooks/useSocket';
 import { useLanguage } from '../../../components/providers/I18nProvider';
 import { useDirection } from '../../../hooks/useDirection';
@@ -33,8 +35,15 @@ export default function SettingsPage() {
   const { t } = useTranslation('settings');
   const { language } = useLanguage();
   const { isRTL } = useDirection();
+  const searchParams = useSearchParams();
 
-  const [activeSection, setActiveSection] = useState<Section>('whatsapp');
+  // Deep-link support: /settings?section=whatsapp opens the right tab straight away
+  // (the global connect banner + dashboard CTA both link here).
+  const sectionParam = searchParams.get('section') as Section | null;
+  const validSections: Section[] = ['whatsapp', 'account', 'password', 'language'];
+  const [activeSection, setActiveSection] = useState<Section>(
+    sectionParam && validSections.includes(sectionParam) ? sectionParam : 'whatsapp',
+  );
 
   // ── WhatsApp state ────────────────────────────────────────────────────────
   const [status, setStatus]               = useState<'connected' | 'disconnected' | 'connecting'>('disconnected');
@@ -249,11 +258,10 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Error */}
+        {/* Error — friendly, actionable explanation. Action is hidden since the
+            connect controls live right here on this page. */}
         {whatsAppError && (
-          <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-            {whatsAppError}
-          </div>
+          <FriendlyError error={whatsAppError} hideAction compact onRetry={handleConnect} />
         )}
 
         {/* QR Code */}

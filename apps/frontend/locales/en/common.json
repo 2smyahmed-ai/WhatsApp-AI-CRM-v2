@@ -171,6 +171,16 @@
       "action": "Go to Automations"
     }
   },
+  "waBanner": {
+    "disconnectedTitle": "Connect your WhatsApp number to go live",
+    "disconnectedBody": "Your CRM can't send or receive any messages until a WhatsApp number is connected. This takes about a minute.",
+    "connectingTitle": "Almost there — finish connecting WhatsApp",
+    "connectingBody": "Open Settings and scan the QR code to link your number.",
+    "connect": "Connect now",
+    "scanQr": "Scan QR code",
+    "collapse": "Minimize",
+    "expandLabel": "WhatsApp not connected — tap to connect"
+  },
   "loading": "Loading...",
   "error": "Something went wrong",
   "retry": "Try again",

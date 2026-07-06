@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api, apiForm } from '../../lib/api';
+import FriendlyError from '../ui/FriendlyError';
 import { cn } from '../../lib/utils';
 import { useTags } from '../../hooks/useTags';
 import { useDirection } from '../../hooks/useDirection';
@@ -70,7 +71,7 @@ interface BroadcastFormProps {
     mediaUrl?: string;
     mediaType?: string;
     mediaFilename?: string;
-  }) => void;
+  }) => void | Promise<void>;
 }
 
 const VARIABLES = [
@@ -222,6 +223,8 @@ export default function BroadcastForm({
   const [manualPhones, setManualPhones] = useState('');
   const [contactSearch, setContactSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<unknown>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   // Message type + media (image / video / document broadcasts)
   const [messageType, setMessageType] = useState<MsgType>(
@@ -347,8 +350,9 @@ export default function BroadcastForm({
     }
   };
 
-  const submitBroadcast = () => {
+  const submitBroadcast = async () => {
     setError(null);
+    setSubmitError(null);
 
     if (!isValid) {
       setError(t('form.errorIncomplete', { defaultValue: 'Please complete every step before sending.' }));
@@ -366,16 +370,24 @@ export default function BroadcastForm({
       return;
     }
 
-    onSave({
-      name: formData.name,
-      message: formData.message,
-      recipients,
-      tag: formData.tag.trim() || undefined,
-      scheduledAt: formData.sendNow ? undefined : new Date(formData.scheduledAt),
-      mediaUrl: isMedia ? (mediaUrl || undefined) : undefined,
-      mediaType: isMedia ? messageType : undefined,
-      mediaFilename: isMedia ? (mediaFilename || undefined) : undefined,
-    });
+    try {
+      setSubmitting(true);
+      await onSave({
+        name: formData.name,
+        message: formData.message,
+        recipients,
+        tag: formData.tag.trim() || undefined,
+        scheduledAt: formData.sendNow ? undefined : new Date(formData.scheduledAt),
+        mediaUrl: isMedia ? (mediaUrl || undefined) : undefined,
+        mediaType: isMedia ? messageType : undefined,
+        mediaFilename: isMedia ? (mediaFilename || undefined) : undefined,
+      });
+    } catch (err) {
+      // Surface a friendly cause instead of an unhandled rejection.
+      setSubmitError(err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const toggleContact = (phone: string) =>
@@ -1177,7 +1189,7 @@ export default function BroadcastForm({
             </SectionCard>
           </div>
 
-          {/* Error */}
+          {/* Validation error (form incomplete) */}
           {error && (
             <div className={cn(
               'flex items-start gap-2.5 rounded-xl border border-red-400/20 bg-red-400/8 px-4 py-3',
@@ -1185,6 +1197,13 @@ export default function BroadcastForm({
             )}>
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
               <p className="text-sm text-red-300">{error}</p>
+            </div>
+          )}
+
+          {/* API failure — friendly, actionable explanation */}
+          {submitError != null && (
+            <div className={mobileStep < TOTAL_STEPS ? 'hidden sm:block' : 'block'}>
+              <FriendlyError error={submitError} onRetry={submitBroadcast} />
             </div>
           )}
 
@@ -1206,10 +1225,10 @@ export default function BroadcastForm({
             <button
               type="button"
               onClick={submitBroadcast}
-              disabled={!isValid}
+              disabled={!isValid || submitting}
               className="inline-flex items-center gap-2 rounded-xl bg-[#25D366] px-5 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-[#25D366]/90 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <Send className="h-4 w-4" />
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               {submitLabel ?? t('form.createTitle')}
             </button>
           </div>
@@ -1275,10 +1294,10 @@ export default function BroadcastForm({
             <button
               type="button"
               onClick={submitBroadcast}
-              disabled={!isValid}
+              disabled={!isValid || submitting}
               className="flex flex-1 h-12 items-center justify-center gap-2 rounded-xl bg-[#25D366] text-sm font-bold text-slate-950 transition hover:bg-[#25D366]/90 disabled:cursor-not-allowed disabled:opacity-40 active:scale-95"
             >
-              <Send className="h-4 w-4" />
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               {submitLabel ?? t('form.createTitle')}
             </button>
           )}

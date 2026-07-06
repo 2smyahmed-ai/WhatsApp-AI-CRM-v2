@@ -1,7 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import { useTranslation } from 'react-i18next';
-import { MessageCircle, Wifi, WifiOff, RotateCw, ShieldCheck, Flame, Zap } from 'lucide-react';
+import { MessageCircle, Wifi, WifiOff, RotateCw, ShieldCheck, Flame, Zap, ChevronRight } from 'lucide-react';
 import { useSessionStatus } from '../../hooks/useSessionStatus';
 
 const CARD =
@@ -96,19 +97,31 @@ export default function SessionStatusWidget() {
             <div className="h-3 w-1/2 rounded bg-gray-200 dark:bg-white/8" />
           </div>
         ) : !session ? (
-          <div className="flex items-center gap-2.5 py-1 text-sm text-gray-600 dark:text-gray-400">
-            {connected ? (
-              <Wifi className="h-4 w-4 shrink-0 text-[#25D366]" />
-            ) : (
-              <WifiOff className="h-4 w-4 shrink-0 text-gray-400" />
+          <div className="space-y-3">
+            <div className="flex items-center gap-2.5 py-1 text-sm text-gray-600 dark:text-gray-400">
+              {connected ? (
+                <Wifi className="h-4 w-4 shrink-0 text-[#25D366]" />
+              ) : (
+                <WifiOff className="h-4 w-4 shrink-0 text-gray-400" />
+              )}
+              <span>
+                {connected
+                  ? t('session.loadingHint')
+                  : status === 'connecting'
+                    ? t('session.connectingHint')
+                    : t('session.disconnectedHint')}
+              </span>
+            </div>
+            {!connected && (
+              <Link
+                href="/settings?section=whatsapp"
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#25D366] px-4 py-2.5 text-sm font-bold text-white shadow-[0_4px_14px_rgba(37,211,102,0.30)] transition-all hover:bg-[#1FAA5C] hover:shadow-[0_6px_20px_rgba(37,211,102,0.40)] active:scale-95"
+              >
+                <Wifi className="h-4 w-4" />
+                {status === 'connecting' ? t('common:waBanner.scanQr') : t('common:waBanner.connect')}
+                <ChevronRight className="h-4 w-4 rtl:rotate-180" />
+              </Link>
             )}
-            <span>
-              {connected
-                ? t('session.loadingHint')
-                : status === 'connecting'
-                  ? t('session.connectingHint')
-                  : t('session.disconnectedHint')}
-            </span>
           </div>
         ) : (
           <>
