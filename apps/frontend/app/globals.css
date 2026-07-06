@@ -544,6 +544,35 @@ html[dir="rtl"] .lead-alert-enter { animation: slideInFromLeft 0.32s cubic-bezie
   animation: dzBarGrow 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+/* Live voice-recording equalizer (broadcast builder + chat composer) */
+@keyframes voiceRecWave {
+  0%, 100% { transform: scaleY(0.35); }
+  50%      { transform: scaleY(1); }
+}
+.voice-rec-wave span {
+  height: 20px;
+  transform-origin: bottom;
+  animation: voiceRecWave 0.9s ease-in-out infinite;
+}
+.voice-rec-wave span:nth-child(1) { animation-delay: 0s; }
+.voice-rec-wave span:nth-child(2) { animation-delay: 0.15s; }
+.voice-rec-wave span:nth-child(3) { animation-delay: 0.3s; }
+.voice-rec-wave span:nth-child(4) { animation-delay: 0.45s; }
+.voice-rec-wave span:nth-child(5) { animation-delay: 0.6s; }
+
+/* Voice-note scrubber (chat message player). Fill is driven by --vn-progress set
+   inline per instance, so each player owns its own bar (a shared <style> block
+   would make every voice note animate together). */
+.vn-range { -webkit-appearance: none; appearance: none; height: .35rem; border-radius: 9999px; outline: none; width: 100%; background: transparent; }
+.vn-range::-webkit-slider-runnable-track { height: .35rem; border-radius: 9999px; }
+.vn-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: .95rem; height: .95rem; border-radius: 9999px; margin-top: -.3rem; background: #fff; border: 2px solid #25D366; box-shadow: 0 2px 8px rgba(0, 0, 0, .22); }
+.vn-range::-moz-range-thumb { width: .95rem; height: .95rem; border-radius: 9999px; background: #fff; border: 2px solid #25D366; }
+.vn-light::-webkit-slider-runnable-track { background: linear-gradient(90deg, #25D366 0%, #25D366 var(--vn-progress, 0%), rgba(255, 255, 255, .45) var(--vn-progress, 0%), rgba(255, 255, 255, .45) 100%); }
+.vn-dark::-webkit-slider-runnable-track { background: linear-gradient(90deg, #25D366 0%, #25D366 var(--vn-progress, 0%), rgba(255, 255, 255, .15) var(--vn-progress, 0%), rgba(255, 255, 255, .15) 100%); }
+.vn-range::-moz-range-progress { height: .35rem; border-radius: 9999px; background: #25D366; }
+.vn-light::-moz-range-track { height: .35rem; border-radius: 9999px; background: rgba(255, 255, 255, .45); }
+.vn-dark::-moz-range-track { height: .35rem; border-radius: 9999px; background: rgba(255, 255, 255, .15); }
+
 /* ─── Toast notification system ─────────────────────────── */
 
 @keyframes tf_in_top {

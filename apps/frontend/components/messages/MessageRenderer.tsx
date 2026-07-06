@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { ChevronDown, Copy, Forward, Reply, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type {
@@ -321,22 +321,17 @@ function VoiceNotePlayer({ src, duration, isFromMe }: { src: string; duration?: 
               {formatClock(total || 0)}
             </span>
           </div>
-          <div className="mt-3 space-y-2">
-            <style>{`
-              .vn-range{appearance:none;height:.35rem;border-radius:9999px;outline:none;width:100%}
-              .vn-range::-webkit-slider-runnable-track{height:.35rem;border-radius:9999px}
-              .vn-range::-webkit-slider-thumb{appearance:none;width:.95rem;height:.95rem;border-radius:9999px;margin-top:-.3rem;background:white;border:2px solid #25D366;box-shadow:0 2px 8px rgba(0,0,0,.22)}
-              .vn-light::-webkit-slider-runnable-track{background:linear-gradient(90deg,#25D366 0%,#25D366 ${progress}%,rgba(255,255,255,.45) ${progress}%,rgba(255,255,255,.45) 100%)}
-              .vn-dark::-webkit-slider-runnable-track{background:linear-gradient(90deg,#25D366 0%,#25D366 ${progress}%,rgba(255,255,255,.15) ${progress}%,rgba(255,255,255,.15) 100%)}
-              .vn-range::-moz-range-thumb{width:.95rem;height:.95rem;border-radius:9999px;background:white;border:2px solid #25D366}
-            `}</style>
+          {/* Force LTR: an audio scrubber always fills left→right (elapsed on the
+              left, remaining on the right), even in the Arabic/RTL layout. */}
+          <div className="mt-3 space-y-2" dir="ltr">
             <input type="range" min={0} max={Math.max(0, total || 0)} step="0.1" value={current}
               onChange={(e) => seek(Number(e.target.value))}
+              style={{ '--vn-progress': `${progress}%` } as CSSProperties}
               className={`vn-range ${isFromMe ? 'vn-light' : 'vn-dark'}`}
               aria-label={t('message.seekAudio')} />
             <div className="flex items-center justify-between text-xs font-medium text-gray-500 dark:text-[#8696A0]">
-              <span dir="ltr">{formatClock(current)}</span>
-              <span dir="ltr">{formatClock(remaining)}</span>
+              <span>{formatClock(current)}</span>
+              <span>{formatClock(remaining)}</span>
             </div>
           </div>
         </div>

@@ -1,5 +1,5 @@
 {
-  "enabled": true,
+  "enabled": false,
   "general": {
     "model": "llama-3.3-70b-versatile",
     "temperature": 0,
@@ -148,9 +148,9 @@
     "pauseOnHumanReply": true
   },
   "targeting": {
-    "mode": "rules",
+    "mode": "all",
     "includeTags": [
-      "vip"
+      "vip1"
     ],
     "excludeTags": [],
     "lifecycleStages": [],

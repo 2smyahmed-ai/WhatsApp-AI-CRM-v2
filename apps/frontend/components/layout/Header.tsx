@@ -41,9 +41,11 @@ export default function Header() {
 
   const [query, setQuery] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [hardRefreshing, setHardRefreshing] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
 
   const onHardRefresh = () => {
     if (hardRefreshing) return;
@@ -80,6 +82,16 @@ export default function Header() {
     return () => document.removeEventListener('mousedown', onClick);
   }, [menuOpen]);
 
+  // Close the mobile account menu on outside click
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const onClick = (e: MouseEvent) => {
+      if (mobileMenuRef.current && !mobileMenuRef.current.contains(e.target as Node)) setMobileMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [mobileMenuOpen]);
+
   const submitSearch = (e: React.FormEvent) => {
     e.preventDefault();
     const q = query.trim();
@@ -95,19 +107,62 @@ export default function Header() {
 
       {/* ── Mobile header (hidden sm+) ── */}
       <div className="flex sm:hidden items-center justify-between px-4 py-3">
-        {/* Left: avatar + name (no dropdown — MobileDrawer handles all settings) */}
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#1f9255] to-[#0c3a27] text-sm font-bold text-white shadow-sm">
-            {initials}
-          </span>
-          <div className="min-w-0 leading-tight">
-            <p className="truncate text-[13px] font-bold text-gray-900 dark:text-white">{name}</p>
-            {role && (
-              <p className={cn('text-[10px] font-semibold uppercase tracking-wide', toSimpleRole(role) === 'SYSTEM_MANAGER' ? 'text-amber-500' : 'text-gray-400 dark:text-[#8696A0]')}>
-                {SIMPLE_ROLE_LABEL[toSimpleRole(role)]}
-              </p>
-            )}
-          </div>
+        {/* Left: account dropdown */}
+        <div className="relative min-w-0" ref={mobileMenuRef}>
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen((o) => !o)}
+            aria-haspopup="menu"
+            aria-expanded={mobileMenuOpen}
+            className="flex max-w-[62vw] items-center gap-2 rounded-full py-1 pe-1.5 ps-1 transition-colors hover:bg-gray-100 dark:hover:bg-[#2A3942] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16A34A]/40"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#1f9255] to-[#0c3a27] text-sm font-bold text-white shadow-sm" aria-hidden="true">
+              {initials}
+            </span>
+            <span className="min-w-0 leading-tight text-start">
+              <span className="block truncate text-[13px] font-bold text-gray-900 dark:text-white">{name}</span>
+              {role && (
+                <span className={cn('block text-[10px] font-semibold uppercase tracking-wide', toSimpleRole(role) === 'SYSTEM_MANAGER' ? 'text-amber-500' : 'text-gray-400 dark:text-[#8696A0]')}>
+                  {SIMPLE_ROLE_LABEL[toSimpleRole(role)]}
+                </span>
+              )}
+            </span>
+            <ChevronDown className={cn('h-4 w-4 shrink-0 text-gray-400 transition-transform', mobileMenuOpen && 'rotate-180')} aria-hidden="true" />
+          </button>
+
+          {mobileMenuOpen && (
+            <div role="menu" className="absolute start-0 top-[calc(100%+8px)] z-50 w-64 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-[0_16px_40px_-12px_rgba(16,24,40,0.25)] dark:border-white/10 dark:bg-[#111B21]">
+              {/* Profile header */}
+              <div className="flex items-center gap-2.5 px-2.5 py-2.5">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#1f9255] to-[#0c3a27] text-sm font-bold text-white" aria-hidden="true">
+                  {initials}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-gray-900 dark:text-white">{name}</p>
+                  {email && <p className="truncate text-[11px] text-gray-400 dark:text-[#8696A0]">{email}</p>}
+                </div>
+                {role && (
+                  <span className={cn('shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide', SIMPLE_ROLE_BADGE[toSimpleRole(role)])}>
+                    {tCommon(`roles.${toSimpleRole(role)}`, { defaultValue: SIMPLE_ROLE_LABEL[toSimpleRole(role)] })}
+                  </span>
+                )}
+              </div>
+
+              <div className="my-1 h-px bg-gray-100 dark:bg-white/8" />
+
+              <button type="button" role="menuitem" onClick={() => { setLanguage(language === 'en' ? 'ar' : 'en'); setMobileMenuOpen(false); }} className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:text-white dark:hover:bg-white/5">
+                <Globe className="h-4 w-4 text-gray-400" aria-hidden="true" />
+                <span className="flex-1 text-start">{language === 'en' ? 'العربية' : 'English'}</span>
+              </button>
+
+              <div className="my-1 h-px bg-gray-100 dark:bg-white/8" />
+
+              <button type="button" role="menuitem" onClick={() => signOut()} className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10">
+                <LogOut className="h-4 w-4" aria-hidden="true" />
+                <span className="flex-1 text-start">{t('logout.button')}</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Right: connection dot + bell + AI bot + theme */}

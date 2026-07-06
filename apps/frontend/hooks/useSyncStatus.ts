@@ -22,25 +22,46 @@ export function useSyncStatus(): SyncStatus {
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const syncingRef = useRef(false);
 
-  // Track socket connection state — runs only on the client, after hydration
+  // Track the real WhatsApp connection state — NOT the socket.io transport.
+  // The socket pipe is up whenever the browser can reach the backend, so using
+  // it here would show "connected" even when WhatsApp itself is logged out.
+  // Source of truth: GET /api/whatsapp/status, kept live via the backend's
+  // global `wa:status` broadcast. Runs only on the client, after hydration.
   useEffect(() => {
-    // Sync real state immediately
-    setConnection(socket.connected ? 'connected' : 'connecting');
+    let cancelled = false;
 
-    const onConnect    = () => setConnection('connected');
-    const onDisconnect = () => setConnection('disconnected');
-    const onConnecting = () => setConnection('connecting');
+    const fetchWaStatus = async () => {
+      try {
+        const data = await api.get<{ status?: ConnectionState }>('/api/whatsapp/status');
+        if (!cancelled && data?.status) setConnection(data.status);
+      } catch {
+        if (!cancelled) setConnection('disconnected');
+      }
+    };
 
-    socket.on('connect',            onConnect);
-    socket.on('disconnect',         onDisconnect);
-    socket.on('reconnect_attempt',  onConnecting);
-    socket.on('reconnect',          onConnect);
+    // Real WhatsApp status pushed by the backend (connected/connecting/disconnected).
+    const onWaStatus = (payload: { status?: ConnectionState }) => {
+      if (payload?.status) setConnection(payload.status);
+    };
+    // When the socket transport (re)connects we may have missed a wa:status
+    // event while offline — re-fetch the authoritative status to catch up.
+    const onTransportUp = () => { void fetchWaStatus(); };
+
+    void fetchWaStatus();
+
+    socket.on('wa:status', onWaStatus);
+    socket.on('connect',   onTransportUp);
+    socket.on('reconnect', onTransportUp);
+
+    // Safety-net poll: the REST endpoint is authoritative if an event is dropped.
+    const interval = setInterval(() => { void fetchWaStatus(); }, 60 * 1000);
 
     return () => {
-      socket.off('connect',           onConnect);
-      socket.off('disconnect',        onDisconnect);
-      socket.off('reconnect_attempt', onConnecting);
-      socket.off('reconnect',         onConnect);
+      cancelled = true;
+      socket.off('wa:status', onWaStatus);
+      socket.off('connect',   onTransportUp);
+      socket.off('reconnect', onTransportUp);
+      clearInterval(interval);
     };
   }, []);
 

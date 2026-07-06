@@ -22,6 +22,8 @@ const ALLOWED_TYPES: Record<string, string> = {
   'audio/mp4': '.m4a',
   'audio/aac': '.aac',
   'audio/wav': '.wav',
+  'audio/webm': '.webm',
+  'video/webm': '.webm',
   'application/pdf': '.pdf',
   'application/msword': '.doc',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
@@ -31,11 +33,17 @@ const ALLOWED_TYPES: Record<string, string> = {
   'text/csv': '.csv',
 };
 
+// Browsers tag recorded audio as e.g. "audio/webm;codecs=opus" — the codec
+// parameter must be stripped before matching the allowlist and picking an ext.
+function baseMimeOf(mimetype: string): string {
+  return mimetype.split(';')[0].trim().toLowerCase();
+}
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 32 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    if (ALLOWED_TYPES[file.mimetype]) {
+    if (ALLOWED_TYPES[baseMimeOf(file.mimetype)]) {
       cb(null, true);
     } else {
       cb(new Error(`Unsupported file type: ${file.mimetype}`));
@@ -53,9 +61,10 @@ router.post('/', (req, res) => {
     }
     try {
       if (!req.file) return res.status(400).json({ error: 'No file provided' });
-      const ext = ALLOWED_TYPES[req.file.mimetype];
+      const baseMime = baseMimeOf(req.file.mimetype);
+      const ext = ALLOWED_TYPES[baseMime];
       const filename = `${crypto.randomUUID()}${ext}`;
-      const result = await uploadFile(req.file.buffer, filename, req.file.mimetype);
+      const result = await uploadFile(req.file.buffer, filename, baseMime);
       res.json({
         url: result.url,
         key: result.key,

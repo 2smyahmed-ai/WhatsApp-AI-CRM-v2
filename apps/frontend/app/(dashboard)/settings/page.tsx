@@ -11,17 +11,16 @@ import { useLanguage } from '../../../components/providers/I18nProvider';
 import { useDirection } from '../../../hooks/useDirection';
 import LanguageSwitcher from '../../../components/ui/LanguageSwitcher';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
-  Settings2, Globe, CheckCircle2, MessageCircle, Users,
-  MessageSquareReply, User, LogOut, Trash2, Plus,
-  Wifi, WifiOff, RefreshCw, Hash, AlignLeft,
+  Settings2, Globe, CheckCircle2, MessageCircle,
+  User, LogOut,
+  Wifi, WifiOff, RefreshCw,
   ChevronRight, ShieldCheck, Eye, EyeOff, Loader, Lock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { SIMPLE_ROLES, SIMPLE_ROLE_LABEL, SIMPLE_ROLE_BADGE, toSimpleRole, simpleRoleToStored, type SimpleRole } from '@/lib/roles';
+import { SIMPLE_ROLE_LABEL, SIMPLE_ROLE_BADGE, toSimpleRole } from '@/lib/roles';
 
-type Section = 'whatsapp' | 'team' | 'saved-replies' | 'account' | 'password' | 'language';
+type Section = 'whatsapp' | 'account' | 'password' | 'language';
 
 function initials(name?: string | null, email?: string | null): string {
   if (name) return name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
@@ -45,19 +44,6 @@ export default function SettingsPage() {
   const [waLoading, setWaLoading]         = useState(false);
   const [warmupEnabled, setWarmupEnabled] = useState(false);
   const [warmupSaving, setWarmupSaving]   = useState(false);
-
-  // ── Team state ────────────────────────────────────────────────────────────
-  const [teamMembers, setTeamMembers] = useState<any[]>([]);
-  const [teamName, setTeamName]       = useState('');
-  const [newMemberEmail, setNewMemberEmail] = useState('');
-  const [newMemberRole, setNewMemberRole]   = useState<SimpleRole>('EMPLOYEE');
-  const [inviting, setInviting]             = useState(false);
-
-  // ── Saved replies state ───────────────────────────────────────────────────
-  const [savedReplies, setSavedReplies]         = useState<any[]>([]);
-  const [shortcut, setShortcut]                 = useState('');
-  const [savedReplyMessage, setSavedReplyMessage] = useState('');
-  const [savingReply, setSavingReply]           = useState(false);
 
   // ── Password change state ──────────────────────────────────────────────────
   const [currentPassword, setCurrentPassword]   = useState('');
@@ -103,38 +89,16 @@ export default function SettingsPage() {
     } catch {}
   }, []);
 
-  const fetchTeamMembers = useCallback(async () => {
-    if (!session?.user) return;
-    try {
-      const data = await api.get('/api/teams');
-      setTeamMembers(data?.team?.members || []);
-      setTeamName(data?.team?.name || '');
-    } catch {
-      setTeamMembers([session.user]);
-    }
-  }, [session]);
-
-  const fetchSavedReplies = useCallback(async () => {
-    try {
-      const data = await api.get('/api/saved-replies');
-      setSavedReplies(Array.isArray(data) ? data : []);
-    } catch {
-      setSavedReplies([]);
-    }
-  }, []);
-
   useEffect(() => {
     if (sessionStatus === 'loading' || sessionStatus !== 'authenticated') return;
     fetchStatus();
     fetchQR();
-    fetchTeamMembers();
-    fetchSavedReplies();
     const iv = setInterval(() => {
       fetchStatus();
       if (status !== 'connected') fetchQR();
     }, 5000);
     return () => clearInterval(iv);
-  }, [sessionStatus, status, fetchStatus, fetchTeamMembers, fetchQR, fetchSavedReplies]);
+  }, [sessionStatus, status, fetchStatus, fetchQR]);
 
   useSocket('wa:status', fetchStatus);
   useSocket('wa:qr', fetchQR);
@@ -186,37 +150,6 @@ export default function SettingsPage() {
     } catch (err) {
       setWhatsAppError(err instanceof Error ? err.message : 'Failed to reset');
     } finally { setWaLoading(false); }
-  };
-
-  const handleAddTeamMember = async () => {
-    if (!newMemberEmail.trim()) return;
-    setInviting(true);
-    try {
-      const teamData = await api.get('/api/teams');
-      if (!teamData?.team?.id) return;
-      await api.post(`/api/teams/${teamData.team.id}/members`, {
-        email: newMemberEmail,
-        role: simpleRoleToStored(newMemberRole),
-      });
-      setNewMemberEmail('');
-      fetchTeamMembers();
-    } catch {} finally { setInviting(false); }
-  };
-
-  const handleSaveReply = async () => {
-    if (!shortcut.trim() || !savedReplyMessage.trim()) return;
-    setSavingReply(true);
-    try {
-      await api.post('/api/saved-replies', { shortcut, message: savedReplyMessage });
-      setShortcut('');
-      setSavedReplyMessage('');
-      fetchSavedReplies();
-    } catch {} finally { setSavingReply(false); }
-  };
-
-  const handleDeleteSavedReply = async (id: string) => {
-    await api.delete(`/api/saved-replies/${id}`);
-    fetchSavedReplies();
   };
 
   // ── Password change handler ───────────────────────────────────────────────
@@ -271,8 +204,6 @@ export default function SettingsPage() {
   // ── Nav items ─────────────────────────────────────────────────────────────
   const navItems: { id: Section; icon: React.ElementType; label: string }[] = [
     { id: 'whatsapp',     icon: MessageCircle,      label: t('tabs.whatsapp') },
-    { id: 'team',         icon: Users,              label: t('tabs.team') },
-    { id: 'saved-replies',icon: MessageSquareReply, label: t('tabs.savedReplies') },
     { id: 'account',      icon: User,               label: t('tabs.account') },
     { id: 'password',     icon: ShieldCheck,        label: language === 'ar' ? t('password.title', { defaultValue: 'كلمة المرور' }) : t('password.title', { defaultValue: 'Password' }) },
     { id: 'language',     icon: Globe,              label: t('tabs.language') },
@@ -410,141 +341,6 @@ export default function SettingsPage() {
               <WifiOff className="h-4 w-4" />
               {t('whatsapp.disconnect')}
             </Button>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  function TeamSection() {
-    return (
-      <div className="space-y-5">
-        {teamName && (
-          <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-500 dark:border-white/10 dark:bg-white/5 dark:text-[#8696A0]">
-            <Users className="h-3.5 w-3.5" />
-            {t('team.teamName', { name: teamName })}
-          </div>
-        )}
-
-        {/* Invite form */}
-        <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 space-y-3 dark:border-white/10 dark:bg-[#202C33]">
-          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-[#8696A0]">{t('team.inviteMember')}</p>
-          <Input
-            placeholder={t('team.emailPlaceholder')}
-            value={newMemberEmail}
-            onChange={(e) => setNewMemberEmail(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleAddTeamMember()}
-          />
-          <div className="flex gap-2">
-            <select
-              value={newMemberRole}
-              onChange={(e) => setNewMemberRole(e.target.value as SimpleRole)}
-              className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#25D366]/30 dark:border-white/10 dark:bg-[#111B21] dark:text-white"
-            >
-              {SIMPLE_ROLES.map((r) => (
-                <option key={r} value={r}>{t(`team.roles.${r}`, { defaultValue: SIMPLE_ROLE_LABEL[r] })}</option>
-              ))}
-            </select>
-            <Button
-              onClick={handleAddTeamMember}
-              disabled={inviting || !newMemberEmail.trim()}
-              className="gap-2 bg-[#25D366] text-black hover:bg-[#128C7E] hover:text-white"
-            >
-              <Plus className="h-4 w-4" />
-              {inviting ? '…' : t('team.inviteMember')}
-            </Button>
-          </div>
-        </div>
-
-        {/* Member list */}
-        <div className="space-y-2">
-          {teamMembers.length === 0 ? (
-            <p className="py-6 text-center text-sm text-gray-500 dark:text-[#8696A0]">{t('team.noMembers')}</p>
-          ) : (
-            teamMembers.map((member) => (
-              <div
-                key={member.id ?? member.email}
-                className="flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-white/10 dark:bg-[#202C33]"
-              >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#25D366]/20 text-xs font-bold text-[#25D366]">
-                  {initials(member.name, member.email)}
-                </div>
-                <div className="min-w-0 flex-1">
-                  {member.name && <p className="truncate text-sm font-medium text-gray-900 dark:text-white">{member.name}</p>}
-                  <p className="truncate text-xs text-gray-500 dark:text-[#8696A0]">{member.email}</p>
-                </div>
-                <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide shrink-0', SIMPLE_ROLE_BADGE[toSimpleRole(member.role)])}>
-                  {t(`team.roles.${toSimpleRole(member.role)}`, { defaultValue: SIMPLE_ROLE_LABEL[toSimpleRole(member.role)] })}
-                </span>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  function SavedRepliesSection() {
-    return (
-      <div className="space-y-5">
-        {/* Add form */}
-        <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 space-y-3 dark:border-white/10 dark:bg-[#202C33]">
-          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-[#8696A0]">{t('savedReplies.saveReply')}</p>
-          <div className="relative">
-            <Hash className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500 dark:text-[#8696A0]" />
-            <Input
-              value={shortcut}
-              onChange={(e) => setShortcut(e.target.value)}
-              placeholder={t('savedReplies.shortcutPlaceholder')}
-              className="ps-9 font-mono"
-            />
-          </div>
-          <div className="relative">
-            <AlignLeft className="absolute start-3 top-3 h-4 w-4 text-gray-500 dark:text-[#8696A0]" />
-            <textarea
-              value={savedReplyMessage}
-              onChange={(e) => setSavedReplyMessage(e.target.value)}
-              placeholder={t('savedReplies.messagePlaceholder')}
-              rows={3}
-              className="w-full rounded-lg border border-gray-200 bg-white ps-9 pe-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-[#25D366]/30 dark:border-white/10 dark:bg-[#111B21] dark:text-white dark:placeholder:text-[#8696A0]"
-            />
-          </div>
-          <Button
-            onClick={handleSaveReply}
-            disabled={savingReply || !shortcut.trim() || !savedReplyMessage.trim()}
-            className="w-full gap-2 bg-[#25D366] text-black hover:bg-[#128C7E] hover:text-white"
-          >
-            <Plus className="h-4 w-4" />
-            {savingReply ? '…' : t('savedReplies.saveReply')}
-          </Button>
-        </div>
-
-        {/* List */}
-        <div className="space-y-2">
-          {savedReplies.length === 0 ? (
-            <p className="py-6 text-center text-sm text-gray-500 dark:text-[#8696A0]">{t('savedReplies.noReplies')}</p>
-          ) : (
-            savedReplies.map((reply) => (
-              <div
-                key={reply.id}
-                className="flex items-start justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-white/10 dark:bg-[#202C33]"
-              >
-                <div className="min-w-0 flex-1">
-                  <span className="inline-block rounded-md bg-[#25D366]/15 px-2 py-0.5 font-mono text-xs font-semibold text-[#25D366] mb-1">
-                    {reply.shortcut}
-                  </span>
-                  <p className="text-sm text-gray-500 line-clamp-2 dark:text-[#8696A0]">{reply.message}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleDeleteSavedReply(reply.id)}
-                  className="shrink-0 rounded-lg p-2 text-[#8696A0] hover:bg-red-500/10 hover:text-red-400 transition-colors"
-                  aria-label={t('savedReplies.deleteConfirm.confirm')}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            ))
           )}
         </div>
       </div>
@@ -763,8 +559,6 @@ export default function SettingsPage() {
 
   const sectionTitles: Record<Section, string> = {
     whatsapp:      t('whatsapp.title'),
-    team:          t('team.title'),
-    'saved-replies': t('savedReplies.title'),
     account:       t('account.title'),
     password:      t('password.title'),
     language:      t('language.title'),
@@ -772,8 +566,6 @@ export default function SettingsPage() {
 
   const sectionDesc: Record<Section, string> = {
     whatsapp:      t('whatsapp.description'),
-    team:          t('team.description'),
-    'saved-replies': t('savedReplies.description'),
     account:       t('account.description'),
     password:      t('password.description'),
     language:      t('language.description'),
@@ -853,8 +645,6 @@ export default function SettingsPage() {
 
           {/* Section content */}
           {activeSection === 'whatsapp'      && <WhatsAppSection />}
-          {activeSection === 'team'          && <TeamSection />}
-          {activeSection === 'saved-replies' && <SavedRepliesSection />}
           {activeSection === 'account'       && <AccountSection />}
           {activeSection === 'password'      && <PasswordSection />}
           {activeSection === 'language'      && <LanguageSection />}

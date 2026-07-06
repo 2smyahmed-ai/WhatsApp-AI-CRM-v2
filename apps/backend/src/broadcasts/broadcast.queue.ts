@@ -35,7 +35,14 @@ const MEDIA_MIME_FALLBACK: Record<string, string> = {
   IMAGE: 'image/jpeg',
   VIDEO: 'video/mp4',
   DOCUMENT: 'application/octet-stream',
+  VOICE: 'audio/ogg',
+  AUDIO: 'audio/ogg',
 };
+
+/** A voice note or plain audio broadcast — both go out as WhatsApp audio. */
+function isAudioMediaType(mediaType?: string | null): boolean {
+  return mediaType === 'VOICE' || mediaType === 'AUDIO';
+}
 
 /**
  * Download the broadcast attachment ONCE (the same file goes to every recipient)
@@ -52,10 +59,18 @@ async function fetchBroadcastMedia(
     if (!resp.ok) throw new Error(`status ${resp.status}`);
     const buffer = Buffer.from(await resp.arrayBuffer());
     const headerMime = resp.headers.get('content-type')?.split(';')[0]?.trim();
-    const mimetype =
-      headerMime && headerMime !== 'application/octet-stream'
-        ? headerMime
-        : (mediaType && MEDIA_MIME_FALLBACK[mediaType]) || 'application/octet-stream';
+    let mimetype: string;
+    if (isAudioMediaType(mediaType)) {
+      // A recorded .webm is served as video/webm by the static file server, which
+      // would make the sender treat it as a video. Force an audio mime so it ships
+      // as a voice note (the sender transcodes to ogg/opus regardless).
+      mimetype = headerMime && headerMime.startsWith('audio/') ? headerMime : 'audio/ogg';
+    } else {
+      mimetype =
+        headerMime && headerMime !== 'application/octet-stream'
+          ? headerMime
+          : (mediaType && MEDIA_MIME_FALLBACK[mediaType]) || 'application/octet-stream';
+    }
     return { buffer, mimetype, filename: filename ?? undefined };
   } catch (err) {
     logger.warn('broadcast.media_fetch_failed', {
@@ -93,10 +108,12 @@ export function ensureBroadcastWorker() {
 
     // Media is the same for everyone — fetch it once up front, then reuse the buffer.
     const mediaUrl = (broadcast as any).mediaUrl as string | null | undefined;
+    const mediaType = (broadcast as any).mediaType as string | null | undefined;
+    const isVoiceBroadcast = isAudioMediaType(mediaType);
     const media = mediaUrl
       ? await fetchBroadcastMedia(
           mediaUrl,
-          (broadcast as any).mediaType,
+          mediaType,
           (broadcast as any).mediaFilename,
         )
       : null;
@@ -170,7 +187,10 @@ export function ensureBroadcastWorker() {
             await interactiveMessageService.send(recipient.phone, personalizedInteractive as any);
           }
         } else if (media) {
-          // Image / video / document broadcast — the personalized text rides as the caption.
+          // Image / video / document broadcast — the personalized text rides as the
+          // caption. Voice notes ship as a WhatsApp audio message (ptt): no caption.
+          // Pass `url` so the persisted CRM message points at the stored file and
+          // renders/plays in chat (without it, media shows as "unavailable").
           await providerManager.sendMessage({
             phone: recipient.phone,
             text: '',
@@ -178,7 +198,9 @@ export function ensureBroadcastWorker() {
               buffer: media.buffer,
               mimetype: media.mimetype,
               filename: media.filename,
-              caption: personalizedMessage,
+              caption: isVoiceBroadcast ? undefined : personalizedMessage,
+              isVoiceNote: isVoiceBroadcast,
+              url: mediaUrl ?? undefined,
             },
           });
         } else {

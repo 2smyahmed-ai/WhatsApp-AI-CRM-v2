@@ -5,6 +5,7 @@ import {
   Users, MessageSquare, Calendar, Send, ChevronDown, ChevronUp,
   Tag, Search, X, Check, Clock, Zap, AlertCircle, Smartphone,
   ChevronLeft, ChevronRight, Type, Image as ImageIcon, Video, FileText, Upload, Loader2,
+  Mic, Square, Play,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api, apiForm } from '../../lib/api';
@@ -16,13 +17,27 @@ import { useChatOpen } from '../../stores/chat-open-store';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 const QUICK_EMOJI = ['😊', '👋', '🎉', '✅', '🔥', '🙏', '📦', '💳', '📅', '⭐'];
 
-type MsgType = 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT';
+type MsgType = 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | 'VOICE';
 const MESSAGE_TYPES: Array<{ type: MsgType; icon: typeof Type; labelKey: string; fallback: string }> = [
   { type: 'TEXT',     icon: Type,      labelKey: 'form.typeText',     fallback: 'Text' },
   { type: 'IMAGE',    icon: ImageIcon, labelKey: 'form.typeImage',    fallback: 'Image' },
   { type: 'VIDEO',    icon: Video,     labelKey: 'form.typeVideo',    fallback: 'Video' },
   { type: 'DOCUMENT', icon: FileText,  labelKey: 'form.typeDocument', fallback: 'Document' },
+  { type: 'VOICE',    icon: Mic,       labelKey: 'form.typeVoice',    fallback: 'Voice' },
 ];
+
+/** Pick an audio container the browser can actually record; WhatsApp gets ogg/opus after server transcode. */
+function getPreferredAudioMimeType(): string {
+  if (typeof MediaRecorder === 'undefined') return 'audio/webm';
+  const candidates = ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
+  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || 'audio/webm';
+}
+
+function formatDuration(totalSeconds: number): string {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
 
 interface Contact {
   id: string;
@@ -97,6 +112,18 @@ function PhonePreview({ message, mediaType, mediaUrl, mediaFilename }: {
                     onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                 ) : mediaType === 'VIDEO' ? (
                   <div className="flex h-20 items-center justify-center bg-black/40 text-white/60"><Video className="h-6 w-6" /></div>
+                ) : mediaType === 'VOICE' ? (
+                  <div className="flex items-center gap-2 px-2.5 py-2.5">
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#25D366] text-slate-950">
+                      <Play className="h-3 w-3" fill="currentColor" />
+                    </div>
+                    <div className="flex flex-1 items-center gap-[2px]">
+                      {[6, 11, 15, 9, 13, 7, 12, 8, 14, 6, 10, 7, 11].map((h, i) => (
+                        <span key={i} className="w-[2px] rounded-full bg-[#25D366]/70" style={{ height: `${h}px` }} />
+                      ))}
+                    </div>
+                    <Mic className="h-3.5 w-3.5 shrink-0 text-[#8696A0]" />
+                  </div>
                 ) : (
                   <div className="flex items-center gap-1.5 bg-white/5 px-2 py-2">
                     <FileText className="h-4 w-4 shrink-0 text-white/70" />
@@ -106,7 +133,7 @@ function PhonePreview({ message, mediaType, mediaUrl, mediaFilename }: {
               </div>
             )}
             <div className="p-2">
-              {message.trim() && (
+              {message.trim() && mediaType !== 'VOICE' && (
                 <p className="whitespace-pre-wrap break-words text-[10px] leading-[1.5] text-white">
                   {message.length > 200 ? message.slice(0, 200) + '…' : message}
                 </p>
@@ -206,7 +233,22 @@ export default function BroadcastForm({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isMedia = messageType !== 'TEXT';
-  const acceptFor = messageType === 'IMAGE' ? 'image/*' : messageType === 'VIDEO' ? 'video/*' : '*/*';
+  const isVoice = messageType === 'VOICE';
+  const acceptFor =
+    messageType === 'IMAGE' ? 'image/*'
+    : messageType === 'VIDEO' ? 'video/*'
+    : messageType === 'VOICE' ? 'audio/*'
+    : '*/*';
+
+  // Voice-note recording (mirrors the chat composer): capture from the mic, then
+  // upload the clip through the same /api/upload path the file picker uses.
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [recordingError, setRecordingError] = useState<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordingChunksRef = useRef<BlobPart[]>([]);
+  const recordingStreamRef = useRef<MediaStream | null>(null);
+  const recordingTimerRef = useRef<number | null>(null);
 
   const [templates, setTemplates] = useState<Array<{ id: string; name: string; content: string }>>([]);
   const [showTemplates, setShowTemplates] = useState(false);
@@ -368,17 +410,27 @@ export default function BroadcastForm({
   };
   const insertVariable = insertAtCursor;
 
-  const changeMessageType = (type: MsgType) => {
-    if (type === messageType) return;
-    setMessageType(type);
-    setUploadError(null);
-    setMediaUrl('');
-    setMediaFilename('');
-  };
+  const stopRecording = useCallback(() => {
+    if (recordingTimerRef.current) {
+      window.clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    setIsRecording(false);
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== 'inactive') recorder.stop();
+    recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+    recordingStreamRef.current = null;
+  }, []);
 
-  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Stop any in-flight recording and drop the mic stream when the form unmounts.
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) window.clearInterval(recordingTimerRef.current);
+      recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+    };
+  }, []);
+
+  const uploadMediaFile = async (file: File) => {
     setUploading(true);
     setUploadError(null);
     try {
@@ -391,7 +443,60 @@ export default function BroadcastForm({
       setUploadError(err instanceof Error ? err.message : t('form.uploadFailed', { defaultValue: 'Upload failed' }));
     } finally {
       setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const changeMessageType = (type: MsgType) => {
+    if (type === messageType) return;
+    if (isRecording) stopRecording();
+    setMessageType(type);
+    setUploadError(null);
+    setRecordingError(null);
+    setRecordingSeconds(0);
+    setMediaUrl('');
+    setMediaFilename('');
+  };
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await uploadMediaFile(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const startRecording = async () => {
+    setRecordingError(null);
+    setUploadError(null);
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setRecordingError(t('form.audioNotSupported', { defaultValue: 'Recording is not supported on this device.' }));
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = getPreferredAudioMimeType();
+      const recorder = new MediaRecorder(stream, { mimeType });
+      recordingChunksRef.current = [];
+      mediaRecorderRef.current = recorder;
+      recordingStreamRef.current = stream;
+      setRecordingSeconds(0);
+      setIsRecording(true);
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) recordingChunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        const mt = recorder.mimeType || 'audio/webm';
+        const blob = new Blob(recordingChunksRef.current, { type: mt });
+        const extension = mt.includes('ogg') ? 'ogg' : mt.includes('mp4') ? 'mp4' : 'webm';
+        const file = new File([blob], `voice-note-${Date.now()}.${extension}`, { type: mt });
+        void uploadMediaFile(file);
+      };
+      recordingTimerRef.current = window.setInterval(() => {
+        setRecordingSeconds((current) => current + 1);
+      }, 1000);
+      recorder.start();
+    } catch {
+      setRecordingError(t('form.micPermissionError', { defaultValue: 'Microphone access was denied. Check browser permissions.' }));
+      setIsRecording(false);
     }
   };
 
@@ -801,7 +906,7 @@ export default function BroadcastForm({
                     <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-[#8696A0]">
                       {t('form.messageType', { defaultValue: 'Message type' })}
                     </p>
-                    <div className="grid grid-cols-4 gap-1.5 rounded-2xl border border-white/10 bg-[#0B141A] p-1.5">
+                    <div className="grid grid-cols-5 gap-1 rounded-2xl border border-white/10 bg-[#0B141A] p-1.5">
                       {MESSAGE_TYPES.map(({ type, icon: Icon, labelKey, fallback }) => {
                         const active = messageType === type;
                         return (
@@ -810,22 +915,97 @@ export default function BroadcastForm({
                             type="button"
                             onClick={() => changeMessageType(type)}
                             className={cn(
-                              'flex flex-col items-center gap-1.5 rounded-xl px-1 py-2.5 transition-all',
+                              'flex flex-col items-center gap-1.5 rounded-xl px-0.5 py-2.5 transition-all',
                               active ? 'bg-[#202C33] text-[#25D366] shadow-sm' : 'text-[#8696A0] hover:text-white',
                             )}
                           >
                             <Icon className="h-[18px] w-[18px]" />
-                            <span className="text-[11px] font-medium">{t(labelKey, { defaultValue: fallback })}</span>
+                            <span className="text-[10px] font-medium">{t(labelKey, { defaultValue: fallback })}</span>
                           </button>
                         );
                       })}
                     </div>
                   </div>
 
-                  {/* Media upload (image / video / document) */}
+                  {/* Shared hidden file picker — used by voice upload and image/video/document */}
                   {isMedia && (
+                    <input ref={fileInputRef} type="file" accept={acceptFor} onChange={handleFile} className="hidden" />
+                  )}
+
+                  {/* Voice note — record from the mic or upload an audio clip */}
+                  {isVoice && (
                     <div className="mb-4">
-                      <input ref={fileInputRef} type="file" accept={acceptFor} onChange={handleFile} className="hidden" />
+                      {mediaUrl && !isRecording ? (
+                        <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-[#0B141A] p-3">
+                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#25D366]/10 text-[#25D366]">
+                            <Mic className="h-6 w-6" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-white">{t('form.voiceNoteReady', { defaultValue: 'Voice note ready' })}</p>
+                            <p className="truncate text-xs text-[#8696A0]">{mediaFilename || 'voice-note'}</p>
+                          </div>
+                          <button type="button" onClick={startRecording} className="text-xs font-medium text-[#25D366] hover:underline">
+                            {t('form.reRecord', { defaultValue: 'Re-record' })}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setMediaUrl(''); setMediaFilename(''); }}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg text-[#8696A0] transition hover:bg-red-500/10 hover:text-red-400"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ) : isRecording ? (
+                        <div className="flex items-center gap-3 rounded-2xl border border-red-400/30 bg-red-500/10 px-4 py-5">
+                          <span className="relative flex h-3 w-3 shrink-0">
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+                            <span className="relative inline-flex h-3 w-3 rounded-full bg-red-500" />
+                          </span>
+                          <span className="voice-rec-wave inline-flex h-6 items-end gap-[3px] text-red-400">
+                            {[0, 1, 2, 3, 4].map((i) => <span key={i} className="w-[3px] rounded-full bg-current" />)}
+                          </span>
+                          <span dir="ltr" className="font-mono text-lg font-semibold tabular-nums text-white">{formatDuration(recordingSeconds)}</span>
+                          <button
+                            type="button"
+                            onClick={stopRecording}
+                            className="ms-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-500 text-white transition hover:bg-red-600 active:scale-95"
+                            aria-label={t('form.stopRecording', { defaultValue: 'Stop recording' })}
+                          >
+                            <Square className="h-5 w-5" fill="currentColor" />
+                          </button>
+                        </div>
+                      ) : uploading ? (
+                        <div className="flex items-center justify-center gap-2 rounded-2xl border border-white/15 bg-[#0B141A] py-8 text-[#8696A0]">
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                          <span className="text-sm font-medium">{t('form.uploading', { defaultValue: 'Uploading…' })}</span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-white/15 bg-[#0B141A] py-7">
+                          <button
+                            type="button"
+                            onClick={startRecording}
+                            className="flex h-16 w-16 items-center justify-center rounded-full bg-[#25D366] text-slate-950 shadow-lg transition hover:bg-[#25D366]/90 active:scale-95"
+                            aria-label={t('form.tapToRecord', { defaultValue: 'Tap to record' })}
+                          >
+                            <Mic className="h-7 w-7" />
+                          </button>
+                          <p className="text-sm font-medium text-white">{t('form.tapToRecord', { defaultValue: 'Tap to record a voice note' })}</p>
+                          <button type="button" onClick={() => fileInputRef.current?.click()} className="text-xs font-medium text-[#25D366] hover:underline">
+                            {t('form.orUploadAudio', { defaultValue: 'or upload an audio file' })}
+                          </button>
+                        </div>
+                      )}
+                      {(uploadError || recordingError) && <p className="mt-1.5 text-xs text-red-400">{uploadError || recordingError}</p>}
+                      <p className="mt-2 flex items-center gap-1.5 text-[11px] text-[#8696A0]">
+                        <Mic className="h-3.5 w-3.5 shrink-0 text-[#8696A0]/70" />
+                        {t('form.voiceHint', { defaultValue: 'Sent as a WhatsApp voice message. No caption.' })}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Media upload (image / video / document) */}
+                  {isMedia && !isVoice && (
+                    <div className="mb-4">
                       {mediaUrl ? (
                         <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-[#0B141A] p-3">
                           {messageType === 'IMAGE' ? (
@@ -868,6 +1048,9 @@ export default function BroadcastForm({
                     </div>
                   )}
 
+                  {/* Caption composer — hidden for voice notes (WhatsApp audio has no caption) */}
+                  {!isVoice && (
+                  <>
                   {/* Use a saved template as the message body / caption */}
                   {templates.length > 0 && (
                     <div className="mb-4">
@@ -975,6 +1158,8 @@ export default function BroadcastForm({
                       {charCount.toLocaleString()} / 4,096
                     </span>
                   </div>
+                  </>
+                  )}
             </SectionCard>
           </div>
 
