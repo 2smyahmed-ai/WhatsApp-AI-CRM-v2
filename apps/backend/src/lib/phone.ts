@@ -48,6 +48,19 @@ export function isE164(phone: string): boolean {
   return /^\+[1-9]\d{7,14}$/.test(String(phone || '').trim());
 }
 
+/**
+ * ISO-3166 region a fully-qualified number belongs to (e.g. "+201012345678" → "EG",
+ * "+971501234567" → "AE"). Returns null for local numbers with no country code —
+ * those are genuinely ambiguous and can't be attributed to a region on their own.
+ * Used to derive an import's default region from the connected business number.
+ */
+export function regionOfPhone(input: string): string | null {
+  const normalized = normalizePhone(input);
+  if (!normalized) return null;
+  const parsed = parsePhoneNumberFromString(normalized);
+  return parsed?.country ?? null;
+}
+
 export function phoneFingerprint(phone: string): string {
   const normalized = normalizePhone(phone);
   return normalized ? normalized.replace(/[^\d]/g, '') : '';

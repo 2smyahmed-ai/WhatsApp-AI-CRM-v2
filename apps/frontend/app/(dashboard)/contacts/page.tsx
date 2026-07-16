@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   Plus, Upload, Search, Users2, Filter, X, BriefcaseBusiness,
   CheckSquare, MessageSquare, PlusCircle, SlidersHorizontal,
@@ -12,11 +13,22 @@ import ContactsTable, { type ContactSortKey } from '../../../components/contacts
 import ContactForm from '../../../components/contacts/ContactForm';
 import ContactTimeline from '../../../components/contacts/ContactTimeline';
 import ContactTagSelector from '../../../components/contacts/ContactTagSelector';
+import ImportWizard from '../../../components/contacts/import/ImportWizard';
 import { TablePagination } from '../../../components/ui/TablePagination';
-import { api, apiForm } from '../../../lib/api';
+import { api } from '../../../lib/api';
 import { useSession } from 'next-auth/react';
 import { useSocket } from '../../../hooks/useSocket';
 import { useTags } from '../../../hooks/useTags';
+import { useCustomFields } from '../../../hooks/useCustomFields';
+import { formatFieldValue, type CustomFieldValues } from '../../../lib/custom-fields';
+import AudienceFilterBuilder from '../../../components/contacts/AudienceFilterBuilder';
+import {
+  activeConditionCount,
+  filterQueryParam,
+  filterableFields,
+  EMPTY_FILTER,
+  type AudienceFilter,
+} from '../../../lib/audience-filter';
 import { Modal } from '../../../components/ui/modal';
 import { cn } from '../../../lib/utils';
 
@@ -28,10 +40,13 @@ interface Contact {
   id: string;
   phone: string;
   name: string | null;
+  email?: string | null;
+  company?: string | null;
   notes: string | null;
   createdAt: string;
   contactTags?: ContactTagRef[];
-  customFields?: { avatarUrl?: string | null } | null;
+  /** Holds both user-defined field values and the reserved `avatarUrl` cache. */
+  customFields?: (CustomFieldValues & { avatarUrl?: string | null }) | null;
 }
 
 /** A contact is "saved" when it carries a real name — vs. an unknown WhatsApp number. */
@@ -72,13 +87,14 @@ export default function ContactsPage() {
   const { status } = useSession();
   const { t } = useTranslation('contacts');
   const { t: tc } = useTranslation('common');
+  const searchParams = useSearchParams();
 
   // — data —
   const [contacts, setContacts] = useState<Contact[]>([]);
   const allTags = useTags();   // live tag list — auto-updates via socket
 
   // — search & server-side filters —
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(() => searchParams.get('search') || '');
   const [tagFilter, setTagFilter] = useState('');   // tag name string
 
   // — saved/unsaved segment (primary quick filter) —
@@ -90,6 +106,9 @@ export default function ContactsPage() {
   const [dateTo, setDateTo] = useState('');
   const [hasTags, setHasTags] = useState(false);
   const [hasNotes, setHasNotes] = useState(false);
+
+  // — condition filters (notes, company, any custom field) — evaluated server-side —
+  const [advancedFilter, setAdvancedFilter] = useState<AudienceFilter>(EMPTY_FILTER);
 
   // — sort —
   const [sortKey, setSortKey] = useState<ContactSortKey | null>(null);
@@ -115,23 +134,37 @@ export default function ContactsPage() {
   const [details, setDetails] = useState<ContactDetails | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [detailTab, setDetailTab] = useState<'overview' | 'timeline' | 'tags'>('overview');
-  const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState<string | null>(null);
+  const [showImport, setShowImport] = useState(false);
+
+  // Custom-field definitions drive the extra rows in the detail drawer *and* the
+  // set of fields the condition builder can filter on.
+  const { definitions: customFieldDefs } = useCustomFields();
 
   // ─── Data fetching ────────────────────────────────────────────────────────
+
+  // A serialized filter, or null while none is set. Held as a string so the fetch
+  // below re-runs on a *changed* filter rather than on every render of an
+  // equivalent object.
+  const filterQuery = useMemo(
+    () => filterQueryParam(advancedFilter, filterableFields(customFieldDefs)),
+    [advancedFilter, customFieldDefs],
+  );
 
   const fetchContacts = useCallback(async () => {
     try {
       const params = new URLSearchParams();
       if (search) params.append('search', search);
       if (tagFilter) params.append('tag', tagFilter);
+      // Conditions are evaluated by the server — the same evaluator the broadcast
+      // audience uses, so both surfaces agree on who matches.
+      if (filterQuery) params.append('filter', filterQuery);
       const data = await api.get(`/api/contacts?${params}`);
       setContacts(Array.isArray(data) ? data : []);
       setPage(1);
     } catch {
       setContacts([]);
     }
-  }, [search, tagFilter]);
+  }, [search, tagFilter, filterQuery]);
 
   useEffect(() => {
     if (status !== 'authenticated') return;
@@ -211,38 +244,15 @@ export default function ContactsPage() {
 
   // ─── CRUD ─────────────────────────────────────────────────────────────────
 
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = '';
-    setImporting(true);
-    setImportResult(null);
-    setError(null);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const result = await apiForm('/api/contacts/import', formData);
-      setImportResult(`Imported ${result.imported} of ${result.total} contacts`);
-      fetchContacts();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Import failed');
-    } finally {
-      setImporting(false);
-    }
-  };
-
   const handleSave = async (contact: Partial<Contact> & { tagIds?: string[] }) => {
-    const { tagIds, ...contactData } = contact;
     if (editingContact) {
-      await api.put(`/api/contacts/${editingContact.id}`, contactData);
+      const { tagIds: _ignored, ...contactData } = contact;
       // Tags are handled live by ContactTagSelector in the form — nothing to do here
+      await api.put(`/api/contacts/${editingContact.id}`, contactData);
     } else {
-      const created = await api.post('/api/contacts', contactData) as { id: string } | null;
-      if (tagIds && tagIds.length > 0 && created?.id) {
-        await Promise.allSettled(
-          tagIds.map((tagId) => api.post(`/api/tags/contacts/${created.id}/tags/${tagId}`, {})),
-        );
-      }
+      // The create endpoint attaches tags in the same request, so a failure there
+      // can't leave a contact behind with none of its tags.
+      await api.post('/api/contacts', contact);
     }
     setShowForm(false);
     setEditingContact(null);
@@ -319,13 +329,15 @@ export default function ContactsPage() {
   // ─── Derived helpers ──────────────────────────────────────────────────────
 
   const activeFilterCount =
-    (dateFrom ? 1 : 0) + (dateTo ? 1 : 0) + (hasTags ? 1 : 0) + (hasNotes ? 1 : 0);
+    (dateFrom ? 1 : 0) + (dateTo ? 1 : 0) + (hasTags ? 1 : 0) + (hasNotes ? 1 : 0) +
+    activeConditionCount(advancedFilter, filterableFields(customFieldDefs));
 
   const clearAdvancedFilters = () => {
     setDateFrom('');
     setDateTo('');
     setHasTags(false);
     setHasNotes(false);
+    setAdvancedFilter(EMPTY_FILTER);
     setPage(1);
   };
 
@@ -351,11 +363,6 @@ export default function ContactsPage() {
           {error}
         </div>
       )}
-      {importResult && (
-        <div className="rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-          {importResult}
-        </div>
-      )}
 
       {/* ── Header ── */}
       <section className="overflow-hidden rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#111B21] p-6 shadow-card dark:shadow-[0_8px_20px_rgba(0,0,0,0.2)]">
@@ -371,16 +378,21 @@ export default function ContactsPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <label
-              className={cn(
-                'inline-flex cursor-pointer items-center rounded-xl border border-gray-300 dark:border-white/10 bg-gray-50 dark:bg-white/5 px-4 py-2.5 text-sm text-gray-700 dark:text-white transition hover:bg-gray-100 dark:hover:bg-white/10',
-                importing && 'pointer-events-none opacity-60',
-              )}
+            <Link
+              href="/settings/custom-fields"
+              className="inline-flex items-center rounded-xl border border-gray-300 dark:border-white/10 bg-gray-50 dark:bg-white/5 px-4 py-2.5 text-sm text-gray-700 dark:text-white transition hover:bg-gray-100 dark:hover:bg-white/10"
+            >
+              <SlidersHorizontal className="mr-2 h-4 w-4" />
+              {t('customFields', { defaultValue: 'Fields' })}
+            </Link>
+            <button
+              type="button"
+              onClick={() => setShowImport(true)}
+              className="inline-flex items-center rounded-xl border border-gray-300 dark:border-white/10 bg-gray-50 dark:bg-white/5 px-4 py-2.5 text-sm text-gray-700 dark:text-white transition hover:bg-gray-100 dark:hover:bg-white/10"
             >
               <Upload className="mr-2 h-4 w-4" />
-              {importing ? t('importing') : t('importContacts')}
-              <input type="file" accept=".csv" onChange={handleImport} className="hidden" />
-            </label>
+              {t('importContacts')}
+            </button>
             <button
               type="button"
               onClick={() => setShowForm(true)}
@@ -572,6 +584,12 @@ export default function ContactsPage() {
                 </button>
               )}
             </div>
+
+            {/* Field conditions — notes, company, status, and every custom field
+                the business has defined. Same builder the broadcast audience uses. */}
+            <div className="mt-4">
+              <AudienceFilterBuilder value={advancedFilter} onChange={setAdvancedFilter} />
+            </div>
           </div>
         )}
 
@@ -609,6 +627,7 @@ export default function ContactsPage() {
             onDelete={handleDelete}
             confirmDeleteId={confirmDeleteId}
             onConfirmDelete={setConfirmDeleteId}
+            customFieldDefs={customFieldDefs}
           />
 
           {/* Empty state */}
@@ -715,6 +734,10 @@ export default function ContactsPage() {
         />
       )}
 
+      {showImport && (
+        <ImportWizard onClose={() => setShowImport(false)} onImported={fetchContacts} />
+      )}
+
       {/* ── Contact detail drawer ── */}
       {selectedContact && (
         <Modal
@@ -781,6 +804,45 @@ export default function ContactsPage() {
                 </div>
               ) : (
                 <div className="mt-6 space-y-6">
+                  {/* Built-in profile fields plus every custom field the business defined. */}
+                  <section className="rounded-xl border border-white/10 bg-white/5 p-4">
+                    <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
+                      <UserCheck className="h-4 w-4 text-[#25D366]" />
+                      {t('profileSection', { defaultValue: 'Profile' })}
+                    </div>
+                    <dl className="space-y-2.5">
+                      {[
+                        { label: t('form.email', { defaultValue: 'Email' }), value: details?.contact.email },
+                        { label: t('form.company', { defaultValue: 'Company' }), value: details?.contact.company },
+                        { label: t('form.notes'), value: details?.contact.notes },
+                      ].map(({ label, value }) => (
+                        <div key={label} className="flex items-start justify-between gap-4">
+                          <dt className="shrink-0 text-xs text-[#8696A0]">{label}</dt>
+                          <dd className="min-w-0 break-words text-end text-sm text-white">{value || '—'}</dd>
+                        </div>
+                      ))}
+
+                      {customFieldDefs.map((definition) => (
+                        <div key={definition.id} className="flex items-start justify-between gap-4">
+                          <dt className="shrink-0 text-xs text-[#8696A0]">{definition.label}</dt>
+                          <dd className="min-w-0 break-words text-end text-sm text-white">
+                            {formatFieldValue(definition, details?.contact.customFields?.[definition.key])}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+
+                    {customFieldDefs.length === 0 && (
+                      <Link
+                        href="/settings/custom-fields"
+                        className="mt-3 inline-flex items-center gap-1.5 text-xs text-[#25D366] hover:underline"
+                      >
+                        <SlidersHorizontal className="h-3 w-3" />
+                        {t('addCustomFields', { defaultValue: 'Add custom fields' })}
+                      </Link>
+                    )}
+                  </section>
+
                   <section className="rounded-xl border border-white/10 bg-white/5 p-4">
                     <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
                       <BriefcaseBusiness className="h-4 w-4 text-orange-400" />

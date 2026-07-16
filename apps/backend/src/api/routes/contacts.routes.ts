@@ -9,22 +9,75 @@ import { authMiddleware, checkPermission } from '../../auth/auth.middleware';
 import { prisma } from '../../lib/prisma';
 import { HttpError, type AuthActor } from '../../auth/authorize';
 import { validateBody } from '../validate';
+import { AUDIENCE_OPERATORS } from '../../broadcasts/audience';
+import { getConnectedNumber } from '../../whatsapp/client';
+import { regionOfPhone } from '../../lib/phone';
+import {
+  DUPLICATE_STRATEGIES,
+  detectMapping,
+  importRows,
+  listImportTargets,
+  validateRows,
+  type ImportRow,
+  type ImportOptions,
+} from '../../contacts/import.service';
 
 const router = Router();
 const upload = multer();
 
+/**
+ * Fill in the default region for local (country-code-less) numbers when the
+ * caller didn't pin one. Numbers already in international form auto-detect their
+ * own country and ignore this; only bare local numbers fall back to it. We infer
+ * it from the connected business number — imported contacts almost always share
+ * the business's country — and leave it unset otherwise so `normalizePhone`'s env
+ * default applies.
+ */
+function withResolvedRegion<T extends { defaultCountry?: string }>(options: T): T {
+  if (options.defaultCountry) return options;
+  const region = regionOfPhone(getConnectedNumber() || '');
+  return region ? { ...options, defaultCountry: region } : options;
+}
+
+// Import bodies are large; the 12 MB parser for `/api/contacts/import` is mounted
+// in index.ts, ahead of the global 2 MB one. A parser added here would be dead
+// code — `express.json` skips a request whose body another parser already read.
+
 router.use(authMiddleware);
 
-const createContactSchema = z.object({
+const contactSchema = z.object({
   phone: z.string().min(1).max(32),
-  name: z.string().max(200).optional(),
-  notes: z.string().max(5000).optional(),
+  name: z.string().max(200).nullish(),
+  email: z.string().max(200).nullish(),
+  company: z.string().max(200).nullish(),
+  notes: z.string().max(5000).nullish(),
+  source: z.string().max(100).nullish(),
+  lifecycleStage: z.string().max(50).optional(),
+  status: z.string().max(50).optional(),
+  customFields: z.record(z.unknown()).nullish(),
   tagIds: z.array(z.string()).optional(),
 });
 
-const updateContactSchema = z.object({
-  name: z.string().max(200).optional(),
-  notes: z.string().max(5000).optional(),
+const updateContactSchema = contactSchema.partial();
+
+const importOptionsSchema = z.object({
+  duplicateStrategy: z.enum(DUPLICATE_STRATEGIES).default('SKIP'),
+  defaultCountry: z.string().length(2).optional(),
+  createMissingTags: z.boolean().optional(),
+  source: z.string().max(100).optional(),
+});
+
+const importRowsSchema = z.object({
+  rows: z
+    .array(
+      z.object({
+        row: z.number().int().min(1),
+        values: z.record(z.unknown()),
+      }),
+    )
+    .min(1)
+    .max(1000),
+  options: importOptionsSchema,
 });
 
 function actorOf(req: any): AuthActor {
@@ -72,34 +125,193 @@ async function ensurePhase2Tables() {
   `);
 }
 
+const audienceFilterSchema = z.object({
+  tags: z.array(z.string()).optional(),
+  match: z.enum(['all', 'any']).optional(),
+  conditions: z
+    .array(
+      z.object({
+        field: z.string().min(1).max(64),
+        operator: z.enum(AUDIENCE_OPERATORS),
+        value: z.unknown().optional(),
+      }),
+    )
+    .max(20)
+    .optional(),
+});
+
+/**
+ * `?filter=` carries a JSON-encoded AudienceFilter. A malformed one is ignored,
+ * not fatal — a stale bookmark should show an unfiltered list, not an error.
+ * The shape is validated rather than trusted: `evaluateCondition` throws on an
+ * operator it does not know, so an unvetted string here would be a 500.
+ */
+function parseFilterQuery(raw: unknown) {
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  try {
+    const parsed = audienceFilterSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
 router.get('/', async (req, res) => {
   try {
     const { search, tag } = req.query;
     const contacts = await ContactsService.getContacts({
       search: search as string,
       tag: tag as string,
+      filter: parseFilterQuery(req.query.filter),
     });
     res.json(contacts);
   } catch (error) {
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+    sendError(res, error);
   }
 });
 
-router.post('/', checkPermission('create', 'contacts'), validateBody(createContactSchema), async (req, res) => {
+/**
+ * The values that actually occur in the data, per filterable field — so the
+ * filter builder can offer "tower is any of A, B" as chips instead of asking the
+ * user to remember and type the tower names. Declared before `/:id` so
+ * "field-values" is never read as a contact id.
+ */
+router.get('/field-values', async (_req, res) => {
   try {
+    res.json(await ContactsService.getFieldValues());
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+// ── Import ───────────────────────────────────────────────────────────────────
+// Declared before `/:id/...` so "import" is never mistaken for a contact id.
+
+/** Every column an import can target: built-ins plus this team's custom fields. */
+router.get('/import/targets', checkPermission('create', 'contacts'), async (req, res) => {
+  try {
+    const targets = await listImportTargets((req as any).user?.teamId);
+    res.json(targets);
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+/** Server-side column detection, so the wizard's guess matches the importer's rules. */
+router.post('/import/detect', checkPermission('create', 'contacts'), async (req, res) => {
+  try {
+    const headers = Array.isArray(req.body?.headers) ? req.body.headers.map(String) : [];
+    const targets = await listImportTargets((req as any).user?.teamId);
+    res.json({ mapping: detectMapping(headers, targets), targets });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+/** Dry run — the same checks the import performs, with nothing written. */
+router.post(
+  '/import/validate',
+  checkPermission('create', 'contacts'),
+  validateBody(importRowsSchema),
+  async (req, res) => {
+    try {
+      const { rows, options } = req.body as { rows: ImportRow[]; options: any };
+      const result = await validateRows(rows, withResolvedRegion(options), (req as any).user?.teamId);
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+);
+
+/** Apply one batch. The wizard streams batches so progress is real, not simulated. */
+router.post(
+  '/import/batch',
+  checkPermission('create', 'contacts'),
+  validateBody(importRowsSchema),
+  async (req, res) => {
+    try {
+      const { rows, options } = req.body as { rows: ImportRow[]; options: any };
+      const summary = await importRows(rows, withResolvedRegion(options), (req as any).user?.teamId);
+      res.json(summary);
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+);
+
+/**
+ * Legacy endpoint: a bare CSV upload with no mapping step. Kept working for any
+ * existing caller, but routed through the same importer so its behaviour (phone
+ * normalization, custom fields, duplicate handling) matches the wizard's.
+ */
+router.post('/import', checkPermission('create', 'contacts'), upload.single('file'), async (req, res) => {
+  try {
+    const file = req.file;
+    if (!file) return res.status(400).json({ error: 'No file uploaded' });
+
+    const teamId = (req as any).user?.teamId;
+    const targets = await listImportTargets(teamId);
+
+    const parsed: Array<Record<string, string>> = [];
+    await new Promise<void>((resolve, reject) => {
+      Readable.from(file.buffer)
+        .pipe(csv())
+        .on('data', (row) => parsed.push(row))
+        .on('error', reject)
+        .on('end', resolve);
+    });
+
+    if (!parsed.length) return res.json({ imported: 0, total: 0, failed: 0 });
+
+    const headers = Object.keys(parsed[0]);
+    const mapping = detectMapping(headers, targets);
+
+    const rows: ImportRow[] = parsed.map((raw, index) => {
+      const values: Record<string, unknown> = {};
+      headers.forEach((header, column) => {
+        const target = mapping[column];
+        if (target) values[target] = raw[header];
+      });
+      return { row: index + 2, values }; // +2: 1-based, and row 1 is the header
+    });
+
+    const legacyOptions: ImportOptions = { duplicateStrategy: 'SKIP' };
+    const summary = await importRows(rows, withResolvedRegion(legacyOptions), teamId);
+    const imported = summary.created + summary.updated + summary.merged;
+    res.json({ imported, total: rows.length, failed: summary.failed, skipped: summary.skipped });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+// ── CRUD ─────────────────────────────────────────────────────────────────────
+
+router.post('/', checkPermission('create', 'contacts'), validateBody(contactSchema), async (req, res) => {
+  try {
+    const { tagIds, ...data } = req.body;
     const contact = await ContactsService.createContact({
-      ...req.body,
+      ...data,
       teamId: (req as any).user?.teamId,
     });
+
+    if (Array.isArray(tagIds) && tagIds.length) {
+      await prisma.contactTag.createMany({
+        data: tagIds.map((tagId: string) => ({ contactId: contact.id, tagId })),
+        skipDuplicates: true,
+      });
+    }
+
     res.json(contact);
   } catch (error) {
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+    sendError(res, error);
   }
 });
 
 router.put('/:id', checkPermission('update', 'contacts'), validateBody(updateContactSchema), async (req, res) => {
   try {
-    const contact = await ContactsService.updateContact(req.params.id, req.body, actorOf(req));
+    const { tagIds: _tagIds, ...data } = req.body;
+    const contact = await ContactsService.updateContact(req.params.id, data, actorOf(req));
     res.json(contact);
   } catch (error) {
     sendError(res, error);
@@ -134,6 +346,7 @@ router.get('/:id/details', async (req, res) => {
     await ensurePhase2Tables();
     const contactRow = await prisma.contact.findFirst({
       where: { id: req.params.id },
+      include: { contactTags: { include: { tag: true } } },
     });
 
     if (!contactRow) {
@@ -185,7 +398,7 @@ router.get('/:id/details', async (req, res) => {
 
     res.json({ contact, deals, tasks, conversations });
   } catch (error) {
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+    sendError(res, error);
   }
 });
 
@@ -231,42 +444,7 @@ router.get('/:id/timeline', async (req, res) => {
 
     res.json(events);
   } catch (error) {
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-  }
-});
-
-router.post('/import', checkPermission('create', 'contacts'), upload.single('file'), async (req, res) => {
-  try {
-    const file = req.file;
-    if (!file) return res.status(400).json({ error: 'No file uploaded' });
-
-    const teamId = (req as any).user?.teamId;
-    const contacts: Array<{ phone: string; name?: string }> = [];
-
-    const stream = Readable.from(file.buffer);
-    stream
-      .pipe(csv())
-      .on('data', (row) => {
-        if (row.phone) {
-          contacts.push({
-            phone: String(row.phone).trim(),
-            name: row.name ? String(row.name).trim() : undefined,
-          });
-        }
-      })
-      .on('error', (err) => {
-        res.status(400).json({ error: `CSV parse error: ${err.message}` });
-      })
-      .on('end', async () => {
-        try {
-          const results = await ContactsService.importContacts(contacts, teamId);
-          res.json({ imported: results.length, total: contacts.length });
-        } catch (err) {
-          res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
-        }
-      });
-  } catch (error) {
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+    sendError(res, error);
   }
 });
 

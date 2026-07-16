@@ -3,6 +3,8 @@ import { prisma } from '../lib/prisma';
 import { providerManager } from '../providers/manager';
 import { emitRealtime } from '../realtime/socket';
 import { logger } from '../lib/logger';
+import { loadMedia, isAudioMediaType, resolveMediaUrl } from '../lib/media';
+import { buildPersonalizationVars, personalize } from './personalization';
 import interactiveMessageService from '../services/interactive-message.service';
 
 const redisUrl = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
@@ -25,62 +27,6 @@ function randomDelay(min: number, max: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Replace {{name}}, {{phone}} etc. with contact data */
-function personalizeMessage(template: string, vars: Record<string, string>): string {
-  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? '');
-}
-
-// Fallback mime per message type when the file server doesn't return a useful one.
-const MEDIA_MIME_FALLBACK: Record<string, string> = {
-  IMAGE: 'image/jpeg',
-  VIDEO: 'video/mp4',
-  DOCUMENT: 'application/octet-stream',
-  VOICE: 'audio/ogg',
-  AUDIO: 'audio/ogg',
-};
-
-/** A voice note or plain audio broadcast — both go out as WhatsApp audio. */
-function isAudioMediaType(mediaType?: string | null): boolean {
-  return mediaType === 'VOICE' || mediaType === 'AUDIO';
-}
-
-/**
- * Download the broadcast attachment ONCE (the same file goes to every recipient)
- * and resolve a usable mimetype. Returns null if there's no media or the fetch fails,
- * in which case the worker falls back to a plain-text send.
- */
-async function fetchBroadcastMedia(
-  url: string,
-  mediaType?: string | null,
-  filename?: string | null,
-): Promise<{ buffer: Buffer; mimetype: string; filename?: string } | null> {
-  try {
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`status ${resp.status}`);
-    const buffer = Buffer.from(await resp.arrayBuffer());
-    const headerMime = resp.headers.get('content-type')?.split(';')[0]?.trim();
-    let mimetype: string;
-    if (isAudioMediaType(mediaType)) {
-      // A recorded .webm is served as video/webm by the static file server, which
-      // would make the sender treat it as a video. Force an audio mime so it ships
-      // as a voice note (the sender transcodes to ogg/opus regardless).
-      mimetype = headerMime && headerMime.startsWith('audio/') ? headerMime : 'audio/ogg';
-    } else {
-      mimetype =
-        headerMime && headerMime !== 'application/octet-stream'
-          ? headerMime
-          : (mediaType && MEDIA_MIME_FALLBACK[mediaType]) || 'application/octet-stream';
-    }
-    return { buffer, mimetype, filename: filename ?? undefined };
-  } catch (err) {
-    logger.warn('broadcast.media_fetch_failed', {
-      url,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return null;
-  }
-}
-
 let workerInitialized = false;
 
 export function ensureBroadcastWorker() {
@@ -97,77 +43,103 @@ export function ensureBroadcastWorker() {
 
     if (!broadcast) throw new Error('Broadcast not found');
 
-    await prisma.broadcast.update({
-      where: { id: broadcastId },
-      data: { status: 'SENDING', sentAt: new Date() },
+    // The only status a job may run against is SENDING — the claim (manual send,
+    // scheduler dispatch, or due-batch poll) sets it before the job is added. Any
+    // other value means the row was claimed away: completed, cancelled, paused, or
+    // reverted. Bail before touching anyone's WhatsApp, and never re-set SENDING
+    // here (that would silently un-cancel a campaign the user just stopped).
+    if (broadcast.status !== 'SENDING') {
+      logger.info('broadcast.not_sending_skipping', { broadcastId, status: broadcast.status });
+      return { broadcastId, sent: broadcast.totalSent, failed: broadcast.totalFailed, skipped: true };
+    }
+
+    // Stamp the first-send time once, guarded so a cancel racing this instant wins.
+    await prisma.broadcast.updateMany({
+      where: { id: broadcastId, status: 'SENDING' },
+      data: { sentAt: broadcast.sentAt ?? new Date(), lastError: null },
     });
 
-    let sent = 0;
-    let failed = 0;
+    // Totals are cumulative across batches. Derive them from the recipient rows
+    // rather than the persisted counters: the per-recipient status is written on
+    // every send, so this stays accurate even if a crash killed a batch before its
+    // running total was saved.
+    let sent = broadcast.recipients.filter((r) => r.status === 'sent').length;
+    let failed = broadcast.recipients.filter((r) => r.status === 'failed').length;
     const total = broadcast.recipients.length;
 
-    // Media is the same for everyone — fetch it once up front, then reuse the buffer.
-    const mediaUrl = (broadcast as any).mediaUrl as string | null | undefined;
-    const mediaType = (broadcast as any).mediaType as string | null | undefined;
+    // One batch per job. For a plain (non-smart) send the batch is the whole
+    // remaining audience, so the loop below drains it in a single run exactly as
+    // before. For smart sending it is the next `batchSize` untried recipients.
+    const pending = broadcast.recipients.filter((r) => r.status === 'pending');
+    const batchLimit = broadcast.smartSending && broadcast.batchSize ? broadcast.batchSize : pending.length;
+    const batch = pending.slice(0, batchLimit);
+    const remainingAfterBatch = pending.length - batch.length;
+
+    const mediaType = broadcast.mediaType;
     const isVoiceBroadcast = isAudioMediaType(mediaType);
-    const media = mediaUrl
-      ? await fetchBroadcastMedia(
-          mediaUrl,
-          mediaType,
-          (broadcast as any).mediaFilename,
-        )
+
+    // The same file goes to every recipient — read it once, reuse the buffer.
+    // Reading happens off disk for local storage, so a send never depends on the
+    // API being able to reach its own public URL.
+    const media = broadcast.mediaUrl
+      ? await loadMedia(broadcast.mediaUrl, mediaType, broadcast.mediaFilename)
       : null;
 
-    for (let i = 0; i < broadcast.recipients.length; i++) {
-      const recipient = broadcast.recipients[i];
+    if (broadcast.mediaUrl && !media) {
+      // The attachment is gone. Sending the caption alone would silently turn an
+      // image campaign into a text blast, so fail loudly instead.
+      const message = 'Broadcast attachment could not be loaded — it may have been deleted from storage.';
+      await prisma.broadcast.update({
+        where: { id: broadcastId },
+        data: { status: 'FAILED', lastError: message, nextBatchAt: null },
+      });
+      emitRealtime('broadcast:complete', { broadcastId, sent: 0, failed: total, total, status: 'FAILED' }, broadcast.teamId ?? undefined);
+      throw new Error(message);
+    }
 
-      // Skip recipients already sent
-      if (recipient.status === 'sent') { sent += 1; continue; }
+    // One query for every recipient's contact record, instead of one per send.
+    // Also feeds custom-field personalization tokens like {{cf_city}}.
+    const contacts = await prisma.contact.findMany({
+      where: { phone: { in: broadcast.recipients.map((r) => r.phone) } },
+    });
+    const contactByPhone = new Map(contacts.map((contact) => [contact.phone, contact]));
 
-      // Re-check if broadcast was paused/cancelled between iterations
+    const interactiveContent = broadcast.interactiveContent as
+      | { kind: string; [key: string]: unknown }
+      | null
+      | undefined;
+
+    for (let i = 0; i < batch.length; i++) {
+      const recipient = batch[i];
+
+      // Re-check the campaign's status between sends. Anything other than SENDING
+      // — the user pressed Pause or Cancel, or another process reverted it —
+      // stops this batch. We persist the running totals but never write the
+      // status here, so the user's choice stands.
       const current = await prisma.broadcast.findUnique({
         where: { id: broadcastId },
         select: { status: true },
       });
-      if (current?.status === 'PAUSED') {
-        logger.info('broadcast.paused', { broadcastId, sentSoFar: sent });
-        // Update running totals but keep status as PAUSED
+      if (current && current.status !== 'SENDING') {
+        logger.info('broadcast.batch_stopped', { broadcastId, status: current.status, sentSoFar: sent });
         await prisma.broadcast.update({
           where: { id: broadcastId },
           data: { totalSent: sent, totalFailed: failed },
         });
-        return { broadcastId, sent, failed, paused: true };
-      }
-      if (current?.status === 'FAILED' || current?.status === 'DRAFT') {
-        logger.info('broadcast.aborted', { broadcastId, reason: current.status });
-        break;
+        return { broadcastId, sent, failed, stopped: current.status };
       }
 
-      // Resolve contact name for personalization
-      let contactName = '';
-      try {
-        const contact = await prisma.contact.findFirst({ where: { phone: recipient.phone }, select: { name: true } });
-        contactName = contact?.name ?? '';
-      } catch { /* non-critical */ }
-
-      const personalizedMessage = personalizeMessage(broadcast.message, {
-        name: contactName,
-        phone: recipient.phone,
-      });
-
-      const interactiveContent = (broadcast as any).interactiveContent as
-        | { kind: string; [key: string]: unknown }
-        | null
-        | undefined;
+      const vars = buildPersonalizationVars(contactByPhone.get(recipient.phone), recipient.phone);
+      const personalizedMessage = personalize(broadcast.message, vars);
 
       try {
         if (interactiveContent?.kind) {
           // Personalize the body field inside the interactive payload
           const personalizedInteractive = {
             ...interactiveContent,
-            body: personalizeMessage(
+            body: personalize(
               typeof interactiveContent.body === 'string' ? interactiveContent.body : '',
-              { name: contactName, phone: recipient.phone },
+              vars,
             ),
           };
           // Use native Baileys interactive send (real buttons/list/CTA) instead of text fallback.
@@ -200,7 +172,7 @@ export function ensureBroadcastWorker() {
               filename: media.filename,
               caption: isVoiceBroadcast ? undefined : personalizedMessage,
               isVoiceNote: isVoiceBroadcast,
-              url: mediaUrl ?? undefined,
+              url: resolveMediaUrl(broadcast.mediaUrl) ?? undefined,
             },
           });
         } else {
@@ -224,21 +196,53 @@ export function ensureBroadcastWorker() {
         failed += 1;
       }
 
-      emitRealtime('broadcast:progress', { broadcastId, sent, failed, total }, broadcast.teamId);
+      emitRealtime('broadcast:progress', { broadcastId, sent, failed, total }, broadcast.teamId ?? undefined);
 
-      // Anti-ban: randomized delay between sends (skip after last recipient)
-      if (i < broadcast.recipients.length - 1) {
+      // Anti-ban: randomized delay between sends (skip after the last in the batch)
+      if (i < batch.length - 1) {
         await randomDelay(SEND_DELAY_MIN, SEND_DELAY_MAX);
       }
     }
 
+    // ── Batch finished ──────────────────────────────────────────────────────
+    // More audience left and smart sending is on: park the campaign until the
+    // interval elapses. `nextBatchAt` is the only thing that has to persist for
+    // the scheduler to resume this on the next tick — even across a restart. The
+    // status stays SENDING so the list still reads "Sending…", now waiting.
+    if (remainingAfterBatch > 0 && broadcast.smartSending) {
+      const intervalMinutes = broadcast.batchIntervalMinutes ?? 30;
+      const nextBatchAt = new Date(Date.now() + intervalMinutes * 60_000);
+      // Guarded so a Pause/Cancel that landed during this batch is not overwritten.
+      const parked = await prisma.broadcast.updateMany({
+        where: { id: broadcastId, status: 'SENDING' },
+        data: { totalSent: sent, totalFailed: failed, nextBatchAt, queuedAt: null, lastError: null },
+      });
+      if (parked.count === 1) {
+        logger.info('broadcast.batch_parked', { broadcastId, sent, failed, remaining: remainingAfterBatch, nextBatchAt });
+        emitRealtime(
+          'broadcast:progress',
+          { broadcastId, sent, failed, total, nextBatchAt: nextBatchAt.toISOString() },
+          broadcast.teamId ?? undefined,
+        );
+      }
+      return { broadcastId, sent, failed, parked: true, nextBatchAt };
+    }
+
+    // ── Campaign finished ───────────────────────────────────────────────────
     const finalStatus = sent === 0 ? 'FAILED' : 'SENT';
-    await prisma.broadcast.update({
-      where: { id: broadcastId },
-      data: { status: finalStatus, totalSent: sent, totalFailed: failed },
+    await prisma.broadcast.updateMany({
+      where: { id: broadcastId, status: 'SENDING' },
+      data: {
+        status: finalStatus,
+        totalSent: sent,
+        totalFailed: failed,
+        nextBatchAt: null,
+        queuedAt: null,
+        lastError: finalStatus === 'FAILED' ? 'Every recipient failed. Check the WhatsApp connection.' : null,
+      },
     });
 
-    emitRealtime('broadcast:complete', { broadcastId, sent, failed, total, status: finalStatus }, broadcast.teamId);
+    emitRealtime('broadcast:complete', { broadcastId, sent, failed, total, status: finalStatus }, broadcast.teamId ?? undefined);
     return { broadcastId, sent, failed };
   });
 }

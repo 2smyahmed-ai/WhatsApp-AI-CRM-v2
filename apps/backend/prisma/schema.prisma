@@ -84,10 +84,14 @@ model Contact {
   phone          String             @unique
   name           String?
   email          String?
+  company        String?
   notes          String?
   status         String             @default("ACTIVE")
   lifecycleStage String             @default("LEAD")
   source         String?
+  /// User-defined field values, keyed by CustomFieldDefinition.key.
+  /// Also holds a few reserved system keys (avatarUrl, avatarUrlAt) that are
+  /// never exposed as custom fields — see contacts/custom-fields.service.ts.
   customFields   Json?
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @default(now()) @updatedAt
@@ -101,6 +105,54 @@ model Contact {
 
   @@index([teamId])
   @@index([phone])
+}
+
+/// The set of value types a user-defined contact field can take. Adding a member
+/// here requires a matching branch in `coerceCustomFieldValue`
+/// (contacts/custom-fields.service.ts) and a matching input in the frontend's
+/// `CustomFieldInput` component — there is no generic fallback on purpose, so a
+/// new type cannot silently store unvalidated data.
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  EMAIL
+  PHONE
+  DATE
+  SELECT
+  MULTI_SELECT
+  CHECKBOX
+  URL
+  CURRENCY
+  NOTES
+}
+
+/// A user-defined contact field. Values live in `Contact.customFields` keyed by
+/// `key`, so adding a field costs no migration and reading a contact costs no
+/// join. `key` is immutable once created — renaming it would orphan every
+/// stored value.
+model CustomFieldDefinition {
+  id           String          @id @default(cuid())
+  teamId       String?
+  key          String
+  label        String
+  type         CustomFieldType @default(TEXT)
+  /// SELECT / MULTI_SELECT choices: [{ value, label, color? }]
+  options      Json?
+  required     Boolean         @default(false)
+  defaultValue Json?
+  placeholder  String?
+  helpText     String?
+  /// ISO-4217 code for CURRENCY fields (e.g. "USD", "EGP").
+  currency     String?
+  /// Ascending display order across every surface that renders custom fields.
+  order        Int             @default(0)
+  /// Soft-disable: hidden from forms but stored values are preserved.
+  isActive     Boolean         @default(true)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @default(now()) @updatedAt
+
+  @@unique([teamId, key])
+  @@index([teamId, order])
 }
 
 // Relational tags — replaces the CSV `tag` field on Contact
@@ -421,20 +473,48 @@ model Broadcast {
   description        String?
   message            String
   interactiveContent Json?
+  /// Storage-relative media reference (e.g. "/uploads/ab12.jpg"), never an
+  /// absolute URL — see lib/media.ts. Absolute URLs stored by older builds are
+  /// normalized on read so a host/port change can't orphan the attachment.
   mediaUrl           String?
   mediaType          String?
   mediaFilename      String?
+  mediaMimeType      String?
   status             BroadcastStatus      @default(DRAFT)
   type               BroadcastType        @default(IMMEDIATE)
+  /// The absolute instant the broadcast fires (UTC). Never a wall-clock string.
   scheduledAt        DateTime?
   recurringCron      String?
+  /// IANA zone the user picked the wall-clock time in (e.g. "Africa/Cairo").
+  /// Used only to render `scheduledAt` back as the exact time they chose.
   timezone           String               @default("UTC")
   sentAt             DateTime?
+  /// Set when the scheduler claims the row, so a crashed run can be detected.
+  queuedAt           DateTime?
+  lastError          String?
   totalSent          Int                  @default(0)
   totalFailed        Int                  @default(0)
+  /// Smart Sending: deliver the audience in batches with a wait between each,
+  /// instead of one blast. Off by default; a small audience that fits in one
+  /// batch behaves exactly like an ordinary send.
+  smartSending       Boolean              @default(false)
+  /// Contacts per batch. Null unless smart sending is on.
+  batchSize          Int?
+  /// Minutes to wait between batches. Null unless smart sending is on.
+  batchIntervalMinutes Int?
+  /// When the next batch is due (UTC). This is the ONE piece of state that must
+  /// survive a restart for a paused-between-batches campaign to resume — the
+  /// scheduler polls it exactly like `scheduledAt`. Null while a batch is
+  /// actively sending or the campaign is finished.
+  nextBatchAt        DateTime?
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @default(now()) @updatedAt
   recipients         BroadcastRecipient[]
+
+  /// Drives the scheduler's due-broadcast poll.
+  @@index([status, scheduledAt])
+  /// Drives the scheduler's due-batch poll (smart sending continuations).
+  @@index([status, nextBatchAt])
 }
 
 enum BroadcastStatus {
@@ -444,6 +524,9 @@ enum BroadcastStatus {
   PAUSED
   SENT
   FAILED
+  /// Stopped by the user mid-campaign. Already-sent messages stay sent; no
+  /// further batches go out. Distinct from FAILED (which is a delivery problem).
+  CANCELLED
 }
 
 enum BroadcastType {
@@ -470,6 +553,8 @@ model BroadcastRecipient {
   broadcast   Broadcast @relation(fields: [broadcastId], references: [id])
   phone       String
   status      String    @default("pending")
+
+  @@index([broadcastId, status])
 }
 
 model Analytics {
@@ -534,7 +619,14 @@ model MessageTemplate {
   teamId         String?
   name           String
   content        String
+  /// Storage-relative media reference (e.g. "/uploads/ab12.jpg") — see lib/media.ts.
   mediaUrl       String?
+  /// IMAGE | VIDEO | DOCUMENT | AUDIO. Mirrors `payload.media.type`; kept as a
+  /// column so a template's attachment survives even if `payload` is legacy or
+  /// absent, and so media templates can be queried without parsing JSON.
+  mediaType      String?
+  mediaFilename  String?
+  mediaMimeType  String?
   type           TemplateType   @default(TEXT)
   status         TemplateStatus @default(DRAFT)
   // Meta Cloud API fields

@@ -8,6 +8,30 @@ module.exports = {
   ],
   theme: {
     extend: {
+      /**
+       * Colour-opacity modifiers (`bg-white/8`) resolve against this scale. A value
+       * that isn't in it emits **no CSS at all**, silently — and the UI leaned on
+       * these subtle tints in ~140 places, every one of them dead.
+       *
+       * The worst offender was table rows: `hover:bg-gray-50 dark:hover:bg-white/3`.
+       * With `/3` missing, the dark rule never existed, so the un-gated light rule
+       * applied in dark mode too — hovering a row turned it near-white and swallowed
+       * the white text and buttons sitting on it.
+       *
+       * Every value below is one the design already uses. Extending the scale once
+       * beats rewriting `bg-white/[0.03]` at 140 call sites.
+       */
+      opacity: {
+        3: '0.03',
+        4: '0.04',
+        6: '0.06',
+        7: '0.07',
+        8: '0.08',
+        12: '0.12',
+        18: '0.18',
+        92: '0.92',
+        98: '0.98',
+      },
       fontFamily: {
         sans: ['"Plus Jakarta Sans"', '"Segoe UI"', '"Helvetica Neue"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         arabic: ['"IBM Plex Arabic"', '"Segoe UI"', 'system-ui', 'sans-serif'],

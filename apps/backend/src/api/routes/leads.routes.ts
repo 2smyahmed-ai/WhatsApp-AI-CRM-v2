@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../../lib/prisma';
 import { authMiddleware, checkPermission } from '../../auth/auth.middleware';
-import { teamScope, type AuthActor } from '../../auth/authorize';
+import { teamScope, isManager, type AuthActor } from '../../auth/authorize';
 import { qualifyContact, serializeQualification } from '../../lead-qualification/lead-qualification.service';
 import { notificationsService } from '../../notifications/notifications.service';
 import type { LeadStatus, Priority } from '@prisma/client';
@@ -221,8 +221,7 @@ router.get('/:contactId', checkPermission('read', 'leads'), async (req, res) => 
     if (!q) return res.json({ qualification: null, history: [] });
 
     // Team scoping: shared (null) or same-team only, unless admin.
-    const allowed = actor.role === 'SUPER_ADMIN' || actor.role === 'ADMIN'
-      || q.teamId == null || q.teamId === actor.teamId;
+    const allowed = isManager(actor.role) || q.teamId == null || q.teamId === actor.teamId;
     if (!allowed) return res.status(403).json({ error: 'Forbidden' });
 
     const history = await prisma.leadStatusEvent.findMany({

@@ -1,12 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "*",
       "Bash(npx tsc *)",
       "Bash(npm install *)",
       "Skill(update-config)",
       "Skill(update-config:*)",
-      "Bash(echo \"---EXIT:$?---\")"
+      "Bash(echo \"---EXIT:$?---\")",
+      "Bash(npx prisma *)",
+      "Bash(npx tsx *)"
     ],
     "defaultMode": "bypassPermissions"
   }

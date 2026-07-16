@@ -12,10 +12,11 @@ import { useSocket } from '../../../hooks/useSocket';
 import { useLanguage } from '../../../components/providers/I18nProvider';
 import { useDirection } from '../../../hooks/useDirection';
 import LanguageSwitcher from '../../../components/ui/LanguageSwitcher';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import {
   Settings2, Globe, CheckCircle2, MessageCircle,
-  User, LogOut,
+  User, LogOut, SlidersHorizontal,
   Wifi, WifiOff, RefreshCw,
   ChevronRight, ShieldCheck, Eye, EyeOff, Loader, Lock,
 } from 'lucide-react';
@@ -613,6 +614,15 @@ export default function SettingsPage() {
             </button>
           );
         })}
+
+        {/* Contact fields live on their own route, not as a section of this page. */}
+        <Link
+          href="/settings/custom-fields"
+          className="flex shrink-0 items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-500 transition-all hover:text-gray-900 dark:border-white/10 dark:bg-[#202C33] dark:text-[#8696A0] dark:hover:text-white"
+        >
+          <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" />
+          {t('customFields.title', { defaultValue: 'Contact fields' })}
+        </Link>
       </div>
 
       {/* ── Main layout ── */}
@@ -641,6 +651,15 @@ export default function SettingsPage() {
               </button>
             );
           })}
+
+          <Link
+            href="/settings/custom-fields"
+            className="group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-gray-500 transition-all hover:bg-gray-50 hover:text-gray-900 dark:text-[#8696A0] dark:hover:bg-white/5 dark:hover:text-white"
+          >
+            <SlidersHorizontal className="h-4 w-4 shrink-0 text-gray-500 transition-colors group-hover:text-gray-900 dark:text-[#8696A0] dark:group-hover:text-white" />
+            <span className="flex-1 text-start">{t('customFields.title', { defaultValue: 'Contact fields' })}</span>
+            <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-60" />
+          </Link>
         </aside>
 
         {/* ── Content panel ── */}

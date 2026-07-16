@@ -126,5 +126,21 @@
     "currentLanguage": "Current language: {{lang}}",
     "restartNotice": "Language changes apply instantly without reloading.",
     "saved": "Language preference saved"
+  },
+  "back": "Back",
+  "customFields": {
+    "badge": "Custom fields",
+    "title": "Contact fields",
+    "subtitle": "Define the information your business tracks. Custom fields appear on contact profiles, in the import mapper, in filters, and as personalization tokens in broadcasts.",
+    "add": "New field",
+    "count": "{{count}} fields",
+    "savingOrder": "Saving order…",
+    "loading": "Loading fields…",
+    "emptyTitle": "No custom fields yet",
+    "emptyBody": "Add the fields your business actually uses — city, plan, renewal date, credit limit.",
+    "required": "Required",
+    "hidden": "Hidden",
+    "moveUp": "Move up",
+    "moveDown": "Move down"
   }
 }

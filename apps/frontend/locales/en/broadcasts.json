@@ -23,7 +23,11 @@
     "sent": "Sent",
     "failed": "Failed",
     "created": "Created",
-    "actions": "Actions"
+    "actions": "Actions",
+    "campaign": "Campaign",
+    "audience": "Audience",
+    "delivery": "Delivery",
+    "when": "When"
   },
   "status": {
     "DRAFT": "Draft",
@@ -138,6 +142,9 @@
     "deselectResults": "Deselect {{count}}",
     "contactSearchPlaceholder": "Search by name or phone…",
     "noContactsFound": "No contacts found.",
+    "noFilterMatches": "No contacts match these filters.",
+    "filtering": "Applying filters…",
+    "filterMatches": "match",
     "addManually": "Add numbers manually",
     "manualHint": "One number per line · international format",
     "resolvedAudience": "Resolved audience",
@@ -170,11 +177,19 @@
     "back": "Back",
     "stepOf": "Step {{step}} of {{total}}",
     "messagePlaceholder": "Hello {{name}}, we have an exclusive offer just for you…",
-    "varName": "Name",
+    "varName": "Full name",
+    "varFirstName": "First name",
     "varPhone": "Phone",
+    "varEmail": "Email",
     "varCompany": "Company",
-    "var1": "Field 1",
-    "var2": "Field 2"
+    "timezone": "Time zone",
+    "willSendAt": "Sends at",
+    "errorPastSchedule": "That time has already passed. Pick a future time or send now.",
+    "saveAsTemplate": "Save as template",
+    "templateSaved": "Saved as template",
+    "templateSaveFailed": "Could not save",
+    "templateIncludesMedia": "Attachment included",
+    "untitledTemplate": "Untitled template"
   },
   "interactive": {
     "tabButtons": "Quick Reply",
@@ -238,9 +253,82 @@
     "cancel": "Cancel"
   },
   "cancelConfirm": {
-    "title": "Cancel Broadcast",
-    "message": "Are you sure you want to cancel this scheduled broadcast?",
-    "confirm": "Cancel Broadcast",
-    "cancel": "Keep"
+    "title": "Stop this campaign?",
+    "message": "Already-sent messages stay sent, but no further batches will go out.",
+    "confirm": "Stop sending",
+    "cancel": "Keep sending"
+  },
+  "actions": {
+    "sendNow": "Send now",
+    "pause": "Pause",
+    "resume": "Resume",
+    "duplicate": "Duplicate",
+    "unschedule": "Unschedule",
+    "view": "View",
+    "cancel": "Stop campaign"
+  },
+  "delivery": {
+    "queued": "{{count}} queued",
+    "failedCount": "{{count}} failed"
+  },
+  "countdown": {
+    "in": "in {{span}}",
+    "overdue": "Overdue by {{span}}",
+    "dueNow": "Due now",
+    "underAMinute": "In under a minute",
+    "units": {
+      "d": "d",
+      "h": "h",
+      "m": "m"
+    }
+  },
+  "toasts": {
+    "duplicated": "Broadcast duplicated as a draft.",
+    "unscheduled": "Schedule cancelled. The broadcast is back in drafts.",
+    "cancelled": "Campaign stopped. No more messages will be sent."
+  },
+  "recipientStatus": {
+    "sent": "Sent",
+    "failed": "Failed",
+    "pending": "Pending"
+  },
+  "detail": {
+    "allRecipients": "All",
+    "attachment": "Attachment",
+    "createdOn": "Created {{date}}",
+    "downloadFile": "Download",
+    "exportFailed": "Export failed",
+    "interactive": "Interactive message",
+    "lastError": "Last error",
+    "noMessageBody": "No text — the attachment is sent on its own.",
+    "noRecipientsMatch": "No recipients match this filter.",
+    "nothingToDeliver": "No recipients yet.",
+    "openFile": "Open",
+    "searchPhone": "Search phone…"
+  },
+  "smart": {
+    "title": "Smart Sending",
+    "recommended": "Recommended",
+    "subtitle": "Send large campaigns in safe batches to protect your number from WhatsApp limits.",
+    "batchSizeLabel": "Contacts per batch",
+    "batchSizeHint": "How many contacts get the message before the system pauses.",
+    "intervalLabel": "Wait between batches",
+    "intervalHint": "How long to wait before sending the next group of contacts.",
+    "previewTitle": "Sending plan",
+    "totalContacts": "Total contacts",
+    "numBatches": "Number of batches",
+    "estimatedDuration": "Estimated duration",
+    "oneBatchImmediate": "Sends in one batch",
+    "addRecipients": "Add recipients to see the plan.",
+    "about": "About",
+    "hour": "hour",
+    "hours": "hours",
+    "minute": "minute",
+    "minutes": "minutes",
+    "lessThanAMinute": "less than a minute",
+    "currentBatch": "Batch {{current}} of {{total}}",
+    "nextBatch": "Next batch {{when}}",
+    "sendingBatch": "Sending…",
+    "batch": "Batch"
   }
 }

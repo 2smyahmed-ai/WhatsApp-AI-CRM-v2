@@ -521,7 +521,7 @@ function MediaBlockView({ media, caption, isFromMe }: { media: Media; caption?: 
     return (
       <div className={`flex items-center gap-3 rounded-xl px-3 py-3 ${isFromMe ? 'bg-black/10' : 'bg-gray-50 dark:bg-white/10'}`}>
         <FileTypeIcon ext={fileExtension(media.fileName, media.mime)} isFromMe={isFromMe} />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 max-w-[55vw] flex-1 sm:max-w-[240px]">
           <p className="truncate text-sm font-medium text-gray-900 dark:text-[#E9EDEF]">
             {media.fileName ?? t('message.attachmentUnavailable')}
           </p>
@@ -538,7 +538,7 @@ function MediaBlockView({ media, caption, isFromMe }: { media: Media; caption?: 
     <div className={`rounded-xl overflow-hidden ${isFromMe ? 'bg-black/10' : 'bg-gray-50 dark:bg-white/10'}`}>
       <div className="flex items-center gap-3 px-3 py-3">
         <FileTypeIcon ext={ext} isFromMe={isFromMe} />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 max-w-[55vw] flex-1 sm:max-w-[240px]">
           <p className="truncate text-sm font-medium text-gray-900 dark:text-[#E9EDEF]">
             {media.fileName ?? `Attachment.${ext.toLowerCase()}`}
           </p>
@@ -1052,7 +1052,7 @@ export function MessageRenderer({ message, reactions: reactionsProp = [], conver
         )}
 
         {/* Bubble */}
-        <div className={`inline-block w-fit px-3 py-2 ${bubbleTone} ${segments.some(s => s.kind === 'buttons') ? 'min-w-[200px]' : ''} ${isFromMe ? 'rounded-xl rounded-se-sm' : 'rounded-xl rounded-ss-sm'}`}>
+        <div className={`inline-block w-fit max-w-full overflow-hidden px-3 py-2 ${bubbleTone} ${segments.some(s => s.kind === 'buttons') ? 'min-w-[200px]' : ''} ${isFromMe ? 'rounded-xl rounded-se-sm' : 'rounded-xl rounded-ss-sm'}`}>
 
           <div className="space-y-1.5">
             {segments.map((seg, i) => {

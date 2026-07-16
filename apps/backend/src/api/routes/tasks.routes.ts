@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authMiddleware, requireAdmin } from '../../auth/auth.middleware';
+import { isManager } from '../../auth/authorize';
 import { TasksService } from '../../tasks/tasks.service';
 import { emitRealtime } from '../../realtime/socket';
 
@@ -7,13 +8,11 @@ const router = Router();
 
 router.use(authMiddleware);
 
-const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
-
 // GET /api/tasks — admin sees team tasks, agents see only their own
 router.get('/', async (req, res) => {
   try {
     const user = (req as any).user;
-    const isAdmin = ADMIN_ROLES.includes(user?.role);
+    const isAdmin = isManager(user?.role);
 
     const tasks = await TasksService.getTasks({
       teamId: user?.teamId ?? undefined,
@@ -40,7 +39,7 @@ router.get('/conversation/:conversationId', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const user = (req as any).user;
-    const isAdmin = ADMIN_ROLES.includes(user?.role);
+    const isAdmin = isManager(user?.role);
 
     const assigneeId = isAdmin ? (req.body.assigneeId || undefined) : user.id;
 
@@ -61,7 +60,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const user = (req as any).user;
-    const isAdmin = ADMIN_ROLES.includes(user?.role);
+    const isAdmin = isManager(user?.role);
 
     const updateData = isAdmin
       ? { ...req.body, teamId: user?.teamId ?? undefined }

@@ -11,6 +11,7 @@ import { logger } from './lib/logger';
 import { providerManager } from './providers/manager';
 import { bindRealtimeServer } from './realtime/socket';
 import { startSnoozeWakeupScheduler } from './conversations/snooze-wakeup';
+import { startBroadcastScheduler } from './broadcasts/broadcast.scheduler';
 import { ensureFlowWorker } from './automations/flow-executor';
 import { startNoReplyDetector } from './automations/no-reply-detector';
 import { aiBotService } from './services/ai-bot.service';
@@ -23,6 +24,7 @@ import authRoutes from './api/routes/auth.routes';
 import whatsappRoutes from './api/routes/whatsapp.routes';
 import conversationsRoutes from './api/routes/conversations.routes';
 import contactsRoutes from './api/routes/contacts.routes';
+import customFieldsRoutes from './api/routes/custom-fields.routes';
 import automationsRoutes from './api/routes/automations.routes';
 import broadcastsRoutes from './api/routes/broadcasts.routes';
 import analyticsRoutes from './api/routes/analytics.routes';
@@ -39,6 +41,7 @@ import chatbotRoutes from './api/routes/chatbot.routes';
 import leadsRoutes from './api/routes/leads.routes';
 import notificationsRoutes from './api/routes/notifications.routes';
 import pushRoutes from './api/routes/push.routes';
+import searchRoutes from './api/routes/search.routes';
 
 // Fail fast on missing/weak required configuration before binding the server.
 const config = loadEnv();
@@ -101,6 +104,12 @@ app.options(
 app.set('json replacer', (_key: string, value: unknown) =>
   typeof value === 'bigint' ? Number(value) : value,
 );
+// Contact imports post hundreds of mapped rows per batch, well past the ceiling
+// that suits ordinary CRUD. This parser must be mounted *before* the global one:
+// `express.json` marks the request as parsed, so whichever runs first wins, and a
+// route-level parser mounted later would never see the body. Non-JSON bodies
+// (the legacy multipart CSV upload on this same path) fall through untouched.
+app.use('/api/contacts/import', express.json({ limit: '12mb' }));
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -146,6 +155,7 @@ app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/conversations', conversationsRoutes);
 app.use('/api/contacts', contactsRoutes);
+app.use('/api/custom-fields', customFieldsRoutes);
 app.use('/api/automations', automationsRoutes);
 app.use('/api/broadcasts', broadcastsRoutes);
 app.use('/api/analytics', analyticsRoutes);
@@ -162,6 +172,7 @@ app.use('/api/chatbot', chatbotRoutes);
 app.use('/api/leads', leadsRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/push', pushRoutes);
+app.use('/api/search', searchRoutes);
 
 // ── DEV ONLY: force re-analysis of the most recent 1-to-1 chats. Runs inside
 // the live server so lead notifications/popups are pushed over the socket.
@@ -203,16 +214,30 @@ app.use('/api', (_req, res) => {
 app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
   // CORS rejections are client errors, not server faults.
   const isCorsError = err.message?.startsWith('CORS blocked');
-  const status = isCorsError ? 403 : 500;
+
+  // Errors that already carry a 4xx (body-parser's 413 "request entity too
+  // large", malformed JSON, and any HttpError that escaped a route) describe
+  // something the caller did. Reporting them as 500 tells the user the server
+  // broke when their file was simply too big.
+  const carried = (err as Error & { status?: number; statusCode?: number });
+  const declared = carried.status ?? carried.statusCode;
+  const isClientError = typeof declared === 'number' && declared >= 400 && declared < 500;
+
+  const status = isCorsError ? 403 : isClientError ? declared! : 500;
+
   logger.error('Unhandled request error', {
     method: req.method,
     path: req.path,
+    status,
     message: err.message,
     ...(config.isProduction ? {} : { stack: err.stack }),
   });
   if (res.headersSent) return;
   res.status(status).json({
-    error: status === 500 ? 'Internal server error' : 'Request blocked',
+    error:
+      status >= 500 ? 'Internal server error'
+      : isCorsError ? 'Request blocked'
+      : err.message,
   });
 });
 
@@ -229,6 +254,10 @@ server.listen(PORT, async () => {
   provisionDevSuperuser();
   provisionOwner();
   startSnoozeWakeupScheduler();
+  // Dispatches SCHEDULED broadcasts whose time has come, and recovers any run
+  // interrupted by a restart. Must start before traffic so a schedule that fell
+  // due while the process was down fires on the first tick.
+  startBroadcastScheduler();
   ensureFlowWorker();
   startNoReplyDetector();
   aiBotService.register(new GroqBotProvider());

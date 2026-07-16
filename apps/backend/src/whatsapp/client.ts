@@ -299,6 +299,17 @@ export { sock, currentQR, waStatus, connectedAt };
 export { lastConnectionError };
 export { getSessionId };
 
+/**
+ * The connected account's own number in E.164, or null when not connected.
+ * Local-number imports use this to infer their default region — contacts you
+ * import without a country code almost always share your business's country.
+ */
+export function getConnectedNumber(): string | null {
+  const rawId = sock?.user?.id;
+  if (!rawId) return null;
+  return parseWhatsAppJid(rawId) || normalizePhone(rawId);
+}
+
 export async function getWhatsAppProfilePictureUrl(phone: string) {
   if (!sock || waStatus !== 'connected') return null;
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -19,6 +19,7 @@ import { useSyncStatus } from '@/hooks/useSyncStatus';
 import NotificationBell from '@/components/notifications/NotificationBell';
 import { toSimpleRole, SIMPLE_ROLE_LABEL, SIMPLE_ROLE_BADGE } from '@/lib/roles';
 import { useChatUnread } from '@/stores/chat-unread-store';
+import { api } from '@/lib/api';
 
 const ICON_BTN =
   'press-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-500 ' +
@@ -43,9 +44,12 @@ export default function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [hardRefreshing, setHardRefreshing] = useState(false);
+  const [searchResults, setSearchResults] = useState<any>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
+  const searchDropdownRef = useRef<HTMLDivElement>(null);
 
   const onHardRefresh = () => {
     if (hardRefreshing) return;
@@ -92,10 +96,46 @@ export default function Header() {
     return () => document.removeEventListener('mousedown', onClick);
   }, [mobileMenuOpen]);
 
+  // Close search dropdown on outside click
+  useEffect(() => {
+    if (!searchResults) return;
+    const onClick = (e: MouseEvent) => {
+      if (searchDropdownRef.current && !searchDropdownRef.current.contains(e.target as Node)) {
+        setSearchResults(null);
+      }
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [searchResults]);
+
+  const handleSearchChange = useCallback(async (value: string) => {
+    setQuery(value);
+    if (value.length < 2) {
+      setSearchResults(null);
+      return;
+    }
+    setSearchLoading(true);
+    try {
+      const results = await api.get(`/api/search?q=${encodeURIComponent(value)}`);
+      setSearchResults(results);
+    } catch {
+      setSearchResults(null);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, []);
+
   const submitSearch = (e: React.FormEvent) => {
     e.preventDefault();
     const q = query.trim();
     if (q) router.push(`/contacts?search=${encodeURIComponent(q)}`);
+    setSearchResults(null);
+  };
+
+  const navigateToResult = (href: string) => {
+    router.push(href);
+    setSearchResults(null);
+    setQuery('');
   };
 
   const syncTitle = lastSynced
@@ -210,14 +250,14 @@ export default function Header() {
       <div className="hidden sm:flex items-center justify-between gap-3 px-6 py-3.5 lg:px-7">
 
         {/* Search */}
-        <form onSubmit={submitSearch} className="ps-12 lg:ps-0 flex-1 max-w-md">
+        <form onSubmit={submitSearch} className="ps-12 lg:ps-0 flex-1 max-w-md relative" ref={searchDropdownRef}>
           <div className="relative">
             <Search aria-hidden="true" className="pointer-events-none absolute start-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-[#8696A0]" />
             <input
               ref={searchRef}
               type="search"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => handleSearchChange(e.target.value)}
               placeholder={tCommon('header.searchPlaceholder')}
               aria-label={tCommon('header.searchPlaceholder')}
               className={cn(
@@ -229,6 +269,124 @@ export default function Header() {
             <kbd aria-hidden="true" className="absolute end-3 top-1/2 hidden -translate-y-1/2 items-center rounded-md border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-gray-400 sm:flex dark:border-white/10 dark:bg-white/5 dark:text-[#8696A0]">
               ⌘K
             </kbd>
+
+            {/* Search Results Dropdown */}
+            {searchResults && query.length >= 2 && (
+              <div className="absolute top-full start-0 end-0 mt-2 z-50 rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#111B21] shadow-[0_16px_40px_-12px_rgba(16,24,40,0.25)] dark:shadow-[0_16px_40px_-12px_rgba(0,0,0,0.6)]">
+                <div className="max-h-80 overflow-y-auto">
+                  {/* Contacts */}
+                  {searchResults.contacts?.length > 0 && (
+                    <div className="border-b border-gray-100 dark:border-white/10">
+                      <div className="px-4 py-2 text-xs font-semibold text-gray-500 dark:text-[#8696A0] uppercase tracking-wider bg-gray-50 dark:bg-white/5">
+                        Contacts
+                      </div>
+                      {searchResults.contacts.map((result: any) => (
+                        <button
+                          key={result.id}
+                          type="button"
+                          onClick={() => navigateToResult(result.href)}
+                          className="w-full px-4 py-2.5 text-sm text-start text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-white/5 transition-colors flex items-center gap-3"
+                        >
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#25D366]/10">
+                            <Search className="h-4 w-4 text-[#25D366]" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-medium">{result.title}</p>
+                            <p className="truncate text-xs text-gray-500 dark:text-[#8696A0]">{result.subtitle}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Templates */}
+                  {searchResults.templates?.length > 0 && (
+                    <div className="border-b border-gray-100 dark:border-white/10">
+                      <div className="px-4 py-2 text-xs font-semibold text-gray-500 dark:text-[#8696A0] uppercase tracking-wider bg-gray-50 dark:bg-white/5">
+                        Templates
+                      </div>
+                      {searchResults.templates.map((result: any) => (
+                        <button
+                          key={result.id}
+                          type="button"
+                          onClick={() => navigateToResult(result.href)}
+                          className="w-full px-4 py-2.5 text-sm text-start text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-white/5 transition-colors flex items-center gap-3"
+                        >
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-500/20">
+                            <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">T</span>
+                          </div>
+                          <p className="truncate font-medium">{result.title}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Broadcasts */}
+                  {searchResults.broadcasts?.length > 0 && (
+                    <div className="border-b border-gray-100 dark:border-white/10">
+                      <div className="px-4 py-2 text-xs font-semibold text-gray-500 dark:text-[#8696A0] uppercase tracking-wider bg-gray-50 dark:bg-white/5">
+                        Broadcasts
+                      </div>
+                      {searchResults.broadcasts.map((result: any) => (
+                        <button
+                          key={result.id}
+                          type="button"
+                          onClick={() => navigateToResult(result.href)}
+                          className="w-full px-4 py-2.5 text-sm text-start text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-white/5 transition-colors flex items-center gap-3"
+                        >
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-orange-100 dark:bg-orange-500/20">
+                            <span className="text-xs font-semibold text-orange-600 dark:text-orange-400">B</span>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-medium">{result.title}</p>
+                            <p className="truncate text-xs text-gray-500 dark:text-[#8696A0]">{result.subtitle}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Conversations */}
+                  {searchResults.conversations?.length > 0 && (
+                    <div>
+                      <div className="px-4 py-2 text-xs font-semibold text-gray-500 dark:text-[#8696A0] uppercase tracking-wider bg-gray-50 dark:bg-white/5">
+                        Conversations
+                      </div>
+                      {searchResults.conversations.map((result: any) => (
+                        <button
+                          key={result.id}
+                          type="button"
+                          onClick={() => navigateToResult(result.href)}
+                          className="w-full px-4 py-2.5 text-sm text-start text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-white/5 transition-colors flex items-center gap-3"
+                        >
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-500/20">
+                            <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">C</span>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-medium">{result.title}</p>
+                            <p className="truncate text-xs text-gray-500 dark:text-[#8696A0]">{result.subtitle}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* No results */}
+                  {!searchLoading && !searchResults.contacts?.length && !searchResults.templates?.length && !searchResults.broadcasts?.length && !searchResults.conversations?.length && (
+                    <div className="px-4 py-8 text-center text-sm text-gray-500 dark:text-[#8696A0]">
+                      No results found for "{query}"
+                    </div>
+                  )}
+
+                  {/* Loading */}
+                  {searchLoading && (
+                    <div className="px-4 py-8 text-center text-sm text-gray-500 dark:text-[#8696A0]">
+                      Searching...
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </form>
 

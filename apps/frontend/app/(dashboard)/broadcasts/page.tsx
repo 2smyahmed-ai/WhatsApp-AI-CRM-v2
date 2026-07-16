@@ -3,8 +3,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  Plus, Send, Megaphone, Pause, Play, Trash2,
+  Plus, Megaphone, Trash2, Clock, AlertCircle,
   SlidersHorizontal, ArrowUpDown, ArrowUp, ArrowDown, X, Info,
+  Search, Users,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -15,38 +16,92 @@ import { useSessionStatus } from '../../../hooks/useSessionStatus';
 import { TablePagination } from '../../../components/ui/TablePagination';
 import FriendlyError from '../../../components/ui/FriendlyError';
 import { classifyError } from '../../../lib/friendly-error';
+import { formatSchedule } from '../../../lib/schedule';
 import { cn } from '../../../lib/utils';
+import {
+  ALL_STATUSES, BroadcastActions, MEDIA_ICONS, STATUS_DOTS, STATUS_STYLES,
+  deliveryStats, useCountdownLabel, type BroadcastSummary as Broadcast,
+} from '../../../components/broadcasts/shared';
 
-interface Broadcast {
-  id: string;
-  name: string;
-  status: string;
-  totalSent: number;
-  totalFailed: number;
-  createdAt: string;
+type BroadcastSortKey = 'name' | 'status' | 'recipientCount' | 'totalSent' | 'progress' | 'createdAt';
+
+/**
+ * A scheduled broadcast shows when it will fire, plus how long until then; anything
+ * else shows when it was created. The absolute time is printed straight from the
+ * stored wall clock and its zone, so the list shows exactly what the user typed and
+ * exactly what the scheduler will act on.
+ */
+function WhenCell({ broadcast, now }: { broadcast: Broadcast; now: number }) {
+  const scheduled = broadcast.status === 'SCHEDULED' && broadcast.scheduledAtLocal;
+  const countdown = useCountdownLabel(scheduled ? broadcast.scheduledAt : null, now);
+
+  if (!scheduled) {
+    return (
+      <span>{new Date(broadcast.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+    );
+  }
+
+  return (
+    <div className="min-w-0">
+      <span
+        className="inline-flex items-center gap-1 text-blue-500 dark:text-blue-300"
+        title={`${broadcast.scheduledAtLocal} · ${broadcast.timezone}`}
+      >
+        <Clock className="h-3 w-3 shrink-0" />
+        <span className="truncate">{formatSchedule(broadcast.scheduledAtLocal, broadcast.timezone)}</span>
+      </span>
+      {countdown && (
+        <p className={cn('mt-0.5 text-[11px]', countdown.overdue ? 'text-amber-500' : 'text-gray-400 dark:text-[#8696A0]/70')}>
+          {countdown.label}
+        </p>
+      )}
+    </div>
+  );
 }
 
-type BroadcastSortKey = 'name' | 'status' | 'totalSent' | 'totalFailed' | 'createdAt';
+function DeliveryCell({ broadcast }: { broadcast: Broadcast }) {
+  const { t } = useTranslation('broadcasts');
+  const { total, attempted, sentPct, failedPct, successRate } = deliveryStats(broadcast);
 
-const STATUS_STYLES: Record<string, string> = {
-  DRAFT:     'bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-[#8696A0]',
-  SCHEDULED: 'bg-blue-100 text-blue-700 dark:bg-blue-400/15 dark:text-blue-300',
-  SENDING:   'bg-amber-100 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300',
-  PAUSED:    'bg-orange-100 text-orange-700 dark:bg-orange-400/15 dark:text-orange-300',
-  SENT:      'bg-green-100 text-green-700 dark:bg-[#25D366]/15 dark:text-[#25D366]',
-  FAILED:    'bg-red-100 text-red-700 dark:bg-red-400/15 dark:text-red-300',
-};
+  if (!total) return <span className="text-sm text-gray-400 dark:text-[#8696A0]/60">—</span>;
 
-const STATUS_DOTS: Record<string, string> = {
-  DRAFT:     'bg-gray-400',
-  SCHEDULED: 'bg-blue-400',
-  SENDING:   'bg-amber-400 animate-pulse',
-  PAUSED:    'bg-orange-400',
-  SENT:      'bg-[#25D366]',
-  FAILED:    'bg-red-400',
-};
+  // Nothing has been attempted yet: show the size of the audience, not a 0% bar
+  // that reads like a failure.
+  if (broadcast.status === 'DRAFT' || broadcast.status === 'SCHEDULED') {
+    return (
+      <span className="text-sm text-gray-500 dark:text-[#8696A0]">
+        {t('delivery.queued', { count: total, defaultValue: '{{count}} queued' })}
+      </span>
+    );
+  }
 
-const ALL_STATUSES = ['DRAFT', 'SCHEDULED', 'SENDING', 'PAUSED', 'SENT', 'FAILED'];
+  return (
+    <div className="min-w-[9rem]">
+      <div
+        className="flex h-1.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-white/10"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={total}
+        aria-valuenow={attempted}
+      >
+        <div className="h-full bg-[#25D366] transition-all" style={{ width: `${sentPct}%` }} />
+        <div className="h-full bg-red-400 transition-all" style={{ width: `${failedPct}%` }} />
+      </div>
+      <p className="mt-1 text-[11px] tabular-nums text-gray-500 dark:text-[#8696A0]">
+        <span className="font-medium text-gray-900 dark:text-white">{broadcast.totalSent.toLocaleString()}</span>
+        {' / '}{total.toLocaleString()}
+        {broadcast.totalFailed > 0 && (
+          <span className="text-red-400">
+            {' · '}{t('delivery.failedCount', { count: broadcast.totalFailed, defaultValue: '{{count}} failed' })}
+          </span>
+        )}
+        {successRate !== null && attempted === total && (
+          <span className="text-gray-400 dark:text-[#8696A0]/70"> · {successRate}%</span>
+        )}
+      </p>
+    </div>
+  );
+}
 
 function SortIcon({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
   if (!active) return <ArrowUpDown className="h-3 w-3 opacity-40" />;
@@ -73,9 +128,11 @@ export default function BroadcastsPage() {
   const [sendingId, setSendingId]             = useState<string | null>(null);
   const [deletingId, setDeletingId]           = useState<string | null>(null);
   const [pausingId, setPausingId]             = useState<string | null>(null);
+  const [busyId, setBusyId]                   = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  // ─── advanced filters ─────────────────────────────────────────────────────
+  // ─── search & advanced filters ────────────────────────────────────────────
+  const [search, setSearch]             = useState('');
   const [showFilters, setShowFilters]   = useState(false);
   const [filterStatus, setFilterStatus] = useState('');
   const [dateFrom, setDateFrom]         = useState('');
@@ -134,18 +191,34 @@ export default function BroadcastsPage() {
   useSocket('broadcast:progress', onBroadcastProgress);
   useSocket('broadcast:complete', onBroadcastComplete);
 
+  // A single clock for every countdown on the page. Ticking once a minute keeps
+  // "in 2h 15m" honest without re-rendering the table every second.
+  const [now, setNow] = useState(() => Date.now());
+  const hasScheduled = broadcasts.some((b) => b.status === 'SCHEDULED');
+  useEffect(() => {
+    if (!hasScheduled) return;
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, [hasScheduled]);
+
   // ─── Derived data ─────────────────────────────────────────────────────────
 
   const processedBroadcasts = useMemo(() => {
     let data = [...broadcasts];
+
+    const query = search.trim().toLowerCase();
+    if (query) data = data.filter((b) => b.name.toLowerCase().includes(query));
+
     if (filterStatus) data = data.filter((b) => b.status === filterStatus);
     if (dateFrom) data = data.filter((b) => new Date(b.createdAt) >= new Date(dateFrom));
     if (dateTo)   data = data.filter((b) => new Date(b.createdAt) <= new Date(dateTo + 'T23:59:59'));
     if (sortKey) {
       data.sort((a, b) => {
         let cmp = 0;
-        if (sortKey === 'totalSent' || sortKey === 'totalFailed') {
-          cmp = (a[sortKey] as number) - (b[sortKey] as number);
+        if (sortKey === 'totalSent' || sortKey === 'recipientCount') {
+          cmp = a[sortKey] - b[sortKey];
+        } else if (sortKey === 'progress') {
+          cmp = deliveryStats(a).attemptedPct - deliveryStats(b).attemptedPct;
         } else if (sortKey === 'createdAt') {
           cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
         } else {
@@ -155,7 +228,7 @@ export default function BroadcastsPage() {
       });
     }
     return data;
-  }, [broadcasts, filterStatus, dateFrom, dateTo, sortKey, sortDir]);
+  }, [broadcasts, search, filterStatus, dateFrom, dateTo, sortKey, sortDir]);
 
   const totalCount = processedBroadcasts.length;
 
@@ -187,17 +260,18 @@ export default function BroadcastsPage() {
     setPage(1);
   };
 
-  const SortTh = ({ k, label }: { k: BroadcastSortKey; label: string }) => (
+  const SortTh = ({ k, label, className }: { k: BroadcastSortKey; label: string; className?: string }) => (
     <th
       scope="col"
       aria-label={label}
       onClick={() => handleSort(k)}
       className={cn(
-        'cursor-pointer select-none px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider transition-colors',
+        'cursor-pointer select-none px-3 py-4 text-start text-xs font-semibold uppercase tracking-wider transition-colors lg:px-5 xl:px-6',
         sortKey === k ? 'text-[#25D366]' : 'text-gray-500 dark:text-[#8696A0] hover:text-gray-900 dark:hover:text-white',
+        className,
       )}
     >
-      <span className="flex items-center gap-1.5">
+      <span className="flex items-center gap-1.5 whitespace-nowrap">
         {label}
         <SortIcon active={sortKey === k} dir={sortDir} />
       </span>
@@ -271,6 +345,34 @@ export default function BroadcastsPage() {
     }
   };
 
+  /** Copy a campaign, audience and attachment included. The copy lands as a draft. */
+  const handleDuplicate = async (id: string) => {
+    try {
+      setBusyId(id);
+      const copy = await api.post<Broadcast>(`/api/broadcasts/${id}/duplicate`, {});
+      setBroadcasts((prev) => [copy, ...prev]);
+      success(t('toasts.duplicated', { defaultValue: 'Broadcast duplicated as a draft.' }));
+    } catch (err) {
+      explainToast(err);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  /** Cancel a schedule without sending — the broadcast returns to draft. */
+  const handleUnschedule = async (id: string) => {
+    try {
+      setBusyId(id);
+      await api.post(`/api/broadcasts/${id}/unschedule`, {});
+      success(t('toasts.unscheduled', { defaultValue: 'Schedule cancelled. The broadcast is back in drafts.' }));
+      await fetchBroadcasts();
+    } catch (err) {
+      explainToast(err);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const handleDeleteBroadcast = async (id: string) => {
     const snapshot = broadcasts;
     setBroadcasts((prev) => prev.filter((b) => b.id !== id));
@@ -310,11 +412,13 @@ export default function BroadcastsPage() {
   // ─── Derived helpers ──────────────────────────────────────────────────────
 
   const advancedFilterCount = (filterStatus ? 1 : 0) + (dateFrom ? 1 : 0) + (dateTo ? 1 : 0);
+  const hasAnyFilter = advancedFilterCount > 0 || search.trim().length > 0;
 
   const clearAdvancedFilters = () => {
     setFilterStatus('');
     setDateFrom('');
     setDateTo('');
+    setSearch('');
     setPage(1);
   };
 
@@ -400,8 +504,8 @@ export default function BroadcastsPage() {
         {/* Toolbar */}
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 dark:border-white/10">
           <div className="flex items-center gap-3">
-            {/* Mobile select-all checkbox */}
-            <label className="flex items-center gap-2 sm:hidden cursor-pointer">
+            {/* Select-all for the card list, which has no header row of its own */}
+            <label className="flex cursor-pointer items-center gap-2 md:hidden">
               <input
                 type="checkbox"
                 checked={allPageSelected}
@@ -426,24 +530,48 @@ export default function BroadcastsPage() {
               </button>
             )}
           </div>
-          <button
-            type="button"
-            onClick={() => setShowFilters((f) => !f)}
-            className={cn(
-              'inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-sm transition-colors',
-              showFilters || advancedFilterCount > 0
-                ? 'border-[#25D366]/40 bg-[#25D366]/10 text-[#25D366]'
-                : 'border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 text-gray-500 dark:text-[#8696A0] hover:bg-gray-100 dark:hover:bg-white/10',
-            )}
-          >
-            <SlidersHorizontal className="h-4 w-4" />
-            <span className="hidden sm:inline">{t('common:actions.filter')}</span>
-            {advancedFilterCount > 0 && (
-              <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#25D366] px-1 text-[10px] font-bold text-slate-950">
-                {advancedFilterCount}
-              </span>
-            )}
-          </button>
+
+          <div className="flex flex-1 items-center justify-end gap-2 sm:flex-none">
+            <div className="relative flex-1 sm:w-56 sm:flex-none">
+              <Search className="pointer-events-none absolute start-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400 dark:text-[#8696A0]" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                placeholder={t('searchPlaceholder')}
+                className="h-9 w-full rounded-xl border border-gray-200 bg-gray-50 ps-9 pe-8 text-sm text-gray-900 outline-none transition-colors focus:border-[#25D366]/50 dark:border-white/10 dark:bg-[#202C33] dark:text-white dark:placeholder:text-[#8696A0]"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => { setSearch(''); setPage(1); }}
+                  aria-label={t('clearFilters')}
+                  className="absolute end-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 dark:hover:text-white"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowFilters((f) => !f)}
+              className={cn(
+                'inline-flex h-9 shrink-0 items-center gap-2 rounded-xl border px-3 text-sm transition-colors',
+                showFilters || advancedFilterCount > 0
+                  ? 'border-[#25D366]/40 bg-[#25D366]/10 text-[#25D366]'
+                  : 'border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 text-gray-500 dark:text-[#8696A0] hover:bg-gray-100 dark:hover:bg-white/10',
+              )}
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+              <span className="hidden sm:inline">{t('common:actions.filter')}</span>
+              {advancedFilterCount > 0 && (
+                <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#25D366] px-1 text-[10px] font-bold text-slate-950">
+                  {advancedFilterCount}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Advanced filter panel */}
@@ -492,8 +620,8 @@ export default function BroadcastsPage() {
           </div>
         )}
 
-        {/* ── Mobile card list (hidden on sm+) ── */}
-        <div className="sm:hidden divide-y divide-gray-100 dark:divide-white/5">
+        {/* ── Card list — phones and small tablets, where a 7-column table can't fit ── */}
+        <div className="divide-y divide-gray-100 md:hidden dark:divide-white/5">
           {loading ? (
             [...Array(3)].map((_, i) => (
               <div key={i} className="animate-pulse px-4 py-4 space-y-2">
@@ -509,9 +637,9 @@ export default function BroadcastsPage() {
             <div className="px-4 py-16 text-center">
               <Megaphone className="mx-auto mb-3 h-8 w-8 text-gray-400 dark:text-[#8696A0]/30" />
               <p className="text-sm text-gray-500 dark:text-[#8696A0]">
-                {advancedFilterCount > 0 ? t('noResults') : t('noBroadcasts')}
+                {hasAnyFilter ? t('noResults') : t('noBroadcasts')}
               </p>
-              {advancedFilterCount > 0 ? (
+              {hasAnyFilter ? (
                 <button type="button" onClick={clearAdvancedFilters} className="mt-2 text-xs text-[#25D366] hover:underline">{t('clearFilters')}</button>
               ) : (
                 <Link href="/broadcasts/new" className="mt-2 inline-flex items-center gap-1 text-xs text-[#25D366] hover:underline">
@@ -538,58 +666,62 @@ export default function BroadcastsPage() {
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{broadcast.name}</p>
+                      <Link
+                        href={`/broadcasts/${broadcast.id}`}
+                        className="truncate text-sm font-semibold text-gray-900 hover:text-[#25D366] dark:text-white dark:hover:text-[#25D366]"
+                      >
+                        {broadcast.name}
+                      </Link>
+                      {broadcast.mediaType && MEDIA_ICONS[broadcast.mediaType] && (
+                        <span className="inline-flex items-center rounded-full bg-[#25D366]/12 p-1 text-[#25D366]">
+                          {(() => { const Icon = MEDIA_ICONS[broadcast.mediaType!]; return <Icon className="h-2.5 w-2.5" />; })()}
+                        </span>
+                      )}
                       <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium', STATUS_STYLES[broadcast.status] ?? STATUS_STYLES.DRAFT)}>
                         <span className={cn('h-1.5 w-1.5 rounded-full', STATUS_DOTS[broadcast.status] ?? 'bg-gray-400')} />
                         {t(`status.${broadcast.status}`, { defaultValue: broadcast.status })}
                       </span>
                     </div>
+
                     {/* meta row */}
-                    <div className="mt-1.5 flex items-center gap-3 text-xs text-gray-500 dark:text-[#8696A0]">
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-[#8696A0]">
                       <span className="flex items-center gap-1">
-                        <Send className="h-3 w-3" /> {broadcast.totalSent}
+                        <Users className="h-3 w-3" /> {broadcast.recipientCount.toLocaleString()}
                       </span>
-                      {broadcast.totalFailed > 0 && (
-                        <span className="flex items-center gap-1 text-red-400">
-                          <X className="h-3 w-3" /> {broadcast.totalFailed}
-                        </span>
-                      )}
-                      <span>{new Date(broadcast.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                      <WhenCell broadcast={broadcast} now={now} />
                     </div>
+
+                    <div className="mt-2 max-w-[16rem]">
+                      <DeliveryCell broadcast={broadcast} />
+                    </div>
+
+                    {broadcast.lastError && (
+                      <p className="mt-1.5 flex items-start gap-1.5 text-[11px] text-red-400">
+                        <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
+                        {broadcast.lastError}
+                      </p>
+                    )}
+
                     {/* action row */}
                     <div className="mt-2.5">
-                      {confirmDeleteId === broadcast.id ? (
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-red-300">{t('deleteConfirm.title')}</span>
-                          <button type="button" onClick={() => handleDeleteBroadcast(broadcast.id)} className="rounded-lg bg-red-500 px-2.5 py-1 text-xs font-semibold text-white">{t('common:yes')}</button>
-                          <button type="button" onClick={() => setConfirmDeleteId(null)} className="rounded-lg border border-gray-200 dark:border-white/10 px-2.5 py-1 text-xs text-gray-700 dark:text-white">{t('common:no')}</button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <Link href={`/broadcasts/${broadcast.id}/edit`} className="rounded-lg border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 px-3 py-1.5 text-xs text-gray-700 dark:text-white">
-                            {t('common:actions.edit')}
-                          </Link>
-                          {broadcast.status === 'SENDING' && (
-                            <button type="button" onClick={() => handlePauseBroadcast(broadcast.id)} disabled={pausingId === broadcast.id} className="inline-flex items-center gap-1 rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
-                              <Pause className="h-3.5 w-3.5" /> {t('status.PAUSED')}
-                            </button>
-                          )}
-                          {broadcast.status === 'PAUSED' && (
-                            <button type="button" onClick={() => handleResumeBroadcast(broadcast.id)} disabled={pausingId === broadcast.id} className="inline-flex items-center gap-1 rounded-lg bg-blue-500 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
-                              <Play className="h-3.5 w-3.5" /> {t('status.RUNNING')}
-                            </button>
-                          )}
-                          {(broadcast.status === 'DRAFT' || broadcast.status === 'SCHEDULED') && (
-                            <button type="button" onClick={() => handleSendBroadcast(broadcast.id)} disabled={sendingId === broadcast.id} className="inline-flex items-center gap-1 rounded-lg bg-[#25D366] px-3 py-1.5 text-xs font-semibold text-slate-950 disabled:opacity-50">
-                              <Send className="h-3.5 w-3.5" />
-                              {sendingId === broadcast.id ? t('status.SENDING') : t('common:actions.send')}
-                            </button>
-                          )}
-                          <button type="button" onClick={() => setConfirmDeleteId(broadcast.id)} disabled={deletingId === broadcast.id} className="rounded-lg border border-red-400/20 bg-red-400/8 p-1.5 text-red-400 disabled:opacity-50">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      )}
+                      <BroadcastActions
+                        broadcast={broadcast}
+                        align="start"
+                        busy={busyId === broadcast.id || deletingId === broadcast.id}
+                        sending={sendingId === broadcast.id}
+                        pausing={pausingId === broadcast.id}
+                        confirming={confirmDeleteId === broadcast.id}
+                        onView={() => router.push(`/broadcasts/${broadcast.id}`)}
+                        onSend={() => handleSendBroadcast(broadcast.id)}
+                        onPause={() => handlePauseBroadcast(broadcast.id)}
+                        onResume={() => handleResumeBroadcast(broadcast.id)}
+                        onEdit={() => router.push(`/broadcasts/${broadcast.id}/edit`)}
+                        onDuplicate={() => handleDuplicate(broadcast.id)}
+                        onUnschedule={() => handleUnschedule(broadcast.id)}
+                        onAskDelete={() => setConfirmDeleteId(broadcast.id)}
+                        onConfirmDelete={() => handleDeleteBroadcast(broadcast.id)}
+                        onCancelDelete={() => setConfirmDeleteId(null)}
+                      />
                     </div>
                   </div>
                 </div>
@@ -598,12 +730,17 @@ export default function BroadcastsPage() {
           )}
         </div>
 
-        {/* ── Desktop table (hidden on mobile) ── */}
-        <div className="hidden sm:block overflow-x-auto">
+        {/*
+          ── Table — tablets and up ──
+          Columns drop out as the viewport narrows, most-dispensable first:
+          "Audience" below xl (its number is already inside the delivery cell) and
+          "When" below lg. `overflow-x-auto` is the last resort, not the plan.
+        */}
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#202C33]">
-                <th scope="col" className="w-10 px-6 py-4">
+                <th scope="col" className="w-10 px-3 py-4 lg:px-5 xl:px-6">
                   <span className="sr-only">Select</span>
                   <input
                     type="checkbox"
@@ -613,25 +750,27 @@ export default function BroadcastsPage() {
                     className="h-4 w-4 cursor-pointer rounded border-white/20 accent-[#25D366]"
                   />
                 </th>
-                <SortTh k="name"        label={t('table.name')} />
-                <SortTh k="status"      label={t('table.status')} />
-                <SortTh k="totalSent"   label={t('table.sent')} />
-                <SortTh k="totalFailed" label={t('table.failed')} />
-                <SortTh k="createdAt"   label={t('table.created')} />
-                <th scope="col" className="px-6 py-4"><span className="sr-only">{t('table.actions')}</span></th>
+                <SortTh k="name"           label={t('table.campaign', { defaultValue: 'Campaign' })} />
+                <SortTh k="status"         label={t('table.status')} />
+                <SortTh k="recipientCount" label={t('table.audience', { defaultValue: 'Audience' })} className="hidden xl:table-cell" />
+                <SortTh k="progress"       label={t('table.delivery', { defaultValue: 'Delivery' })} />
+                <SortTh k="createdAt"      label={t('table.when', { defaultValue: 'When' })} className="hidden lg:table-cell" />
+                <th scope="col" className="px-3 py-4 text-end text-xs font-semibold uppercase tracking-wider text-gray-500 lg:px-5 xl:px-6 dark:text-[#8696A0]">
+                  {t('table.actions')}
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-white/5">
               {loading ? (
                 [...Array(3)].map((_, i) => (
                   <tr key={i} className="animate-pulse">
-                    <td className="px-6 py-4"><div className="h-4 w-4 rounded bg-gray-100 dark:bg-white/8" /></td>
-                    <td className="px-6 py-4"><div className="h-4 w-40 rounded bg-gray-100 dark:bg-white/8" /></td>
-                    <td className="px-6 py-4"><div className="h-5 w-20 rounded-full bg-gray-100 dark:bg-white/8" /></td>
-                    <td className="px-6 py-4"><div className="h-3 w-8 rounded bg-gray-50 dark:bg-white/5" /></td>
-                    <td className="px-6 py-4"><div className="h-3 w-8 rounded bg-gray-50 dark:bg-white/5" /></td>
-                    <td className="px-6 py-4"><div className="h-3 w-20 rounded bg-gray-50 dark:bg-white/5" /></td>
-                    <td className="px-6 py-4"><div className="h-7 w-24 rounded bg-gray-50 dark:bg-white/5" /></td>
+                    <td className="px-3 py-4 lg:px-5 xl:px-6"><div className="h-4 w-4 rounded bg-gray-100 dark:bg-white/8" /></td>
+                    <td className="px-3 py-4 lg:px-5 xl:px-6"><div className="h-4 w-40 rounded bg-gray-100 dark:bg-white/8" /></td>
+                    <td className="px-3 py-4 lg:px-5 xl:px-6"><div className="h-5 w-20 rounded-full bg-gray-100 dark:bg-white/8" /></td>
+                    <td className="hidden px-3 py-4 lg:px-5 xl:table-cell xl:px-6"><div className="h-3 w-8 rounded bg-gray-50 dark:bg-white/5" /></td>
+                    <td className="px-3 py-4 lg:px-5 xl:px-6"><div className="h-3 w-8 rounded bg-gray-50 dark:bg-white/5" /></td>
+                    <td className="hidden px-3 py-4 lg:table-cell lg:px-5 xl:px-6"><div className="h-3 w-20 rounded bg-gray-50 dark:bg-white/5" /></td>
+                    <td className="px-3 py-4 lg:px-5 xl:px-6"><div className="h-7 w-24 rounded bg-gray-50 dark:bg-white/5" /></td>
                   </tr>
                 ))
               ) : paginatedBroadcasts.length === 0 ? (
@@ -639,9 +778,9 @@ export default function BroadcastsPage() {
                   <td colSpan={7} className="px-6 py-16 text-center">
                     <Megaphone className="mx-auto mb-3 h-8 w-8 text-gray-400 dark:text-[#8696A0]/30" />
                     <p className="text-sm text-gray-500 dark:text-[#8696A0]">
-                      {advancedFilterCount > 0 ? t('noResults') : t('noBroadcasts')}
+                      {hasAnyFilter ? t('noResults') : t('noBroadcasts')}
                     </p>
-                    {advancedFilterCount > 0 ? (
+                    {hasAnyFilter ? (
                       <button
                         type="button"
                         onClick={clearAdvancedFilters}
@@ -660,15 +799,17 @@ export default function BroadcastsPage() {
                   </td>
                 </tr>
               ) : (
-                paginatedBroadcasts.map((broadcast) => (
+                paginatedBroadcasts.map((broadcast) => {
+                  const MediaIcon = broadcast.mediaType ? MEDIA_ICONS[broadcast.mediaType] : null;
+                  return (
                   <tr
                     key={broadcast.id}
                     className={cn(
-                      'group transition-colors hover:bg-gray-50 dark:hover:bg-white/3',
+                      'transition-colors hover:bg-gray-50 dark:hover:bg-white/3',
                       selectedIds.has(broadcast.id) && 'bg-[#25D366]/8',
                     )}
                   >
-                    <td className="px-6 py-3">
+                    <td className="px-3 py-3 lg:px-5 xl:px-6">
                       <input
                         type="checkbox"
                         checked={selectedIds.has(broadcast.id)}
@@ -676,57 +817,72 @@ export default function BroadcastsPage() {
                         className="h-4 w-4 cursor-pointer rounded border-white/20 accent-[#25D366]"
                       />
                     </td>
-                    <td className="px-6 py-3 text-sm font-medium text-gray-900 dark:text-white">{broadcast.name}</td>
-                    <td className="px-6 py-3">
+                    <td className="max-w-[12rem] px-3 py-3 lg:px-5 xl:max-w-none xl:px-6">
+                      <div className="flex items-center gap-2">
+                        <Link
+                          href={`/broadcasts/${broadcast.id}`}
+                          className="truncate text-sm font-medium text-gray-900 hover:text-[#25D366] dark:text-white dark:hover:text-[#25D366]"
+                        >
+                          {broadcast.name}
+                        </Link>
+                        {MediaIcon && (
+                          <span
+                            title={broadcast.mediaType ?? undefined}
+                            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#25D366]/12 px-1.5 py-0.5 text-[10px] font-medium text-[#25D366]"
+                          >
+                            <MediaIcon className="h-2.5 w-2.5" />
+                          </span>
+                        )}
+                      </div>
+                      {broadcast.lastError && (
+                        <span className="mt-0.5 flex items-start gap-1 text-[11px] font-normal text-red-400">
+                          <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
+                          <span className="line-clamp-2">{broadcast.lastError}</span>
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3 lg:px-5 xl:px-6">
                       <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium', STATUS_STYLES[broadcast.status] ?? STATUS_STYLES.DRAFT)}>
                         <span className={cn('h-1.5 w-1.5 rounded-full', STATUS_DOTS[broadcast.status] ?? 'bg-gray-400')} />
                         {t(`status.${broadcast.status}`, { defaultValue: broadcast.status })}
                       </span>
                     </td>
-                    <td className="px-6 py-3 text-sm text-gray-500 dark:text-[#8696A0]">{broadcast.totalSent}</td>
-                    <td className="px-6 py-3 text-sm text-gray-500 dark:text-[#8696A0]">{broadcast.totalFailed}</td>
-                    <td className="px-6 py-3 text-sm text-gray-500 dark:text-[#8696A0]">
-                      {new Date(broadcast.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                    <td className="hidden px-3 py-3 lg:px-5 xl:table-cell xl:px-6">
+                      <span className="inline-flex items-center gap-1.5 text-sm tabular-nums text-gray-500 dark:text-[#8696A0]">
+                        <Users className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                        {broadcast.recipientCount.toLocaleString()}
+                      </span>
                     </td>
-                    <td className="px-6 py-3">
-                      {confirmDeleteId === broadcast.id ? (
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-red-300">{t('deleteConfirm.title')}</span>
-                          <button type="button" onClick={() => handleDeleteBroadcast(broadcast.id)} className="rounded-lg bg-red-500 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-600 transition-colors">{t('common:yes')}</button>
-                          <button type="button" onClick={() => setConfirmDeleteId(null)} className="rounded-lg border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 px-2.5 py-1 text-xs text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">{t('common:no')}</button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Link
-                            href={`/broadcasts/${broadcast.id}/edit`}
-                            className="inline-flex items-center rounded-lg border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 px-3 py-1.5 text-xs text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
-                          >
-                            {t('common:actions.edit')}
-                          </Link>
-                          {broadcast.status === 'SENDING' && (
-                            <button type="button" onClick={() => handlePauseBroadcast(broadcast.id)} disabled={pausingId === broadcast.id} className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-600 disabled:opacity-50 transition-colors">
-                              <Pause className="h-3.5 w-3.5" /> {t('status.PAUSED')}
-                            </button>
-                          )}
-                          {broadcast.status === 'PAUSED' && (
-                            <button type="button" onClick={() => handleResumeBroadcast(broadcast.id)} disabled={pausingId === broadcast.id} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-600 disabled:opacity-50 transition-colors">
-                              <Play className="h-3.5 w-3.5" /> {t('status.RUNNING')}
-                            </button>
-                          )}
-                          {(broadcast.status === 'DRAFT' || broadcast.status === 'SCHEDULED') && (
-                            <button type="button" onClick={() => handleSendBroadcast(broadcast.id)} disabled={sendingId === broadcast.id} className="inline-flex items-center gap-1.5 rounded-lg bg-[#25D366] px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-[#25D366]/90 disabled:opacity-50 transition-colors">
-                              <Send className="h-3.5 w-3.5" />
-                              {sendingId === broadcast.id ? t('status.SENDING') : t('common:actions.send')}
-                            </button>
-                          )}
-                          <button type="button" onClick={() => setConfirmDeleteId(broadcast.id)} disabled={deletingId === broadcast.id} className="inline-flex items-center gap-1 rounded-lg border border-red-400/20 bg-red-400/8 px-2.5 py-1.5 text-xs text-red-400 hover:bg-red-400/15 disabled:opacity-50 transition-colors">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      )}
+                    <td className="px-3 py-3 lg:px-5 xl:px-6">
+                      <DeliveryCell broadcast={broadcast} />
+                    </td>
+                    <td className="hidden px-3 py-3 text-sm text-gray-500 lg:table-cell lg:px-5 xl:px-6 dark:text-[#8696A0]">
+                      <WhenCell broadcast={broadcast} now={now} />
+                    </td>
+                    <td className="px-3 py-3 lg:px-5 xl:px-6">
+                      <BroadcastActions
+                        broadcast={broadcast}
+                        align="end"
+                        compact
+                        busy={busyId === broadcast.id || deletingId === broadcast.id}
+                        sending={sendingId === broadcast.id}
+                        pausing={pausingId === broadcast.id}
+                        confirming={confirmDeleteId === broadcast.id}
+                        onView={() => router.push(`/broadcasts/${broadcast.id}`)}
+                        onSend={() => handleSendBroadcast(broadcast.id)}
+                        onPause={() => handlePauseBroadcast(broadcast.id)}
+                        onResume={() => handleResumeBroadcast(broadcast.id)}
+                        onEdit={() => router.push(`/broadcasts/${broadcast.id}/edit`)}
+                        onDuplicate={() => handleDuplicate(broadcast.id)}
+                        onUnschedule={() => handleUnschedule(broadcast.id)}
+                        onAskDelete={() => setConfirmDeleteId(broadcast.id)}
+                        onConfirmDelete={() => handleDeleteBroadcast(broadcast.id)}
+                        onCancelDelete={() => setConfirmDeleteId(null)}
+                      />
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>

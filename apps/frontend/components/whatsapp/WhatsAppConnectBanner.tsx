@@ -10,16 +10,15 @@
  * moment WhatsApp connects, and hides on the Settings page (where the QR lives).
  */
 
-import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MessageCircle, QrCode, ChevronRight, Minus, Wifi } from 'lucide-react';
 import { useSessionStatus } from '../../hooks/useSessionStatus';
+import QuickConnectModal from './QuickConnectModal';
 import { cn } from '../../lib/utils';
 
 const MIN_KEY = 'wa_connect_banner_min';
-const CONNECT_HREF = '/settings?section=whatsapp';
 
 export default function WhatsAppConnectBanner() {
   const { t } = useTranslation('common');
@@ -28,6 +27,7 @@ export default function WhatsAppConnectBanner() {
 
   const [minimized, setMinimized] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [connectOpen, setConnectOpen] = useState(false);
 
   useEffect(() => {
     setHydrated(true);
@@ -91,6 +91,7 @@ export default function WhatsAppConnectBanner() {
 
   // ── Full banner ────────────────────────────────────────────────────────────
   return (
+    <>
     <div className="px-4 pt-3 sm:px-6 sm:pt-4">
       <div
         className={cn(
@@ -122,8 +123,9 @@ export default function WhatsAppConnectBanner() {
 
           {/* Actions */}
           <div className="flex shrink-0 items-center gap-2">
-            <Link
-              href={CONNECT_HREF}
+            <button
+              type="button"
+              onClick={() => setConnectOpen(true)}
               className={cn(
                 'inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white px-4 py-2.5 text-sm font-bold shadow-sm transition-all hover:shadow-md active:scale-95 sm:flex-none',
                 connecting ? 'text-orange-700 hover:bg-orange-50' : 'text-[#075E54] hover:bg-emerald-50',
@@ -131,7 +133,7 @@ export default function WhatsAppConnectBanner() {
             >
               <Wifi className="h-4 w-4" aria-hidden="true" />
               {ctaLabel}
-            </Link>
+            </button>
             <button
               type="button"
               onClick={() => toggleMin(true)}
@@ -145,5 +147,7 @@ export default function WhatsAppConnectBanner() {
         </div>
       </div>
     </div>
+    <QuickConnectModal open={connectOpen} onClose={() => setConnectOpen(false)} />
+    </>
   );
 }

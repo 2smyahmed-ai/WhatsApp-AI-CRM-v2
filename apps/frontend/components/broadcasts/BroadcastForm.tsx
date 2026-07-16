@@ -5,7 +5,7 @@ import {
   Users, MessageSquare, Calendar, Send, ChevronDown, ChevronUp,
   Tag, Search, X, Check, Clock, Zap, AlertCircle, Smartphone,
   ChevronLeft, ChevronRight, Type, Image as ImageIcon, Video, FileText, Upload, Loader2,
-  Mic, Square, Play,
+  Mic, Square, Play, Globe, Bookmark, Paperclip, Layers, Timer, ShieldCheck,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api, apiForm } from '../../lib/api';
@@ -13,7 +13,16 @@ import FriendlyError from '../ui/FriendlyError';
 import { cn } from '../../lib/utils';
 import { useTags } from '../../hooks/useTags';
 import { useDirection } from '../../hooks/useDirection';
+import { useAudienceMatches } from '../../hooks/useAudienceMatches';
+import { useCustomFields } from '../../hooks/useCustomFields';
+import AudienceFilterBuilder from '../contacts/AudienceFilterBuilder';
+import { EMPTY_FILTER, type AudienceFilter } from '../../lib/audience-filter';
 import { useChatOpen } from '../../stores/chat-open-store';
+import { browserTimeZone, formatSchedule, nowAsWallClock, timeZoneOptions } from '../../lib/schedule';
+import { planBatches, humanizeDuration } from '../../lib/smart-sending';
+
+/** Wait-between-batches choices, in minutes. */
+const INTERVAL_PRESETS = [5, 10, 15, 30, 45, 60, 90, 120, 180, 240];
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 const QUICK_EMOJI = ['😊', '👋', '🎉', '✅', '🔥', '🙏', '📦', '💳', '📅', '⭐'];
@@ -54,32 +63,63 @@ interface BroadcastFormProps {
     message: string;
     recipients: string[];
     tag?: string;
-    scheduledAt?: string;
+    /** The exact wall clock the user picked, e.g. "2026-07-10T14:30". Never an instant. */
+    scheduledAtLocal?: string | null;
+    timezone?: string;
     mediaUrl?: string;
     mediaType?: string;
     mediaFilename?: string;
+    smartSending?: boolean;
+    batchSize?: number | null;
+    batchIntervalMinutes?: number | null;
   };
   submitLabel?: string;
   onBack?: () => void;
-  onSave: (broadcast: {
-    name: string;
-    message: string;
-    recipients: string[];
-    tag?: string;
-    scheduledAt?: Date;
-    interactiveContent?: object;
-    mediaUrl?: string;
-    mediaType?: string;
-    mediaFilename?: string;
-  }) => void | Promise<void>;
+  onSave: (broadcast: BroadcastPayload) => void | Promise<void>;
 }
 
-const VARIABLES = [
-  { key: '{{name}}',    labelKey: 'form.varName' },
-  { key: '{{phone}}',   labelKey: 'form.varPhone' },
-  { key: '{{company}}', labelKey: 'form.varCompany' },
-  { key: '{{1}}',       labelKey: 'form.var1' },
-  { key: '{{2}}',       labelKey: 'form.var2' },
+/**
+ * What the form posts. The schedule travels as a wall clock plus the zone it was
+ * chosen in — never as an instant — so the server resolves it once and the value
+ * that comes back is byte-for-byte what the user typed. See lib/schedule.ts.
+ */
+export interface BroadcastPayload {
+  name: string;
+  message: string;
+  recipients: string[];
+  tag?: string;
+  scheduledAtLocal?: string;
+  timezone?: string;
+  interactiveContent?: object;
+  mediaUrl?: string;
+  mediaType?: string;
+  mediaFilename?: string;
+  smartSending?: boolean;
+  batchSize?: number;
+  batchIntervalMinutes?: number;
+}
+
+interface TemplateSummary {
+  id: string;
+  name: string;
+  content: string;
+  mediaUrl?: string | null;
+  mediaType?: string | null;
+  mediaFilename?: string | null;
+}
+
+/**
+ * The tokens the sender actually substitutes — see broadcasts/personalization.ts.
+ * Anything not in that list renders as an empty string in the customer's WhatsApp,
+ * which is why the old {{1}} / {{2}} chips are gone: nothing ever replaced them,
+ * so they silently deleted themselves from the message.
+ */
+const BUILT_IN_VARIABLES = [
+  { key: 'name',       labelKey: 'form.varName',      fallback: 'Full name' },
+  { key: 'first_name', labelKey: 'form.varFirstName', fallback: 'First name' },
+  { key: 'phone',      labelKey: 'form.varPhone',     fallback: 'Phone' },
+  { key: 'email',      labelKey: 'form.varEmail',     fallback: 'Email' },
+  { key: 'company',    labelKey: 'form.varCompany',   fallback: 'Company' },
 ];
 const TOTAL_STEPS = 4;
 
@@ -215,13 +255,39 @@ export default function BroadcastForm({
     name: initialValues?.name ?? '',
     message: initialValues?.message ?? '',
     tag: initialValues?.tag ?? '',
-    scheduledAt: initialValues?.scheduledAt ?? '',
-    sendNow: !initialValues?.scheduledAt,
+    // Bound verbatim to the datetime-local input; never parsed into a Date here.
+    scheduledAtLocal: initialValues?.scheduledAtLocal ?? '',
+    timezone: initialValues?.timezone || browserTimeZone(),
+    sendNow: !initialValues?.scheduledAtLocal,
   });
+
+  // A schedule can only ever be in the future, so the picker refuses the past.
+  const minWallClock = useMemo(() => nowAsWallClock(1), []);
+  const zones = useMemo(() => timeZoneOptions(), []);
+
+  // Smart Sending — on by default (the recommended safe path). A small audience
+  // that fits in one batch waits for nothing, so this is harmless when it isn't
+  // needed and protective when it is.
+  const [smartSending, setSmartSending] = useState(initialValues?.smartSending ?? true);
+  const [batchSize, setBatchSize] = useState(initialValues?.batchSize ?? 50);
+  const [batchIntervalMinutes, setBatchIntervalMinutes] = useState(initialValues?.batchIntervalMinutes ?? 30);
 
   const [selectedContacts, setSelectedContacts] = useState<string[]>(initialRecipientSet);
   const [manualPhones, setManualPhones] = useState('');
   const [contactSearch, setContactSearch] = useState('');
+
+  // The advanced audience filter narrows the contact picker; it is a *selection*
+  // tool, not a targeting rule. Whoever it surfaces still has to be selected, and
+  // what the broadcast carries is the resulting phone list — so the count shown
+  // here is exactly the number of messages that will go out, even if a contact's
+  // fields change between now and a scheduled send.
+  const [audienceFilter, setAudienceFilter] = useState<AudienceFilter>(EMPTY_FILTER);
+  const {
+    phones: matchedPhones,
+    loading: filterLoading,
+    error: filterError,
+    active: filterActive,
+  } = useAudienceMatches(audienceFilter);
   const [error, setError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -253,9 +319,10 @@ export default function BroadcastForm({
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const recordingTimerRef = useRef<number | null>(null);
 
-  const [templates, setTemplates] = useState<Array<{ id: string; name: string; content: string }>>([]);
+  const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [showTemplates, setShowTemplates] = useState(false);
   const [templateSearch, setTemplateSearch] = useState('');
+  const [templateSaveState, setTemplateSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   // Mobile wizard step (1-4)
   const [mobileStep, setMobileStep] = useState(1);
@@ -264,8 +331,8 @@ export default function BroadcastForm({
 
   useEffect(() => {
     api
-      .get('/api/templates')
-      .then((data: unknown) => setTemplates(Array.isArray(data) ? data : []))
+      .get<TemplateSummary[]>('/api/templates')
+      .then((data) => setTemplates(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, []);
 
@@ -275,6 +342,7 @@ export default function BroadcastForm({
   const normalizeTag = (value: string) => value.trim().toLowerCase();
 
   const allTags = useTags();
+  const { definitions: customFieldDefs } = useCustomFields();
 
   const contactHasTag = (c: Contact, tagName: string): boolean =>
     c.contactTags?.some((ct) => normalizeTag(ct.tag.name) === normalizeTag(tagName)) ?? false;
@@ -291,13 +359,17 @@ export default function BroadcastForm({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedContacts, contacts, allTags]);
 
+  // The contact picker shows whoever survives *both* narrowings: the advanced
+  // filter (evaluated server-side — `matchedPhones` is null when no filter is
+  // set, which reads as "everything passes") and the free-text box on top of it.
   const filteredContacts = useMemo(() => {
-    if (!contactSearch.trim()) return contacts;
+    const byFilter = matchedPhones ? contacts.filter((c) => matchedPhones.has(c.phone)) : contacts;
+    if (!contactSearch.trim()) return byFilter;
     const q = contactSearch.toLowerCase();
-    return contacts.filter(
+    return byFilter.filter(
       (c) => (c.name ?? '').toLowerCase().includes(q) || c.phone.includes(q),
     );
-  }, [contacts, contactSearch]);
+  }, [contacts, contactSearch, matchedPhones]);
 
   const selectedSet = useMemo(() => new Set(selectedContacts), [selectedContacts]);
   const filteredPhones = useMemo(() => filteredContacts.map((c) => c.phone), [filteredContacts]);
@@ -365,8 +437,12 @@ export default function BroadcastForm({
       setError(t('form.errorNoRecipients'));
       return;
     }
-    if (!formData.sendNow && !formData.scheduledAt) {
+    if (!formData.sendNow && !formData.scheduledAtLocal) {
       setError(t('form.errorNoSchedule'));
+      return;
+    }
+    if (!formData.sendNow && formData.scheduledAtLocal < minWallClock) {
+      setError(t('form.errorPastSchedule', { defaultValue: 'That time has already passed. Pick a future time or send now.' }));
       return;
     }
 
@@ -377,10 +453,14 @@ export default function BroadcastForm({
         message: formData.message,
         recipients,
         tag: formData.tag.trim() || undefined,
-        scheduledAt: formData.sendNow ? undefined : new Date(formData.scheduledAt),
+        // The wall clock goes out exactly as typed, with the zone it was typed in.
+        scheduledAtLocal: formData.sendNow ? undefined : formData.scheduledAtLocal,
+        timezone: formData.timezone,
         mediaUrl: isMedia ? (mediaUrl || undefined) : undefined,
         mediaType: isMedia ? messageType : undefined,
         mediaFilename: isMedia ? (mediaFilename || undefined) : undefined,
+        smartSending,
+        ...(smartSending ? { batchSize, batchIntervalMinutes } : {}),
       });
     } catch (err) {
       // Surface a friendly cause instead of an unhandled rejection.
@@ -388,6 +468,52 @@ export default function BroadcastForm({
     } finally {
       setSubmitting(false);
     }
+  };
+
+  /**
+   * Save the current broadcast as a reusable template — text *and* attachment.
+   * The attachment is what used to be lost: only `content` was ever persisted.
+   */
+  const saveAsTemplate = async () => {
+    const name = formData.name.trim() || t('form.untitledTemplate', { defaultValue: 'Untitled template' });
+    setTemplateSaveState('saving');
+    try {
+      const saved = await api.post('/api/templates', {
+        name,
+        content: formData.message,
+        status: 'PUBLISHED',
+        ...(isMedia && mediaUrl
+          ? { mediaUrl, mediaType: messageType === 'VOICE' ? 'AUDIO' : messageType, mediaFilename: mediaFilename || undefined }
+          : {}),
+      });
+      setTemplates((current) => [saved, ...current]);
+      setTemplateSaveState('saved');
+      setTimeout(() => setTemplateSaveState('idle'), 2500);
+    } catch {
+      setTemplateSaveState('error');
+      setTimeout(() => setTemplateSaveState('idle'), 3000);
+    }
+  };
+
+  /** Restore a template into the composer — including its attachment. */
+  const applyTemplate = (template: TemplateSummary) => {
+    setFormData((prev) => ({ ...prev, message: template.content ?? '' }));
+
+    if (template.mediaUrl && template.mediaType) {
+      // AUDIO is stored once but surfaces as the VOICE composer, which is the
+      // only audio the broadcast form knows how to record or send.
+      const restored: MsgType = template.mediaType === 'AUDIO' ? 'VOICE' : (template.mediaType as MsgType);
+      setMessageType(restored);
+      setMediaUrl(template.mediaUrl);
+      setMediaFilename(template.mediaFilename ?? '');
+    } else {
+      setMessageType('TEXT');
+      setMediaUrl('');
+      setMediaFilename('');
+    }
+
+    setShowTemplates(false);
+    setTemplateSearch('');
   };
 
   const toggleContact = (phone: string) =>
@@ -449,7 +575,9 @@ export default function BroadcastForm({
       const fd = new FormData();
       fd.append('file', file);
       const res = await apiForm('/api/upload', fd);
-      setMediaUrl(`${API_BASE}${res.url}`);
+      // Local storage returns a path ("/uploads/x.jpg"); S3 returns an absolute URL.
+      // Only the former needs the API origin prepended to be loadable here.
+      setMediaUrl(/^https?:\/\//i.test(res.url) ? res.url : `${API_BASE}${res.url}`);
       setMediaFilename(file.name);
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : t('form.uploadFailed', { defaultValue: 'Upload failed' }));
@@ -518,6 +646,21 @@ export default function BroadcastForm({
     return templates.filter((t) => t.name.toLowerCase().includes(q) || t.content.toLowerCase().includes(q));
   }, [templates, templateSearch]);
 
+  // Every token the sender knows: the built-ins, then each custom field under its
+  // own key ({{tower}}). A field added in Settings shows up here with no code change.
+  const variables = useMemo(() => {
+    const builtIns = BUILT_IN_VARIABLES.map((variable) => ({
+      key: `{{${variable.key}}}`,
+      label: t(variable.labelKey, { defaultValue: variable.fallback }),
+    }));
+
+    const custom = customFieldDefs
+      .filter((definition) => definition.isActive)
+      .map((definition) => ({ key: `{{${definition.key}}}`, label: definition.label }));
+
+    return [...builtIns, ...custom];
+  }, [customFieldDefs, t]);
+
   const charCount = formData.message.length;
   const charWarning = charCount > 1000;
   const charLimit = charCount > 4096;
@@ -537,7 +680,7 @@ export default function BroadcastForm({
     formData.name.trim().length > 0,
     messageReady,
     hasAudience,
-    formData.sendNow || !!formData.scheduledAt,
+    formData.sendNow || (!!formData.scheduledAtLocal && formData.scheduledAtLocal >= minWallClock),
   ];
 
   const stepTitles = [
@@ -550,6 +693,94 @@ export default function BroadcastForm({
   const previewText = formData.message;
 
   const BackIcon = isRtl ? ChevronRight : ChevronLeft;
+
+  // ── Template controls — available for every message type, voice notes included ──
+  const templateControls = (
+    <>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {templates.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowTemplates((v) => !v)}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-[#202C33] px-3 py-2 text-xs font-medium text-[#8696A0] transition hover:bg-white/10"
+          >
+            {t('form.useTemplate')}
+            {showTemplates ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={saveAsTemplate}
+          disabled={templateSaveState === 'saving' || (!formData.message.trim() && !mediaUrl)}
+          className={cn(
+            'inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40',
+            templateSaveState === 'saved'
+              ? 'border-[#25D366]/40 bg-[#25D366]/10 text-[#25D366]'
+              : templateSaveState === 'error'
+                ? 'border-red-400/40 bg-red-400/10 text-red-400'
+                : 'border-white/10 bg-[#202C33] text-[#8696A0] hover:bg-white/10',
+          )}
+        >
+          {templateSaveState === 'saving' ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : templateSaveState === 'saved' ? (
+            <Check className="h-3.5 w-3.5" />
+          ) : (
+            <Bookmark className="h-3.5 w-3.5" />
+          )}
+          {templateSaveState === 'saved'
+            ? t('form.templateSaved', { defaultValue: 'Saved as template' })
+            : templateSaveState === 'error'
+              ? t('form.templateSaveFailed', { defaultValue: 'Could not save' })
+              : t('form.saveAsTemplate', { defaultValue: 'Save as template' })}
+        </button>
+
+        {isMedia && mediaUrl && templateSaveState === 'idle' && (
+          <span className="inline-flex items-center gap-1 text-[10px] text-[#8696A0]">
+            <Paperclip className="h-3 w-3" />
+            {t('form.templateIncludesMedia', { defaultValue: 'Attachment included' })}
+          </span>
+        )}
+      </div>
+
+      {showTemplates && templates.length > 0 && (
+        <div className="mb-4 rounded-xl border border-white/10 bg-[#0B141A] p-3">
+          <input
+            value={templateSearch}
+            onChange={(e) => setTemplateSearch(e.target.value)}
+            placeholder={t('form.searchTemplates')}
+            className="mb-2 w-full rounded-lg border border-white/10 bg-[#202C33] px-3 py-2 text-xs text-white placeholder-[#8696A0] outline-none focus:border-[#25D366]/40"
+          />
+          <div className="max-h-52 space-y-1.5 overflow-y-auto pe-1">
+            {filteredTemplates.length === 0 ? (
+              <p className="py-4 text-center text-xs text-[#8696A0]">{t('form.noTemplates')}</p>
+            ) : (
+              filteredTemplates.map((tpl) => (
+                <button
+                  key={tpl.id}
+                  type="button"
+                  onClick={() => applyTemplate(tpl)}
+                  className="w-full rounded-lg border border-white/5 bg-[#202C33] p-3 text-left transition hover:border-[#25D366]/30 hover:bg-white/5"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs font-medium text-white">{tpl.name}</p>
+                    {tpl.mediaUrl && (
+                      <span className="inline-flex items-center gap-0.5 rounded-full bg-[#25D366]/15 px-1.5 py-0.5 text-[9px] font-medium text-[#25D366]">
+                        <Paperclip className="h-2.5 w-2.5" />
+                        {tpl.mediaType}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-0.5 line-clamp-2 text-[10px] text-[#8696A0]">{tpl.content}</p>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
 
   // ── Audience section content (shared between mobile/desktop) ──
   const audienceContent = (
@@ -645,10 +876,35 @@ export default function BroadcastForm({
         )}
       </div>
 
+      {/* Advanced filter — the same conditions the contacts list is filtered with,
+          so an audience is picked in the vocabulary the business already uses. */}
+      <div className="mb-5">
+        <AudienceFilterBuilder
+          tone="dark"
+          value={audienceFilter}
+          onChange={setAudienceFilter}
+          summary={
+            filterActive ? (
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-[#8696A0]">
+                {filterLoading ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <span className="font-semibold text-[#25D366]">{matchedPhones?.size ?? 0}</span>
+                )}
+                {t('form.filterMatches', { defaultValue: 'match' })}
+              </span>
+            ) : null
+          }
+        />
+        {filterError && (
+          <p className="mt-2 text-[11px] text-red-400">{filterError}</p>
+        )}
+      </div>
+
       <div className="mb-5">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-[#8696A0]">
-            {t('form.contactsLabel', { count: contacts.length })}
+            {t('form.contactsLabel', { count: filteredContacts.length })}
             {selectedContacts.length > 0 && (
               <span className="ms-2 rounded-full bg-[#25D366]/15 px-2 py-0.5 text-[10px] font-bold normal-case tracking-normal text-[#25D366]">
                 {t('form.selectedCount', { count: selectedContacts.length })}
@@ -669,7 +925,7 @@ export default function BroadcastForm({
             >
               {allFilteredSelected
                 ? t('form.deselectResults', { count: filteredPhones.length })
-                : contactSearch.trim()
+                : contactSearch.trim() || filterActive
                   ? t('form.selectResults', { count: filteredPhones.length })
                   : t('form.selectAll')}
             </button>
@@ -692,8 +948,17 @@ export default function BroadcastForm({
         </div>
 
         <div className="max-h-72 overflow-y-auto rounded-xl border border-white/10 bg-[#0B141A]">
-          {filteredContacts.length === 0 ? (
-            <p className="py-8 text-center text-xs text-[#8696A0]">{t('form.noContactsFound')}</p>
+          {filterLoading && filteredContacts.length === 0 ? (
+            <p className="flex items-center justify-center gap-2 py-8 text-center text-xs text-[#8696A0]">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              {t('form.filtering', { defaultValue: 'Applying filters…' })}
+            </p>
+          ) : filteredContacts.length === 0 ? (
+            <p className="py-8 text-center text-xs text-[#8696A0]">
+              {filterActive
+                ? t('form.noFilterMatches', { defaultValue: 'No contacts match these filters.' })
+                : t('form.noContactsFound')}
+            </p>
           ) : (
             filteredContacts.map((c) => {
               const selected = selectedContacts.includes(c.phone);
@@ -791,6 +1056,23 @@ export default function BroadcastForm({
     </>
   );
 
+  // ── Smart Sending: batch plan + live preview strings ──
+  const smartPlan = planBatches(resolvedAudience.count, batchSize, batchIntervalMinutes);
+  const formatInterval = (minutes: number) =>
+    minutes < 60
+      ? `${minutes} ${t('smart.minutes', { defaultValue: 'minutes' })}`
+      : `${minutes / 60} ${minutes / 60 === 1
+          ? t('smart.hour', { defaultValue: 'hour' })
+          : t('smart.hours', { defaultValue: 'hours' })}`;
+  const durationLabel = humanizeDuration(smartPlan.estimatedSeconds, {
+    about: t('smart.about', { defaultValue: 'About' }),
+    hour: t('smart.hour', { defaultValue: 'hour' }),
+    hours: t('smart.hours', { defaultValue: 'hours' }),
+    minute: t('smart.minute', { defaultValue: 'minute' }),
+    minutes: t('smart.minutes', { defaultValue: 'minutes' }),
+    lessThanAMinute: t('smart.lessThanAMinute', { defaultValue: 'less than a minute' }),
+  });
+
   // ── Delivery section content ──
   const deliveryContent = (
     <>
@@ -833,16 +1115,177 @@ export default function BroadcastForm({
       </div>
 
       {!formData.sendNow && (
-        <div className="mt-4">
-          <p className="mb-1.5 text-xs font-medium text-[#8696A0]">{t('form.scheduleTime')}</p>
-          <input
-            type="datetime-local"
-            value={formData.scheduledAt}
-            onChange={(e) => setFormData({ ...formData, scheduledAt: e.target.value })}
-            className="w-full rounded-xl border border-white/10 bg-[#202C33] px-4 py-3 text-sm text-white outline-none transition focus:border-[#25D366]/50 focus:ring-1 focus:ring-[#25D366]/20 [color-scheme:dark]"
-          />
+        <div className="mt-4 space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <p className="mb-1.5 text-xs font-medium text-[#8696A0]">{t('form.scheduleTime')}</p>
+              <input
+                type="datetime-local"
+                value={formData.scheduledAtLocal}
+                min={minWallClock}
+                onChange={(e) => setFormData({ ...formData, scheduledAtLocal: e.target.value })}
+                className="w-full rounded-xl border border-white/10 bg-[#202C33] px-4 py-3 text-sm text-white outline-none transition focus:border-[#25D366]/50 focus:ring-1 focus:ring-[#25D366]/20 [color-scheme:dark]"
+              />
+            </div>
+            <div>
+              <p className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-[#8696A0]">
+                <Globe className="h-3.5 w-3.5" />
+                {t('form.timezone', { defaultValue: 'Time zone' })}
+              </p>
+              <select
+                value={formData.timezone}
+                onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
+                className="w-full rounded-xl border border-white/10 bg-[#202C33] px-4 py-3 text-sm text-white outline-none transition focus:border-[#25D366]/50 focus:ring-1 focus:ring-[#25D366]/20"
+              >
+                {zones.map((zone) => (
+                  <option key={zone} value={zone}>{zone}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Echo back exactly what will be stored, so there is no doubt left. */}
+          {formData.scheduledAtLocal && (
+            <div className="flex items-start gap-2 rounded-xl border border-[#25D366]/20 bg-[#25D366]/5 px-3 py-2.5">
+              <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#25D366]" />
+              <p className="text-xs text-[#8696A0]">
+                {t('form.willSendAt', { defaultValue: 'Sends at' })}{' '}
+                <span className="font-semibold text-white">
+                  {formatSchedule(formData.scheduledAtLocal, formData.timezone)}
+                </span>
+              </p>
+            </div>
+          )}
+
+          {formData.scheduledAtLocal && formData.scheduledAtLocal < minWallClock && (
+            <p className="flex items-center gap-1.5 text-xs text-red-400">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              {t('form.errorPastSchedule', { defaultValue: 'That time has already passed. Pick a future time or send now.' })}
+            </p>
+          )}
         </div>
       )}
+
+      {/* ── Smart Sending ── one card, one toggle, two numbers, a live plan ── */}
+      <div className={cn(
+        'mt-4 rounded-2xl border transition-colors',
+        smartSending ? 'border-[#25D366]/30 bg-[#25D366]/[0.06]' : 'border-white/10 bg-[#0B141A]',
+      )}>
+        <button
+          type="button"
+          onClick={() => setSmartSending((v) => !v)}
+          aria-pressed={smartSending}
+          className="flex w-full items-start gap-3 p-4 text-start"
+        >
+          <span className={cn(
+            'mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl',
+            smartSending ? 'bg-[#25D366]/15 text-[#25D366]' : 'bg-white/5 text-[#8696A0]',
+          )}>
+            <ShieldCheck className="h-5 w-5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold text-white">{t('smart.title', { defaultValue: 'Smart Sending' })}</span>
+              <span className="rounded-full bg-[#25D366]/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#25D366]">
+                {t('smart.recommended', { defaultValue: 'Recommended' })}
+              </span>
+            </span>
+            <span className="mt-0.5 block text-xs text-[#8696A0]">
+              {t('smart.subtitle', { defaultValue: 'Send large campaigns in safe batches to protect your number from WhatsApp limits.' })}
+            </span>
+          </span>
+          {/* Switch */}
+          <span className={cn(
+            'relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors',
+            smartSending ? 'bg-[#25D366]' : 'bg-white/15',
+          )}>
+            <span className={cn(
+              'absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all',
+              smartSending ? 'start-[1.375rem]' : 'start-0.5',
+            )} />
+          </span>
+        </button>
+
+        {smartSending && (
+          <div className="space-y-4 border-t border-white/10 p-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-[#8696A0]">
+                  {t('smart.batchSizeLabel', { defaultValue: 'Contacts per batch' })}
+                </label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={5000}
+                  value={batchSize}
+                  onChange={(e) => setBatchSize(Math.max(1, Math.min(5000, Math.floor(Number(e.target.value) || 0))))}
+                  className="w-full rounded-xl border border-white/10 bg-[#202C33] px-4 py-3 text-sm text-white outline-none transition focus:border-[#25D366]/50 focus:ring-1 focus:ring-[#25D366]/20 [color-scheme:dark]"
+                />
+                <p className="mt-1 text-[11px] text-[#8696A0]">
+                  {t('smart.batchSizeHint', { defaultValue: 'How many contacts get the message before the system pauses.' })}
+                </p>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-[#8696A0]">
+                  {t('smart.intervalLabel', { defaultValue: 'Wait between batches' })}
+                </label>
+                <select
+                  value={batchIntervalMinutes}
+                  onChange={(e) => setBatchIntervalMinutes(Number(e.target.value))}
+                  className="w-full rounded-xl border border-white/10 bg-[#202C33] px-4 py-3 text-sm text-white outline-none transition focus:border-[#25D366]/50 focus:ring-1 focus:ring-[#25D366]/20"
+                >
+                  {(INTERVAL_PRESETS.includes(batchIntervalMinutes)
+                    ? INTERVAL_PRESETS
+                    : [batchIntervalMinutes, ...INTERVAL_PRESETS].sort((a, b) => a - b)
+                  ).map((m) => (
+                    <option key={m} value={m}>{formatInterval(m)}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[11px] text-[#8696A0]">
+                  {t('smart.intervalHint', { defaultValue: 'How long to wait before sending the next group of contacts.' })}
+                </p>
+              </div>
+            </div>
+
+            {/* Live preview */}
+            <div className="rounded-xl border border-white/10 bg-[#0B141A] p-4">
+              <p className="mb-3 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-[#8696A0]">
+                <Layers className="h-3.5 w-3.5" />
+                {t('smart.previewTitle', { defaultValue: 'Sending plan' })}
+              </p>
+              {resolvedAudience.count === 0 ? (
+                <p className="text-xs text-[#8696A0]">{t('smart.addRecipients', { defaultValue: 'Add recipients to see the plan.' })}</p>
+              ) : (
+                <dl className="space-y-2 text-sm">
+                  {[
+                    { label: t('smart.totalContacts', { defaultValue: 'Total contacts' }), value: resolvedAudience.count.toLocaleString() },
+                    { label: t('smart.batchSizeLabel', { defaultValue: 'Contacts per batch' }), value: batchSize.toLocaleString() },
+                    { label: t('smart.numBatches', { defaultValue: 'Number of batches' }), value: smartPlan.numBatches.toLocaleString() },
+                    { label: t('smart.intervalLabel', { defaultValue: 'Wait between batches' }), value: formatInterval(batchIntervalMinutes) },
+                  ].map((row) => (
+                    <div key={row.label} className="flex items-center justify-between gap-3">
+                      <dt className="text-[#8696A0]">{row.label}</dt>
+                      <dd className="font-semibold text-white tabular-nums">{row.value}</dd>
+                    </div>
+                  ))}
+                  <div className="mt-1 flex items-center justify-between gap-3 border-t border-white/10 pt-2.5">
+                    <dt className="flex items-center gap-1.5 text-[#8696A0]">
+                      <Timer className="h-3.5 w-3.5" />
+                      {t('smart.estimatedDuration', { defaultValue: 'Estimated duration' })}
+                    </dt>
+                    <dd className="font-bold text-[#25D366]">
+                      {smartPlan.numBatches <= 1
+                        ? t('smart.oneBatchImmediate', { defaultValue: 'Sends in one batch' })
+                        : durationLabel}
+                    </dd>
+                  </div>
+                </dl>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Mini summary on step 4 mobile */}
       {resolvedAudience.count > 0 && (
@@ -1060,59 +1503,17 @@ export default function BroadcastForm({
                     </div>
                   )}
 
+                  {/* Templates apply to every message type, voice notes included. */}
+                  {templateControls}
+
                   {/* Caption composer — hidden for voice notes (WhatsApp audio has no caption) */}
                   {!isVoice && (
                   <>
-                  {/* Use a saved template as the message body / caption */}
-                  {templates.length > 0 && (
-                    <div className="mb-4">
-                      <button
-                        type="button"
-                        onClick={() => setShowTemplates((v) => !v)}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-[#202C33] px-3 py-2 text-xs font-medium text-[#8696A0] transition hover:bg-white/10"
-                      >
-                        {t('form.useTemplate')}
-                        {showTemplates ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                      </button>
-                      {showTemplates && (
-                        <div className="mt-3 rounded-xl border border-white/10 bg-[#0B141A] p-3">
-                          <input
-                            value={templateSearch}
-                            onChange={(e) => setTemplateSearch(e.target.value)}
-                            placeholder={t('form.searchTemplates')}
-                            className="mb-2 w-full rounded-lg border border-white/10 bg-[#202C33] px-3 py-2 text-xs text-white placeholder-[#8696A0] outline-none focus:border-[#25D366]/40"
-                          />
-                          <div className="max-h-52 space-y-1.5 overflow-y-auto pe-1">
-                            {filteredTemplates.length === 0 ? (
-                              <p className="py-4 text-center text-xs text-[#8696A0]">{t('form.noTemplates')}</p>
-                            ) : (
-                              filteredTemplates.map((tpl) => (
-                                <button
-                                  key={tpl.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setFormData((prev) => ({ ...prev, message: tpl.content }));
-                                    setShowTemplates(false);
-                                    setTemplateSearch('');
-                                  }}
-                                  className="w-full rounded-lg border border-white/5 bg-[#202C33] p-3 text-left transition hover:border-[#25D366]/30 hover:bg-white/5"
-                                >
-                                  <p className="text-xs font-medium text-white">{tpl.name}</p>
-                                  <p className="mt-0.5 line-clamp-2 text-[10px] text-[#8696A0]">{tpl.content}</p>
-                                </button>
-                              ))
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
                   {/* Personalization variables */}
                   <div className="mb-2.5">
                     <p className="mb-1.5 text-[10px] text-[#8696A0]">{t('form.insertVariable')}</p>
                     <div className="flex flex-wrap gap-2">
-                      {VARIABLES.map((v) => (
+                      {variables.map((v) => (
                         <button
                           key={v.key}
                           type="button"
@@ -1120,7 +1521,7 @@ export default function BroadcastForm({
                           className="flex flex-col items-center rounded-xl border border-[#25D366]/20 bg-[#25D366]/8 px-3 py-1.5 transition hover:bg-[#25D366]/15 active:scale-95"
                         >
                           <span className="font-mono text-[11px] font-semibold text-[#25D366]">{v.key}</span>
-                          <span className="mt-0.5 text-[9px] text-[#8696A0]">{t(v.labelKey)}</span>
+                          <span className="mt-0.5 text-[9px] text-[#8696A0]">{v.label}</span>
                         </button>
                       ))}
                     </div>
@@ -1217,8 +1618,8 @@ export default function BroadcastForm({
               <p className="mt-0.5 text-xs text-[#8696A0]">
                 {formData.sendNow
                   ? t('form.sendsNow')
-                  : formData.scheduledAt
-                    ? t('form.scheduledFor', { date: new Date(formData.scheduledAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) })
+                  : formData.scheduledAtLocal
+                    ? t('form.scheduledFor', { date: formatSchedule(formData.scheduledAtLocal, formData.timezone) })
                     : t('form.noScheduleSet')}
               </p>
             </div>

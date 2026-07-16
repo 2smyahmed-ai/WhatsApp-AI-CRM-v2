@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../../lib/prisma';
 import { authMiddleware, requireAdmin } from '../../auth/auth.middleware';
-import { excludeDevSuperuser, isDevSuperuserEmail } from '../../auth/authorize';
+import { excludeDevSuperuser, isDevSuperuserEmail, isManager } from '../../auth/authorize';
 
 const router = Router();
 
@@ -27,7 +27,7 @@ router.get('/all', requireAdmin, async (req, res) => {
 router.get('/agents', async (req, res) => {
   try {
     const user = (req as any).user;
-    const isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(user?.role);
+    const isAdmin = isManager(user?.role);
 
     const agents = await prisma.user.findMany({
       where: isAdmin

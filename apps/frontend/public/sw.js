@@ -1,7 +1,7 @@
 // Bump this on every release that must reach installed clients: the byte
 // change is what makes browsers install the new SW and fire the update flow,
 // and the activate handler below deletes every older cache bucket.
-const CACHE_NAME = 'nexus-crm-v3';
+const CACHE_NAME = 'nexus-crm-v4';
 const STATIC_SHELL = ['/', '/login'];
 
 // Listen for the client asking the new SW to take over immediately
@@ -101,17 +101,25 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Cache-first for everything else (icons, fonts, images)
-  event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request).then((response) => {
-        if (response.ok) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-        }
-        return response;
-      });
-    })
-  );
+  // Cache-first, but ONLY for real static assets (images/fonts/icons).
+  // Anything else falls through untouched — critically, this includes
+  // Next.js's RSC/flight fetches issued during client-side <Link>/router.push
+  // navigation (same page URL, plain fetch(), so mode !== 'navigate' and it's
+  // not under /_next/static/). Those must always hit the network: caching
+  // them by URL alone serves stale/mismatched flight payloads on the next
+  // transition and silently breaks client-side routing until a hard refresh.
+  if (request.destination === 'image' || request.destination === 'font') {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        if (cached) return cached;
+        return fetch(request).then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
+          return response;
+        });
+      })
+    );
+  }
 });

@@ -420,7 +420,7 @@ export default function ChatWindow({ conversationId, recipientContacts = [], onC
 
   const fetchTeams = useCallback(async () => {
     const role = (session?.user as any)?.role ?? '';
-    const isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(role);
+    const isAdmin = isManager(role);
     try {
       if (isAdmin) {
         const data = await api.get('/api/teams/all');

@@ -1,7 +1,7 @@
 // ─── Backend Template Compiler ────────────────────────────────────────────────
-// A template is a plain text message OR a media message (image/video/document)
-// with a caption. No buttons, no footer — Baileys sends exactly this, so the
-// recipient always gets what the builder previewed.
+// A template is a plain text message OR a media message (image/video/document/
+// audio) with a caption. No buttons, no footer — Baileys sends exactly this, so
+// the recipient always gets what the builder previewed.
 //
 // Converts a stored MessageTemplate.payload into a Renderable used for sending.
 
@@ -12,12 +12,15 @@ export type TemplateCategory =
   | 'ECOMMERCE' | 'APPOINTMENTS' | 'FOLLOW_UP'
   | string
 
-export type MediaType = 'IMAGE' | 'VIDEO' | 'DOCUMENT'
+/** AUDIO covers both a recorded voice note and an uploaded audio clip. */
+export type MediaType = 'IMAGE' | 'VIDEO' | 'DOCUMENT' | 'AUDIO'
 
 export interface CanonicalMedia {
   type: MediaType
+  /** Storage-relative ref (see lib/media.ts), never an absolute URL. */
   url?: string
   filename?: string
+  mimeType?: string
 }
 
 export interface CanonicalTemplate {
@@ -34,7 +37,7 @@ export interface CanonicalTemplate {
 }
 
 export interface RenderableTemplate {
-  media?: { type: MediaType; url?: string; filename?: string }
+  media?: { type: MediaType; url?: string; filename?: string; mimeType?: string }
   body: string
 }
 
@@ -81,7 +84,12 @@ export function toRenderable(
 
   const renderable: RenderableTemplate = { body: resolve(template.body.text) }
   if (template.media) {
-    renderable.media = { type: template.media.type, url: template.media.url, filename: template.media.filename }
+    renderable.media = {
+      type: template.media.type,
+      url: template.media.url,
+      filename: template.media.filename,
+      mimeType: template.media.mimeType,
+    }
   }
   return renderable
 }
@@ -116,9 +124,9 @@ export function foldLegacyCanonical(raw: any): CanonicalTemplate {
 
   const media: CanonicalMedia | undefined =
     header && header.type !== 'TEXT' && header.type
-      ? { type: header.type as MediaType, url: header.url, filename: header.filename }
+      ? { type: header.type as MediaType, url: header.url, filename: header.filename, mimeType: header.mimeType }
       : raw?.media
-      ? { type: raw.media.type as MediaType, url: raw.media.url, filename: raw.media.filename }
+      ? { type: raw.media.type as MediaType, url: raw.media.url, filename: raw.media.filename, mimeType: raw.media.mimeType }
       : undefined
 
   const canonical: CanonicalTemplate = {

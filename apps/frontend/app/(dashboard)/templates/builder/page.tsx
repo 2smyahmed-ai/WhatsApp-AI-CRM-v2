@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import {
   ArrowLeft, ArrowRight, Save, Loader2, Check, Smartphone, AlertTriangle, CheckCircle2,
-  Type, ImageIcon, Video, FileText, Upload, X, Send,
+  Type, ImageIcon, Video, FileText, Upload, X, Send, Mic, Play,
 } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { api, apiForm } from '../../../../lib/api';
@@ -36,6 +36,7 @@ const MESSAGE_TYPES: Array<{ type: MessageType; icon: typeof Type; labelKey: str
   { type: 'IMAGE',    icon: ImageIcon, labelKey: 'builder.typeImage',    fallback: 'Image' },
   { type: 'VIDEO',    icon: Video,     labelKey: 'builder.typeVideo',    fallback: 'Video' },
   { type: 'DOCUMENT', icon: FileText,  labelKey: 'builder.typeDocument', fallback: 'Document' },
+  { type: 'AUDIO',    icon: Mic,       labelKey: 'builder.typeAudio',    fallback: 'Audio' },
 ];
 
 // ── WhatsApp text renderer (*bold* _italic_ ~strike~) ──────────────────────────
@@ -67,6 +68,18 @@ function MessageBubble({ template, vars }: { template: CanonicalTemplate; vars: 
               <div className="flex h-28 items-center justify-center bg-white/10 text-white/40"><ImageIcon className="h-7 w-7" /></div>
             ) : r.media.type === 'VIDEO' ? (
               <div className="flex h-28 items-center justify-center bg-black/40 text-white/60"><Video className="h-8 w-8" /></div>
+            ) : r.media.type === 'AUDIO' ? (
+              <div className="flex items-center gap-2 px-3 py-3">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#25D366] text-slate-950">
+                  <Play className="h-4 w-4" fill="currentColor" />
+                </div>
+                <div className="flex flex-1 items-center gap-[2px]">
+                  {[7, 13, 18, 10, 15, 8, 14, 9, 16, 7, 12, 8, 13].map((h, i) => (
+                    <span key={i} className="w-[2px] rounded-full bg-white/50" style={{ height: `${h}px` }} />
+                  ))}
+                </div>
+                <Mic className="h-4 w-4 shrink-0 text-white/60" />
+              </div>
             ) : (
               <div className="flex items-center gap-2 bg-white/10 px-3 py-3">
                 <FileText className="h-6 w-6 text-white/70" />
@@ -222,6 +235,20 @@ function BuilderContent() {
       } else {
         canonical = { name: found.name, category: (found.category as TemplateCategory) ?? 'GENERAL', language: found.language ?? 'en_US', body: { text: found.content ?? '' } };
       }
+
+      // A template saved outside this builder — from a broadcast, or before the
+      // canonical payload existed — carries its attachment only in the columns.
+      // Without this, opening it would show no media and re-saving would erase
+      // it, which is precisely how attachments used to disappear.
+      if (!canonical.media && found.mediaUrl && found.mediaType) {
+        canonical.media = {
+          type: found.mediaType as MediaType,
+          url: found.mediaUrl,
+          filename: found.mediaFilename ?? undefined,
+          mimeType: found.mediaMimeType ?? undefined,
+        };
+      }
+
       canonical._meta = {
         ...canonical._meta,
         variableNames: extractVariableNames(canonical),
@@ -338,7 +365,13 @@ function BuilderContent() {
   };
 
   const isMedia = messageType !== 'TEXT';
-  const acceptFor = messageType === 'IMAGE' ? 'image/*' : messageType === 'VIDEO' ? 'video/*' : '*/*';
+  // WhatsApp audio ships as a voice message, which carries no caption.
+  const isAudio = messageType === 'AUDIO';
+  const acceptFor =
+    messageType === 'IMAGE' ? 'image/*'
+    : messageType === 'VIDEO' ? 'video/*'
+    : messageType === 'AUDIO' ? 'audio/*'
+    : '*/*';
   const charCount = template.body.text.length;
 
   const SaveButtonInner = (
@@ -393,7 +426,9 @@ function BuilderContent() {
                   onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
               ) : (
                 <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl bg-[#25D366]/10 text-[#25D366]">
-                  {messageType === 'VIDEO' ? <Video className="h-6 w-6" /> : <FileText className="h-6 w-6" />}
+                  {messageType === 'VIDEO' ? <Video className="h-6 w-6" />
+                    : messageType === 'AUDIO' ? <Mic className="h-6 w-6" />
+                    : <FileText className="h-6 w-6" />}
                 </div>
               )}
               <div className="min-w-0 flex-1">
@@ -427,7 +462,15 @@ function BuilderContent() {
         </section>
       )}
 
-      {/* 3 · Message text */}
+      {/* 3 · Message text — WhatsApp voice messages carry no caption */}
+      {isAudio ? (
+        <section>
+          <p className="flex items-center gap-1.5 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-[11px] text-gray-500 dark:border-white/10 dark:bg-[#111B21] dark:text-[#8696A0]">
+            <Mic className="h-3.5 w-3.5 shrink-0" />
+            {t('builder.audioHint', { defaultValue: 'Sent as a WhatsApp voice message. Audio messages cannot carry a caption.' })}
+          </p>
+        </section>
+      ) : (
       <section>
         <div className="mb-2 flex items-center justify-between">
           <label className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-[#8696A0]">
@@ -481,6 +524,7 @@ function BuilderContent() {
           ))}
         </div>
       </section>
+      )}
 
       {/* 4 · Test send */}
       <section className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-white/10 dark:bg-[#111B21]">

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
-import BroadcastForm from '../../../../components/broadcasts/BroadcastForm';
+import BroadcastForm, { type BroadcastPayload } from '../../../../components/broadcasts/BroadcastForm';
 import { api } from '../../../../lib/api';
 import { useDirection } from '../../../../hooks/useDirection';
 
@@ -36,19 +36,12 @@ export default function NewBroadcastPage() {
     fetchContacts();
   }, [fetchContacts]);
 
-  const handleSave = async (broadcast: {
-    name: string;
-    message: string;
-    recipients: string[];
-    scheduledAt?: Date;
-    interactiveContent?: object;
-    mediaUrl?: string;
-    mediaType?: string;
-    mediaFilename?: string;
-  }) => {
+  const handleSave = async (broadcast: BroadcastPayload) => {
     const createdBroadcast = await api.post('/api/broadcasts', broadcast);
 
-    if (!broadcast.scheduledAt && createdBroadcast?.id) {
+    // A scheduled broadcast is dispatched by the backend scheduler when its time
+    // comes; only an immediate one is sent from here.
+    if (!broadcast.scheduledAtLocal && createdBroadcast?.id) {
       await api.post(`/api/broadcasts/${createdBroadcast.id}/send`, {});
     }
 

@@ -20,18 +20,20 @@ export type TemplateLanguage = string // 'en_US' | 'ar' | 'fr' | 'es' | etc.
 // ── Message type ────────────────────────────────────────────────────────────────
 // The single choice a user makes: what kind of message is this?
 
-export type MessageType = 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT'
+export type MessageType = 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | 'AUDIO'
 
-export type MediaType = 'IMAGE' | 'VIDEO' | 'DOCUMENT'
+/** AUDIO covers a recorded voice note and an uploaded audio clip alike. */
+export type MediaType = 'IMAGE' | 'VIDEO' | 'DOCUMENT' | 'AUDIO'
 
 // ── Media ────────────────────────────────────────────────────────────────────
-// Present only for image / video / document templates. The message text lives in
-// `body` and is sent as the caption.
+// Present only for image / video / document / audio templates. The message text
+// lives in `body` and is sent as the caption (audio carries no caption).
 
 export interface CanonicalMedia {
   type: MediaType
   url?: string       // resolved URL after upload
   filename?: string  // shown for documents
+  mimeType?: string
 }
 
 // ── Canonical Template ────────────────────────────────────────────────────────
@@ -60,6 +62,7 @@ export interface RenderableTemplate {
     type: MediaType
     url?: string
     filename?: string
+    mimeType?: string
   }
   body: string
 }

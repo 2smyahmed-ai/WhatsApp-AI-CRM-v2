@@ -136,7 +136,9 @@
     "insert": "Personalize:",
     "previewEmpty": "Start typing to see your message",
     "editing": "Editing template",
-    "newDraft": "New template"
+    "newDraft": "New template",
+    "typeAudio": "Audio",
+    "audioHint": "Sent as a WhatsApp voice message. Audio messages cannot carry a caption."
   },
   "send": {
     "action": "Send",

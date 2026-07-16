@@ -17,8 +17,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
-
-const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
+import { isManager } from '@/lib/roles';
 
 type Section = 'overview' | 'crmAssistant' | 'leadQualification';
 type Provider = 'groq' | 'openai' | 'anthropic';
@@ -191,7 +190,7 @@ export default function ChatbotAdminPage() {
   const { isRTL } = useDirection();
 
   const role    = (session?.user as any)?.role ?? 'AGENT';
-  const isAdmin = ADMIN_ROLES.includes(role);
+  const isAdmin = isManager(role);
 
   const [activeSection, setActiveSection] = useState<Section>('overview');
   const [settings, setSettings]           = useState<ChatbotSettings | null>(null);

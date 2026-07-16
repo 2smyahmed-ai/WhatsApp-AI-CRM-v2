@@ -560,8 +560,8 @@ export default function TasksPage() {
                 </th>
                 <SortTh k="title"    label={t('table.title')} />
                 <SortTh k="priority" label={t('table.priority')} />
-                <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-[#8696A0]">{t('table.contact')}</th>
-                <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-[#8696A0]">{t('table.assignedTo')}</th>
+                <th scope="col" className="px-5 py-3.5 text-start text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-[#8696A0]">{t('table.contact')}</th>
+                <th scope="col" className="px-5 py-3.5 text-start text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-[#8696A0]">{t('table.assignedTo')}</th>
                 <SortTh k="dueDate" label={t('table.dueDate')} />
                 <SortTh k="status"  label={t('table.status')} />
                 <th scope="col" className="px-5 py-3.5"><span className="sr-only">{t('table.actions')}</span></th>

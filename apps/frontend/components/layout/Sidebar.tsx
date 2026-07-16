@@ -31,7 +31,8 @@ import { cn } from '@/lib/utils';
 import { useLiveCounts } from '../../hooks/useLiveCounts';
 import { useLeadAlerts } from '../../hooks/useLeadAlerts';
 import { useDirection } from '../../hooks/useDirection';
-import { isManager, roleLabel } from '../../lib/roles';
+import { isManager } from '../../lib/roles';
+import SidebarConnect from '../whatsapp/SidebarConnect';
 
 export default function Sidebar() {
   const [open, setOpen] = useState(false);
@@ -191,32 +192,10 @@ export default function Sidebar() {
         )}
       </nav>
 
-      {/* connection / role */}
-      <div className="px-3 pb-4 pt-2">
-        {/* Connection + role line */}
-        <div className="mt-3 flex items-center justify-between px-2">
-          <div className="flex items-center gap-2">
-            <span className="relative flex h-2 w-2 shrink-0">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#16A34A] opacity-70 dark:bg-[#25D366]" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#16A34A] dark:bg-[#25D366]" />
-            </span>
-            <span className="text-[11px] font-medium text-gray-500 dark:text-[#8696A0]">
-              {t('connected')}
-            </span>
-          </div>
-          {role && (
-            <span
-              className={cn(
-                'rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
-                isAdmin
-                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-400/15 dark:text-amber-400'
-                  : 'bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-[#8696A0]',
-              )}
-            >
-              {roleLabel(role)}
-            </span>
-          )}
-        </div>
+      {/* connection */}
+      <div className="flex justify-center px-3 pb-4 pt-2">
+        {/* Live WhatsApp connection — inline QR when offline */}
+        <SidebarConnect />
       </div>
     </>
   );

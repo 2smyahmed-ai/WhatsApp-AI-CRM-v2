@@ -23,7 +23,11 @@
     "sent": "مُرسَل",
     "failed": "فشل",
     "created": "تاريخ الإنشاء",
-    "actions": "الإجراءات"
+    "actions": "الإجراءات",
+    "campaign": "الحملة",
+    "audience": "الجمهور",
+    "delivery": "التسليم",
+    "when": "التوقيت"
   },
   "status": {
     "DRAFT": "مسودة",
@@ -138,6 +142,9 @@
     "deselectResults": "إلغاء تحديد {{count}}",
     "contactSearchPlaceholder": "البحث بالاسم أو الهاتف...",
     "noContactsFound": "لم يتم العثور على جهات اتصال.",
+    "noFilterMatches": "لا توجد جهات اتصال مطابقة لهذه الفلاتر.",
+    "filtering": "جارٍ تطبيق الفلاتر…",
+    "filterMatches": "مطابقة",
     "addManually": "إضافة أرقام يدوياً",
     "manualHint": "رقم واحد في كل سطر · بالصيغة الدولية",
     "resolvedAudience": "الجمهور المحدد",
@@ -170,11 +177,19 @@
     "back": "رجوع",
     "stepOf": "الخطوة {{step}} من {{total}}",
     "messagePlaceholder": "مرحباً {{name}}، لدينا عرض حصري لك…",
-    "varName": "الاسم",
+    "varName": "الاسم الكامل",
+    "varFirstName": "الاسم الأول",
     "varPhone": "الهاتف",
+    "varEmail": "البريد الإلكتروني",
     "varCompany": "الشركة",
-    "var1": "حقل 1",
-    "var2": "حقل 2"
+    "timezone": "المنطقة الزمنية",
+    "willSendAt": "يُرسل في",
+    "errorPastSchedule": "هذا الوقت قد مضى بالفعل. اختر وقتًا في المستقبل أو أرسل الآن.",
+    "saveAsTemplate": "حفظ كقالب",
+    "templateSaved": "تم الحفظ كقالب",
+    "templateSaveFailed": "تعذّر الحفظ",
+    "templateIncludesMedia": "المرفق مُضمَّن",
+    "untitledTemplate": "قالب بدون عنوان"
   },
   "interactive": {
     "tabButtons": "ردود سريعة",
@@ -238,9 +253,82 @@
     "cancel": "إلغاء"
   },
   "cancelConfirm": {
-    "title": "إلغاء الحملة",
-    "message": "هل أنت متأكد من رغبتك في إلغاء هذه الحملة المجدولة؟",
-    "confirm": "إلغاء الحملة",
-    "cancel": "إبقاء"
+    "title": "إيقاف هذه الحملة؟",
+    "message": "تبقى الرسائل المُرسَلة كما هي، لكن لن تُرسَل أي دفعات أخرى.",
+    "confirm": "إيقاف الإرسال",
+    "cancel": "متابعة الإرسال"
+  },
+  "actions": {
+    "sendNow": "إرسال الآن",
+    "pause": "إيقاف مؤقت",
+    "resume": "استئناف",
+    "duplicate": "نسخ",
+    "unschedule": "إلغاء الجدولة",
+    "view": "عرض",
+    "cancel": "إيقاف الحملة"
+  },
+  "delivery": {
+    "queued": "{{count}} في الانتظار",
+    "failedCount": "{{count}} فشل"
+  },
+  "countdown": {
+    "in": "خلال {{span}}",
+    "overdue": "متأخر بمقدار {{span}}",
+    "dueNow": "حان الآن",
+    "underAMinute": "خلال أقل من دقيقة",
+    "units": {
+      "d": "ي",
+      "h": "س",
+      "m": "د"
+    }
+  },
+  "toasts": {
+    "duplicated": "تم نسخ الرسالة الجماعية كمسودة.",
+    "unscheduled": "تم إلغاء الجدولة. عادت الرسالة إلى المسودات.",
+    "cancelled": "تم إيقاف الحملة. لن يتم إرسال أي رسائل أخرى."
+  },
+  "recipientStatus": {
+    "sent": "تم الإرسال",
+    "failed": "فشل",
+    "pending": "قيد الانتظار"
+  },
+  "detail": {
+    "allRecipients": "الكل",
+    "attachment": "مرفق",
+    "createdOn": "أُنشئت في {{date}}",
+    "downloadFile": "تنزيل",
+    "exportFailed": "تصدير الفاشلة",
+    "interactive": "رسالة تفاعلية",
+    "lastError": "آخر خطأ",
+    "noMessageBody": "لا يوجد نص — يُرسَل المرفق وحده.",
+    "noRecipientsMatch": "لا يوجد مستلمون يطابقون هذا الفلتر.",
+    "nothingToDeliver": "لا يوجد مستلمون بعد.",
+    "openFile": "فتح",
+    "searchPhone": "ابحث عن رقم…"
+  },
+  "smart": {
+    "title": "الإرسال الذكي",
+    "recommended": "موصى به",
+    "subtitle": "أرسل الحملات الكبيرة على دفعات آمنة لحماية رقمك من قيود واتساب.",
+    "batchSizeLabel": "عدد جهات الاتصال لكل دفعة",
+    "batchSizeHint": "عدد جهات الاتصال التي تصلها الرسالة قبل أن يتوقف النظام مؤقتاً.",
+    "intervalLabel": "الانتظار بين الدفعات",
+    "intervalHint": "المدة التي يجب انتظارها قبل إرسال المجموعة التالية من جهات الاتصال.",
+    "previewTitle": "خطة الإرسال",
+    "totalContacts": "إجمالي جهات الاتصال",
+    "numBatches": "عدد الدفعات",
+    "estimatedDuration": "المدة التقديرية",
+    "oneBatchImmediate": "يُرسل في دفعة واحدة",
+    "addRecipients": "أضف مستلمين لعرض الخطة.",
+    "about": "حوالي",
+    "hour": "ساعة",
+    "hours": "ساعات",
+    "minute": "دقيقة",
+    "minutes": "دقائق",
+    "lessThanAMinute": "أقل من دقيقة",
+    "currentBatch": "الدفعة {{current}} من {{total}}",
+    "nextBatch": "الدفعة التالية {{when}}",
+    "sendingBatch": "جارٍ الإرسال…",
+    "batch": "دفعة"
   }
 }

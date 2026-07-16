@@ -431,15 +431,23 @@ html[dir="rtl"] .typing-indicator {
   flex-direction: row-reverse;
 }
 
-/* ─── Table RTL ───────────────────────────────────────────── */
-html[dir="rtl"] th,
-html[dir="rtl"] td {
-  text-align: right;
-}
-
-html[dir="rtl"] th:first-child,
-html[dir="rtl"] td:first-child {
-  text-align: right;
+/* ─── Table cell alignment ────────────────────────────────── */
+/*
+ * `start` is the logical value: left in LTR, right in RTL. One rule, both
+ * directions — and it also overrides the browser's odd default of centring `th`.
+ *
+ * This *replaces* a pair of `html[dir="rtl"] td { text-align: right }` rules.
+ * Those had specificity (0,1,2), which outranks a Tailwind `.text-center`
+ * (0,1,0), so in Arabic every centred or end-aligned cell in the app was
+ * silently forced back to the right — an empty-state message would sit hard
+ * against the edge while its icon (centred by `mx-auto`, a margin) stayed put.
+ *
+ * `:where()` contributes zero specificity, so any alignment utility now wins,
+ * while author origin still beats the UA sheet. Cells that need a physical
+ * side must say so with `text-start` / `text-end`, never `text-left`/`text-right`.
+ */
+:where(th, td) {
+  text-align: start;
 }
 
 /* ─── Form elements RTL ──────────────────────────────────── */

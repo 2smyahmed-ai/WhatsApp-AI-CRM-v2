@@ -444,7 +444,7 @@ export default function AdminUsersPage() {
                 <SortTh k="name"      label={t('users.table.name')} />
                 <SortTh k="email"     label={t('users.table.email')} />
                 <SortTh k="role"      label={t('users.table.role')} />
-                <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-[#8696A0]">
+                <th scope="col" className="px-5 py-3.5 text-start text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-[#8696A0]">
                   {t('users.table.team')}
                 </th>
                 <SortTh k="createdAt" label={t('users.table.createdAt')} />

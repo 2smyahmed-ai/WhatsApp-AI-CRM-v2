@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
-import BroadcastForm from '../../../../../components/broadcasts/BroadcastForm';
+import BroadcastForm, { type BroadcastPayload } from '../../../../../components/broadcasts/BroadcastForm';
 import { api } from '../../../../../lib/api';
 import { useDirection } from '../../../../../hooks/useDirection';
 
@@ -20,11 +20,16 @@ interface Broadcast {
   id: string;
   name: string;
   message: string;
-  scheduledAt: string | null;
+  /** The wall clock the user originally picked, e.g. "2026-07-10T14:30". */
+  scheduledAtLocal: string | null;
+  timezone: string;
   recipients: { phone: string }[];
   mediaUrl?: string | null;
   mediaType?: string | null;
   mediaFilename?: string | null;
+  smartSending?: boolean;
+  batchSize?: number | null;
+  batchIntervalMinutes?: number | null;
 }
 
 export default function EditBroadcastPage() {
@@ -56,16 +61,7 @@ export default function EditBroadcastPage() {
     fetchBroadcast();
   }, [fetchContacts, fetchBroadcast]);
 
-  const handleSave = async (values: {
-    name: string;
-    message: string;
-    recipients: string[];
-    scheduledAt?: Date;
-    interactiveContent?: object;
-    mediaUrl?: string;
-    mediaType?: string;
-    mediaFilename?: string;
-  }) => {
+  const handleSave = async (values: BroadcastPayload) => {
     if (!params?.id) return;
     await api.put(`/api/broadcasts/${params.id}`, values);
     router.push('/broadcasts');
@@ -95,10 +91,16 @@ export default function EditBroadcastPage() {
             name: broadcast.name,
             message: broadcast.message,
             recipients: broadcast.recipients.map(recipient => recipient.phone),
-            scheduledAt: broadcast.scheduledAt ? new Date(broadcast.scheduledAt).toISOString().slice(0, 16) : '',
+            // Bound verbatim — no Date round-trip. Converting here is what used to
+            // shift the time by the UTC offset on every save.
+            scheduledAtLocal: broadcast.scheduledAtLocal,
+            timezone: broadcast.timezone,
             mediaUrl: broadcast.mediaUrl ?? undefined,
             mediaType: broadcast.mediaType ?? undefined,
             mediaFilename: broadcast.mediaFilename ?? undefined,
+            smartSending: broadcast.smartSending,
+            batchSize: broadcast.batchSize,
+            batchIntervalMinutes: broadcast.batchIntervalMinutes,
           }}
           submitLabel={t('form.saveChanges')}
           onBack={() => router.push('/broadcasts')}

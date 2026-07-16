@@ -1,22 +1,85 @@
 import { Router } from 'express';
 import { authMiddleware, checkPermission } from '../../auth/auth.middleware';
 import { prisma } from '../../lib/prisma';
+import { resolveMediaUrl, toStorageRef } from '../../lib/media';
 import { renderTemplate, sendTemplate } from '../../services/template.service';
 
 const router = Router();
 
 router.use(authMiddleware);
 
+const MEDIA_TYPES = new Set(['IMAGE', 'VIDEO', 'DOCUMENT', 'AUDIO']);
+
+/**
+ * A template's attachment must survive the round trip: whatever media the client
+ * sends is written to *both* the dedicated columns and `payload.media`, and any
+ * absolute URL is collapsed to a storage-relative ref first. Previously only
+ * `mediaUrl` was persisted (with no type or filename), so reloading a template
+ * produced a caption with no attachment — the "media files are lost" bug.
+ */
+function normalizeMedia(body: any) {
+  const payloadMedia = body?.payload?.media;
+  const type = body.mediaType ?? payloadMedia?.type ?? null;
+  const url = toStorageRef(body.mediaUrl ?? payloadMedia?.url ?? null);
+
+  if (!url || !type || !MEDIA_TYPES.has(type)) {
+    return { mediaUrl: null, mediaType: null, mediaFilename: null, mediaMimeType: null };
+  }
+
+  return {
+    mediaUrl: url,
+    mediaType: type,
+    mediaFilename: body.mediaFilename ?? payloadMedia?.filename ?? null,
+    mediaMimeType: body.mediaMimeType ?? payloadMedia?.mimeType ?? null,
+  };
+}
+
+/** Keep `payload.media` consistent with the columns so both readers agree. */
+function syncPayload(payload: any, media: ReturnType<typeof normalizeMedia>) {
+  if (!payload || typeof payload !== 'object') return payload ?? undefined;
+  if (!media.mediaUrl) {
+    const { media: _dropped, ...rest } = payload;
+    return rest;
+  }
+  return {
+    ...payload,
+    media: {
+      type: media.mediaType,
+      url: media.mediaUrl,
+      ...(media.mediaFilename ? { filename: media.mediaFilename } : {}),
+      ...(media.mediaMimeType ? { mimeType: media.mediaMimeType } : {}),
+    },
+  };
+}
+
+/** Media leaves the API as a loadable URL; it is stored as a portable ref. */
+function serializeTemplate(template: any) {
+  const payload = template.payload;
+  return {
+    ...template,
+    mediaUrl: resolveMediaUrl(template.mediaUrl),
+    payload:
+      payload && typeof payload === 'object' && payload.media?.url
+        ? { ...payload, media: { ...payload.media, url: resolveMediaUrl(payload.media.url) } }
+        : payload,
+  };
+}
+
+/** TEXT vs MEDIA is derived from the attachment, never trusted from the client. */
+function deriveType(media: ReturnType<typeof normalizeMedia>): 'TEXT' | 'MEDIA' {
+  return media.mediaUrl ? 'MEDIA' : 'TEXT';
+}
+
 // ── List ────────────────────────────────────────────────────────────────────
 router.get('/', checkPermission('read', 'templates'), async (req, res) => {
   try {
     const teamId = (req as any).user?.teamId;
     const where = teamId ? { OR: [{ teamId }, { teamId: null }] } : {};
-    const templates = await (prisma as any).messageTemplate.findMany({
+    const templates = await prisma.messageTemplate.findMany({
       where,
       orderBy: { createdAt: 'desc' },
     });
-    res.json(templates);
+    res.json(templates.map(serializeTemplate));
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
   }
@@ -26,26 +89,29 @@ router.get('/', checkPermission('read', 'templates'), async (req, res) => {
 router.post('/', checkPermission('create', 'templates'), async (req, res) => {
   try {
     const teamId = (req as any).user?.teamId;
-    const { name, content, mediaUrl, type, status, payload, variables, language, category } = req.body;
-    if (!name?.trim() || !(content?.trim() || payload)) {
-      return res.status(400).json({ error: 'name and content or payload are required' });
+    const { name, content, status, payload, variables, language, category } = req.body;
+    const media = normalizeMedia(req.body);
+
+    // A media-only template (an image with no caption) is legitimate.
+    if (!name?.trim() || !(content?.trim() || payload || media.mediaUrl)) {
+      return res.status(400).json({ error: 'name and content, payload, or media are required' });
     }
 
-    const template = await (prisma as any).messageTemplate.create({
+    const template = await prisma.messageTemplate.create({
       data: {
         name: name.trim(),
         content: content?.trim() ?? '',
-        mediaUrl: mediaUrl || null,
         teamId,
-        type: type || undefined,
+        ...media,
+        type: deriveType(media),
         status: status || undefined,
-        payload: payload || undefined,
+        payload: syncPayload(payload, media),
         variables: variables || undefined,
         language: language || 'en_US',
         category: category || null,
       },
     });
-    res.status(201).json(template);
+    res.status(201).json(serializeTemplate(template));
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
   }
@@ -55,27 +121,31 @@ router.post('/', checkPermission('create', 'templates'), async (req, res) => {
 router.put('/:id', checkPermission('update', 'templates'), async (req, res) => {
   try {
     const teamId = (req as any).user?.teamId;
-    const { name, content, mediaUrl, type, status, payload, variables, language, category } = req.body;
-    const existing = await (prisma as any).messageTemplate.findFirst({
+    const { name, content, status, payload, variables, language, category } = req.body;
+    const existing = await prisma.messageTemplate.findFirst({
       where: { id: req.params.id, ...(teamId ? { OR: [{ teamId }, { teamId: null }] } : {}) },
     });
     if (!existing) return res.status(404).json({ error: 'Template not found' });
 
-    const template = await (prisma as any).messageTemplate.update({
+    // An update that mentions no media at all leaves the existing attachment
+    // alone; one that sends `mediaUrl: null` removes it.
+    const touchesMedia = 'mediaUrl' in req.body || 'mediaType' in req.body || 'payload' in req.body;
+    const media = touchesMedia ? normalizeMedia(req.body) : null;
+
+    const template = await prisma.messageTemplate.update({
       where: { id: req.params.id },
       data: {
         ...(name?.trim() ? { name: name.trim() } : {}),
         ...(content !== undefined ? { content: content?.trim() ?? '' } : {}),
-        ...(mediaUrl !== undefined ? { mediaUrl: mediaUrl || null } : {}),
-        ...(type !== undefined ? { type } : {}),
+        ...(media ? { ...media, type: deriveType(media) } : {}),
         ...(status !== undefined ? { status } : {}),
-        ...(payload !== undefined ? { payload } : {}),
+        ...(payload !== undefined ? { payload: syncPayload(payload, media ?? normalizeMedia(existing)) } : {}),
         ...(variables !== undefined ? { variables } : {}),
         ...(language !== undefined ? { language } : {}),
         ...(category !== undefined ? { category } : {}),
       },
     });
-    res.json(template);
+    res.json(serializeTemplate(template));
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
   }
@@ -85,11 +155,11 @@ router.put('/:id', checkPermission('update', 'templates'), async (req, res) => {
 router.delete('/:id', checkPermission('delete', 'templates'), async (req, res) => {
   try {
     const teamId = (req as any).user?.teamId;
-    const existing = await (prisma as any).messageTemplate.findFirst({
+    const existing = await prisma.messageTemplate.findFirst({
       where: { id: req.params.id, ...(teamId ? { OR: [{ teamId }, { teamId: null }] } : {}) },
     });
     if (!existing) return res.status(404).json({ error: 'Template not found' });
-    await (prisma as any).messageTemplate.delete({ where: { id: req.params.id } });
+    await prisma.messageTemplate.delete({ where: { id: req.params.id } });
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
@@ -101,7 +171,7 @@ router.post('/:id/render', checkPermission('read', 'templates'), async (req, res
   try {
     const teamId = (req as any).user?.teamId;
     const vars = req.body?.variables || {};
-    const template = await (prisma as any).messageTemplate.findFirst({
+    const template = await prisma.messageTemplate.findFirst({
       where: { id: req.params.id, ...(teamId ? { OR: [{ teamId }, { teamId: null }] } : {}) },
     });
     if (!template) return res.status(404).json({ error: 'Template not found' });
@@ -119,7 +189,7 @@ router.post('/:id/send', checkPermission('create', 'messages'), async (req, res)
     if (!phone) return res.status(400).json({ error: 'phone is required' });
 
     const teamId = (req as any).user?.teamId;
-    const template = await (prisma as any).messageTemplate.findFirst({
+    const template = await prisma.messageTemplate.findFirst({
       where: { id: req.params.id, ...(teamId ? { OR: [{ teamId }, { teamId: null }] } : {}) },
     });
     if (!template) return res.status(404).json({ error: 'Template not found' });
@@ -152,14 +222,14 @@ router.post('/:id/send-bulk', checkPermission('create', 'messages'), async (req,
     }
 
     const teamId = (req as any).user?.teamId;
-    const template = await (prisma as any).messageTemplate.findFirst({
+    const template = await prisma.messageTemplate.findFirst({
       where: { id: req.params.id, ...(teamId ? { OR: [{ teamId }, { teamId: null }] } : {}) },
     });
     if (!template) return res.status(404).json({ error: 'Template not found' });
 
     const conversations = await prisma.conversation.findMany({
       where: { id: { in: conversationIds } },
-      include: { contact: { select: { name: true, phone: true } } },
+      include: { contact: true },
     });
     const byId = new Map(conversations.map(c => [c.id, c]));
 
@@ -171,12 +241,11 @@ router.post('/:id/send-bulk', checkPermission('create', 'messages'), async (req,
       const conv = byId.get(conversationIds[i]);
       if (!conv?.contact?.phone) { failed += 1; continue; }
 
-      const contactName = conv.contact.name?.trim() || '';
-      // Contact fields win over manually entered values for the auto variables.
+      // Contact fields (including custom ones) win over manually entered values.
+      const { buildPersonalizationVars } = await import('../../broadcasts/personalization');
       const perContactVars: Record<string, string> = {
         ...(variables ?? {}),
-        ...(contactName ? { name: contactName, first_name: contactName.split(/\s+/)[0] } : {}),
-        phone: conv.contact.phone,
+        ...buildPersonalizationVars(conv.contact, conv.contact.phone),
       };
 
       try {

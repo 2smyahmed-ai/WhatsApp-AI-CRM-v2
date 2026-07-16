@@ -10,6 +10,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '@/components/providers/ThemeProvider';
 import { useLanguage } from '@/components/providers/I18nProvider';
+import AppUpdateBanner from '@/components/layout/AppUpdateBanner';
 
 export default function LoginPage() {
   const { t, i18n } = useTranslation('auth');
@@ -69,6 +70,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen overflow-hidden bg-gray-50 dark:bg-[#0B141A]">
+      <AppUpdateBanner />
 
       <div className="relative min-h-screen flex flex-col lg:flex-row">
         {/* Left side - Premium preview (desktop only) */}

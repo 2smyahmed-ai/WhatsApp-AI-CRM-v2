@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { formatPhone } from '../../lib/phone';
 import { cn } from '../../lib/utils';
 import Avatar from '../ui/Avatar';
+import { formatFieldValue, type CustomFieldDefinition, type CustomFieldValues } from '../../lib/custom-fields';
 
 interface ContactTag {
   tag: { id: string; name: string; color: string };
@@ -18,7 +19,7 @@ interface Contact {
   notes: string | null;
   createdAt: string;
   contactTags?: ContactTag[];
-  customFields?: { avatarUrl?: string | null } | null;
+  customFields?: (CustomFieldValues & { avatarUrl?: string | null }) | null;
 }
 
 export type ContactSortKey = 'name' | 'phone' | 'createdAt';
@@ -36,6 +37,8 @@ interface ContactsTableProps {
   onOpenDetails: (contact: Contact) => void;
   confirmDeleteId: string | null;
   onConfirmDelete: (id: string | null) => void;
+  /** Every active custom field, rendered as its own column/row wherever a contact has a value. */
+  customFieldDefs?: CustomFieldDefinition[];
 }
 
 function SortIcon({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
@@ -58,6 +61,7 @@ export default function ContactsTable({
   onOpenDetails,
   confirmDeleteId,
   onConfirmDelete,
+  customFieldDefs = [],
 }: ContactsTableProps) {
   const { t } = useTranslation('contacts');
   const allSelected = contacts.length > 0 && contacts.every((c) => selectedIds.has(c.id));
@@ -119,6 +123,19 @@ export default function ContactsTable({
                 </div>
               )}
 
+              {customFieldDefs.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 ps-7">
+                  {customFieldDefs
+                    .filter((definition) => contact.customFields?.[definition.key] != null && contact.customFields?.[definition.key] !== '')
+                    .map((definition) => (
+                      <p key={definition.id} className="break-words text-[11px] text-gray-500 dark:text-[#8696A0]">
+                        <span className="font-medium text-gray-700 dark:text-gray-300">{definition.label}:</span>{' '}
+                        {formatFieldValue(definition, contact.customFields?.[definition.key])}
+                      </p>
+                    ))}
+                </div>
+              )}
+
               <div className="mt-2.5 flex items-center gap-1 ps-7">
                 {confirmDeleteId === contact.id ? (
                   <>
@@ -169,14 +186,22 @@ export default function ContactsTable({
               </th>
               <SortTh k="name" label={t('table.name')} />
               <SortTh k="phone" label={t('table.phone')} />
-              <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-[#8696A0]">
+              <th className="px-4 py-3.5 text-start text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-[#8696A0]">
                 {t('table.tags')}
               </th>
-              <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-[#8696A0]">
+              <th className="px-4 py-3.5 text-start text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-[#8696A0]">
                 {t('form.notes')}
               </th>
+              {customFieldDefs.map((definition) => (
+                <th
+                  key={definition.id}
+                  className="whitespace-nowrap px-4 py-3.5 text-start text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-[#8696A0]"
+                >
+                  {definition.label}
+                </th>
+              ))}
               <SortTh k="createdAt" label={t('table.createdAt')} />
-              <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-[#8696A0]">
+              <th className="px-4 py-3.5 text-start text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-[#8696A0]">
                 {t('table.actions')}
               </th>
             </tr>
@@ -237,6 +262,11 @@ export default function ContactsTable({
                 <td className="max-w-xs truncate px-4 py-3 text-sm text-gray-600 dark:text-[#8696A0]">
                   {contact.notes || '-'}
                 </td>
+                {customFieldDefs.map((definition) => (
+                  <td key={definition.id} className="max-w-xs truncate px-4 py-3 text-sm text-gray-600 dark:text-[#8696A0]">
+                    {formatFieldValue(definition, contact.customFields?.[definition.key])}
+                  </td>
+                ))}
                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600 dark:text-[#8696A0]">
                   {new Date(contact.createdAt).toLocaleDateString()}
                 </td>

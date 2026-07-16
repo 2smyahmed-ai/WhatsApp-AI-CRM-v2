@@ -181,6 +181,29 @@
     "collapse": "Minimize",
     "expandLabel": "WhatsApp not connected — tap to connect"
   },
+  "sidebarConnect": {
+    "title": "Connect WhatsApp",
+    "subtitle": "Scan the QR code to link your number",
+    "connectedTitle": "Connected!",
+    "connectedShort": "WhatsApp connected",
+    "checking": "Checking connection…",
+    "inlineHint": "Open WhatsApp › Linked devices › Scan",
+    "close": "Close",
+    "retry": "Try again",
+    "error": "Couldn't start the connection. Please try again.",
+    "secure": "End-to-end encrypted by WhatsApp",
+    "steps": {
+      "open": "Open WhatsApp on your phone",
+      "linked": "Tap Menu, then Linked devices",
+      "scan": "Scan this code to link"
+    }
+  },
+  "appUpdate": {
+    "title": "A new version is ready",
+    "body": "Tap to refresh and get the latest fixes and features.",
+    "action": "Refresh now",
+    "updating": "Updating…"
+  },
   "loading": "Loading...",
   "error": "Something went wrong",
   "retry": "Try again",
